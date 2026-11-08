@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenCut Rust 重写版 · 动态路线图看板</title>
+  <link rel="stylesheet" href="dashboard.css?v=20261108-r2" />
+  <!-- 查询参数用于绕过浏览器对旧脚本的缓存；数据版本同时显示在页面上 -->
+  <script src="dashboard-data.js?v=20261108-r2" defer></script>
+  <script src="dashboard-io.js?v=20261108-r2" defer></script>
+  <script src="dashboard.js?v=20261108-r2" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="title-block">
+      <h1>OpenCut Rust 重写版 · 动态路线图</h1>
+      <p class="subtitle">里程碑流程图 / 热点进程 / 决策台账 · 离线可用 · 数据版本 <span id="data-version">加载中…</span></p>
+    </div>
+    <div class="overall">
+      <div class="overall-number"><span id="overall-percent">0%</span><small>总体完成度</small></div>
+      <div class="progress-track"><div class="progress-fill" id="overall-bar"></div></div>
+      <div class="overall-stats" id="overall-stats"></div>
+    </div>
+  </header>
+
+  <nav class="toolbar">
+    <label for="filter-status">状态筛选</label>
+    <select id="filter-status">
+      <option value="ALL">全部</option>
+      <option value="未开始">未开始</option>
+      <option value="进行中">进行中</option>
+      <option value="阻塞">阻塞</option>
+      <option value="已完成">已完成</option>
+    </select>
+    <label for="filter-priority">优先级</label>
+    <select id="filter-priority">
+      <option value="ALL">全部</option>
+      <option value="P0">P0</option>
+      <option value="P1">P1</option>
+      <option value="P2">P2</option>
+    </select>
+    <button type="button" id="btn-export">导出进度 JSON</button>
+    <button type="button" id="btn-import">导入进度 JSON</button>
+    <button type="button" id="btn-reset" class="danger">重置</button>
+    <button type="button" id="btn-reload">重新加载数据</button>
+    <input type="file" id="file-input" accept=".json,application/json" hidden />
+    <span class="hint">点击流程图节点可切换状态；详情见右侧面板</span>
+  </nav>
+
+  <div id="message" class="message" role="status" aria-live="polite"></div>
+
+  <main class="layout">
+    <section class="board-panel">
+      <div class="section-head">
+        <h2>里程碑流程图（动态）</h2>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="svg-wrap">
+        <svg id="flow-svg" role="img" aria-label="里程碑依赖流程图"></svg>
+      </div>
+      <p class="caption">实线 = 关键路径依赖；节点颜色 = 当前状态；角标 = 关联热点数 / 阻塞数。</p>
+
+      <div class="section-head spaced">
+        <h2>里程碑进度</h2>
+      </div>
+      <div id="milestone-cards" class="cards"></div>
+
+      <div class="section-head spaced">
+        <h2>热点进程</h2>
+        <span class="caption">与 <code>HOTSPOTS.md</code> 的 H 编号一一对应</span>
+      </div>
+      <div class="table-wrap">
+        <table id="hotspot-table">
+          <thead>
+            <tr><th>ID</th><th>热点</th><th>等级</th><th>归属</th><th>状态</th><th>下一步动作</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="section-head spaced">
+        <h2>决策台账（开放问题）</h2>
+        <div class="q-controls">
+          <span id="question-stats" class="caption"></span>
+          <label for="filter-decision">状态</label>
+          <select id="filter-decision">
+            <option value="ALL">全部</option>
+            <option value="待决">待决</option>
+            <option value="已决">已决</option>
+          </select>
+        </div>
+      </div>
+      <ul id="question-list" class="question-list"></ul>
+    </section>
+
+    <aside class="detail-panel" id="detail-panel">
+      <h2>节点详情</h2>
+      <p class="caption">点击左侧流程图中的里程碑节点查看</p>
+      <div id="detail-content"></div>
+      <hr />
+      <h2>状态说明</h2>
+      <ul class="status-help">
+        <li><span class="dot st-todo"></span>未开始：尚未投入</li>
+        <li><span class="dot st-doing"></span>进行中：有实际产出</li>
+        <li><span class="dot st-blocked"></span>阻塞：需先解除依赖</li>
+        <li><span class="dot st-done"></span>已完成：DoD 全部满足</li>
+      </ul>
+      <p class="caption">数据来自 <code>README.md</code> §6、<code>HOTSPOTS.md</code> §4 与 <code>compat-contract.json</code>；本看板只改浏览器本地状态，不修改仓库文件。</p>
+      <p class="caption">若决策内容仍是旧的，请先按 <b>Ctrl+F5</b> 强制刷新，或点上方「重新加载数据」，并核对页首数据版本是否为 <code>2026-11-08-r2</code>。</p>
+    </aside>
+  </main>
+
+  <footer>
+    <span>快照 2026-11-08 · 重写版 HEAD <code>e6680107</code></span>
+    <span>状态保存在 <code>localStorage</code>，可用「导出进度 JSON」回填到 HOTSPOTS.md</span>
+  </footer>
+</body>
+</html>

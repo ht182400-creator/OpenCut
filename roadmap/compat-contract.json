@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "updatedAt": "2026-11-08",
+  "strategy": "C→B",
+  "strategyName": "双轨过渡 → 切换到上游 core",
+  "principle": "差异化能力必须表达为插件/扩展，本地调用只经 editor-api 适配层；切换上游时只换适配层实现。",
+  "invariants": [
+    { "id": "I-01", "rule": "任何 app/插件/MCP/headless 只能通过 editor-api 适配层访问 core，禁止直接依赖 local/crates/ocx-* 内部类型" },
+    { "id": "I-02", "rule": "本地新增资产一律落在隔离命名空间" },
+    { "id": "I-03", "rule": "跨边界数据必须版本化，字段只增不删不改名（additive-only）" },
+    { "id": "I-04", "rule": "本地差异化能力必须能表达为扩展点/插件，不得是 core 内特判分支" },
+    { "id": "I-05", "rule": "同一时刻只允许一个 core 实现被注册" },
+    { "id": "I-06", "rule": "每次上游同步后更新能力台账并跑契约测试" }
+  ],
+  "namespace": {
+    "rustCrates": "local/crates/*",
+    "rustCratePrefix": "ocx-",
+    "apps": "apps/local-*",
+    "webComponents": "apps/web/src/local/",
+    "mcpToolPrefix": "ocx.",
+    "cli": "ocx-render",
+    "forbidden": [
+      "crates/<通用名>",
+      "裸 MCP 工具名（如 project.open）",
+      "修改上游既有文件名"
+    ]
+  },
+  "decisionGates": [
+    { "id": "G1", "name": "上游 API 是否冻结且有版本化契约", "weight": 0.25, "minScore": 0.8, "score": null, "basis": "待上游落地后评估" },
+    { "id": "G2", "name": "六项能力对本地需求的覆盖率", "weight": 0.25, "minScore": 0.8, "score": null, "basis": "待实际 diff 逐项核对" },
+    { "id": "G3", "name": "本地差异能否表达为插件/扩展", "weight": 0.2, "minScore": 0.8, "score": null, "basis": "由能力映射表评估" },
+    { "id": "G4", "name": "维护人力是否够支撑双轨", "weight": 0.15, "minScore": 0.6, "score": null, "basis": "人力不足则更应切换" },
+    { "id": "G5", "name": "是否打算回馈上游", "weight": 0.15, "minScore": 0.6, "score": null, "basis": "由维护者决定" }
+  ],
+  "switchThreshold": {
+    "overall": 0.75,
+    "mandatoryGates": ["G1", "G2"]
+  },
+  "extensionPoints": [
+    { "id": "importer-exporter", "description": "媒体/项目/字幕格式导入导出（含 OTIO 适配器）" },
+    { "id": "media-linker", "description": "把逻辑媒体 ID 解析到实际文件/URL/代理文件" },
+    { "id": "effect", "description": "注册 WGSL pass 与参数 schema" },
+    { "id": "generator", "description": "程序化素材：文字动画、形状、贴纸包" },
+    { "id": "command", "description": "向 Editor API 注册命令" },
+    { "id": "hook", "description": "生命周期钩子：保存前校验、渲染前预处理" }
+  ],
+  "capabilities": [
+    { "id": "editor-api", "label": "Editor API", "localPath": "local/crates/ocx-editor-api", "upstreamPath": null, "primaryExtensionPoint": "command", "decision": "pending", "migrationState": "notStarted", "upstreamSha": null },
+    { "id": "plugin-first", "label": "插件优先", "localPath": "local/crates/ocx-plugin-host", "upstreamPath": null, "primaryExtensionPoint": "hook", "decision": "pending", "migrationState": "notStarted", "upstreamSha": null },
+    { "id": "rust-core", "label": "Rust core 多端", "localPath": "local/crates/ocx-domain", "upstreamPath": null, "primaryExtensionPoint": null, "decision": "pending", "migrationState": "notStarted", "upstreamSha": null },
+    { "id": "mcp-server", "label": "MCP server", "localPath": "apps/local-mcp", "upstreamPath": null, "primaryExtensionPoint": "command", "decision": "pending", "migrationState": "notStarted", "upstreamSha": null },
+    { "id": "headless", "label": "Headless", "localPath": "apps/local-headless", "upstreamPath": null, "primaryExtensionPoint": "importer-exporter", "decision": "pending", "migrationState": "notStarted", "upstreamSha": null },
+    { "id": "scripting-tab", "label": "scripting tab", "localPath": "apps/web/src/local/scripting", "upstreamPath": null, "primaryExtensionPoint": "command", "decision": "pending", "migrationState": "notStarted", "upstreamSha": null }
+  ],
+  "migrationStates": ["notStarted", "dualTrack", "migrating", "adapted", "retired"],
+  "transitions": [
+    { "from": "notStarted", "to": "dualTrack", "guard": "W-02/W-03 隔离与契约落地" },
+    { "from": "dualTrack", "to": "migrating", "guard": "上游落地且决策判据达标" },
+    { "from": "migrating", "to": "adapted", "guard": "六项能力逐项映射与 golden master 全绿" },
+    { "from": "adapted", "to": "retired", "guard": "本地 core 归档，只留插件" },
+    { "from": "migrating", "to": "dualTrack", "guard": "回归失败或上游 API 回退" }
+  ],
+  "decisionValues": ["pending", "keep", "port", "retire"],
+  "exportDecision": {
+    "web": "webcodecs",
+    "desktop": "ffmpeg-native",
+    "headless": "ffmpeg-native",
+    "coreOutputs": ["RenderFrame", "ExportProfile"],
+    "rationale": "WebCodecs 在性能、包体、部署、合规、架构解耦上占优；FFmpeg 保留在桌面/headless 原生动态链接；一致性由统一 ExportProfile + golden master 保证"
+  },
+  "exportCapabilities": [
+    { "browser": "Chrome/Edge 94+", "avc": true, "vp9": true, "aac": true, "opus": true, "note": "硬件编解码优先" },
+    { "browser": "Firefox 130+", "avc": true, "vp9": true, "aac": true, "opus": true, "note": "经典版 0.3.0 修过 MP4+音频导出失败，必须保留回归用例" },
+    { "browser": "Safari 16.4+", "avc": true, "vp9": false, "aac": true, "opus": false, "note": "按 isConfigSupported 协商，必要时降级 vp9/opus 或仅视频" },
+    { "browser": "fallback", "avc": false, "vp9": false, "aac": false, "opus": false, "note": "能力全不支持时明确报错并给出用户可见提示，禁止静默失败" }
+  ],
+  "decisions": {
+    "webFirst": { "value": true, "decidedAt": "2026-11-08", "note": "先做 Web 单端，桌面/移动后置；见 PRIORITY.md" },
+    "codebuddyGitignore": { "value": false, "decidedAt": "2026-11-08", "note": "用户决定不加入 .gitignore；靠显式暂存与 skill 排除控制推送" },
+    "webExportBackend": { "value": "webcodecs", "decidedAt": "2026-11-08", "note": "Rust core 出 RenderFrame+ExportProfile，Web 用 WebCodecs，桌面/headless 用原生 FFmpeg" }
+  },
+  "antiPatterns": [
+    "直接删本地实现再改调用方",
+    "两套 core 同时注册",
+    "在 UI 里写上游类型判断",
+    "git merge -X theirs 覆盖本地",
+    "把插件逻辑塞进 core",
+    "git add -A 提交 .codebuddy/"
+  ]
+}
