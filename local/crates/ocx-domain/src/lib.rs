@@ -8,12 +8,24 @@
 //! `tests/golden_master.rs`（Rust）与 `tests/ripple-alignment.test.mjs`（经典版 TS 的 JS 参考实现）消费，
 //! 三者对同一份期望值比对；用例与文档见 `tests/CASES.md`。
 
+pub mod placement;
 pub mod ripple;
 pub mod types;
 
 pub use ocx_time::TICKS_PER_SECOND;
+pub use placement::{
+    can_element_go_on_track, can_place_time_spans_on_track, enforce_main_track_start,
+    get_default_insert_index_for_track, get_earliest_main_track_element,
+    get_highest_insert_index_for_track, get_track_type_for_element_type,
+    resolve_preferred_new_track_placement, resolve_track_placement,
+    validate_element_track_compatibility,
+};
 pub use ripple::{apply_ripple_adjustments, compute_ripple_adjustments, ripple_shift_elements};
-pub use types::{RippleAdjustment, SceneTracks, TimedElement, TimelineTrack};
+pub use types::{
+    CompatibilityResult, ElementType, InsertDirection, InsertPosition, PlacementResult,
+    PlacementStrategy, PlacementSubject, PlacementTimeSpan, RippleAdjustment, SceneTracks,
+    TimedElement, TimelineTrack, TrackType, VerticalDirection,
+};
 
 /// 把秒换算为 ticks（线性换算，四舍五入到最近 tick）。
 pub fn seconds_to_ticks(seconds: f64) -> i64 {

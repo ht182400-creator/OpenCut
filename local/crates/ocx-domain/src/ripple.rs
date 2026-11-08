@@ -267,6 +267,7 @@ fn apply_track_ripple_adjustments(
     TimelineTrack {
         id: track.id.clone(),
         elements,
+        track_type: track.track_type,
     }
 }
 

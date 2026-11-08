@@ -762,6 +762,7 @@ git push origin main                                  # 绝不 --force
 | **proto + moon 补装** | 官方 release zip 经 `api.github.com` asset 端点下载，两个包 `Get-FileHash` 均与官方 digest 一致；moon.exe 与 npm 版哈希交叉校验一致；按 `manifest.json`（无 BOM UTF-8）注册 | `proto use` → `Installed bun, rust, and moon in 1 second!`；shims 生成 moon.exe |
 | **无旁路验证** | 完全不设 `MOON_TOOLCHAIN_FORCE_GLOBALS` | 四件套 `0.63.2 / 2.3.3 / 1.3.11 / 1.97.0`；`moon ci` 退出码 0；`web:dev`/`api:dev` HTTP 200；`desktop:check` 退出码 0 |
 | **W-05 ripple 翻译** | `cargo test -p ocx-domain` + `node local/crates/ocx-domain/tests/ripple-alignment.test.mjs` | Rust golden master（18 用例逐字段比对）+ 5 个单测全绿；经典版 TS 的 JS 参考实现 **64 通过 / 0 失败**；`moon run ocx-domain:test` 退出码 0 |
+| **W-05 placement 翻译** | `node local/crates/ocx-domain/tests/placement-alignment.test.mjs` + `cargo test -p ocx-domain` | 五组纯函数（compatibility / overlap / main-track / insert-index / resolve）；29 个 JSON 用例由 Rust 与 JS 参考实现共用期望值，**100 通过 / 0 失败**；4 个补充单测全绿 |
 | 导入测试 | `node dashboard.test.cjs` 用零依赖 DOM 桩按页面顺序加载三个脚本并触发 `init()` | 通过 |
 | 看板回归 | 数据完整性、依赖图、状态机全循环、完成度、持久化往返、渲染、导出/导入 JSON、重置两分支、**决策台账状态/结论与 DOM 渲染、数据版本** | **44 通过 / 0 失败** |
 | **兼容契约回归** | `node compat.test.cjs`：不变量、命名空间、判据权重、状态机、六能力台账、导出决策、三项用户决策、**契约↔看板交叉校验** | **45 通过 / 0 失败** |
