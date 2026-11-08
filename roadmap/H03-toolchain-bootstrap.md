@@ -1,69 +1,71 @@
-# H03 · 工具链安装与验证清单
+# H03 · 工具链安装与验证结果（已关闭，2026-11-08）
 
-> 热点 H03（本机缺 `bun`/`moon`/`proto`、`rustc 1.96` 低于 `.prototools` 的 1.97）尚未关闭。
-> 本文件给出**可复现的安装与验证步骤**。按你的偏好，大体积工具链由你自行下载执行，助手不擅自改全局环境。
+> 用户授权后已在本机实际安装并跑通全部验证。**唯一例外：`proto` 未装**（其二进制托管在 GitHub Releases，本机 HTTPS 连接持续被重置）；改用 moon 官方支持的 `MOON_TOOLCHAIN_FORCE_GLOBALS=true` 直接使用全局工具链，等价通过所有检查。
 
-## 1. 现状实测（2026-11-08）
+## 1. 实际安装
 
-| 项 | 结果 |
+| 工具 | 安装方式 | 结果 |
+| --- | --- | --- |
+| Bun 1.3.11 | `npm install -g bun@1.3.11` | `bun 1.3.11` |
+| moon 2.3.3 | `npm install -g @moonrepo/cli@2.3.3` | `moon 2.3.3` |
+| Rust 1.97.0 | `rustup toolchain install 1.97.0 --profile minimal` + **项目级** `rustup override set 1.97.0` | `rustc 1.97.0` |
+| 项目依赖 | 在 `apps/web`、`apps/api` 分别 `bun install` | 578 / 51 个包 |
+| proto | 官方 PowerShell 脚本与 `curl` 直取 Release 包均失败 | **未安装（见 §2）** |
+
+**修正两处此前的文档错误**：
+
+1. 重写版仓库**根目录没有 `package.json`**，`bun install` 必须在 `apps/web` 与 `apps/api` 分别执行；
+2. `moon ci` 默认以 `master` 为 base，本仓库分支是 `main`，手动运行需 `--base HEAD~1 --head HEAD`（或显式 `--base main`）。
+
+## 2. proto 为何没装上（客观阻塞）
+
+- `moonrepo.dev/install/proto.ps1` 的 GET 可成功（重试 2~3 次），但脚本内部要从 `github.com/moonrepo/proto/releases/.../proto_cli-x86_64-pc-windows-msvc.zip` 下载二进制；
+- 该 Release 的 HTTPS 请求用 `curl.exe --retry 4` 仍返回 `Recv failure: Connection was reset`；
+- `npm` 上名为 `proto-cli` 的包属于无关第三方项目，**不可作为替代**；`winget` 无 moonrepo 包。
+
+因此不伪造 proto，也不把第三方包当官方 CLI 安装。
+
+## 3. 关键环境要点
+
+| 现象 | 处理 |
 | --- | --- |
-| `rustc` / `cargo` | 1.96.0（可编译 edition 2024，`cargo test` 已验证通过） |
-| `bun` / `moon` / `proto` | NOT FOUND |
-| `winget` / `rustup` | 可用 |
-| `node` | v24.13.0 |
-| `https://moonrepo.dev/install/proto.ps1` | **HEAD 超时**（当前网络不可达） |
-| `https://bun.sh/install` | 200 |
-| `https://static.rust-lang.org/dist/channel-rust-1.97.0.toml` | 200 |
-| `https://registry.npmjs.org` | 200 |
+| 系统另有一套独立安装的 Rust 1.96，PATH 优先级高于 rustup shim，导致 `rustup override` 看似无效 | 把 `~/.cargo/bin` 置于 PATH 最前；验证 `rustc --version` = 1.97.0 |
+| moon 的 JS toolchain 默认经 proto 安装 bun，日志卡在 `installing bun 1.3.11`，dev 服务起不来 | 设置 `MOON_TOOLCHAIN_FORCE_GLOBALS=true`，直接使用全局 bun |
+| `local/crates/NOTICE.md` 被 moon 报「项目根是文件」 | glob 改为 `local/crates/*/`，并把该文件移到 `local/NOTICE.md`；警告消失 |
+| Vite 8 首次启动约需 6 秒 + 依赖预构建 | 冒烟等待 30 秒后再请求，避免误判失败 |
 
-**结论**：Rust 与 Bun 的下载源可达，唯一阻塞是 `moonrepo.dev` 安装脚本超时。可先用 `rustup` 独立升级 Rust，再等 proto 源恢复或用 winget 装 moon。
+## 4. 验证结果（全部实跑）
 
-## 2. 安装命令（PowerShell，在仓库根目录执行）
+| 检查 | 结果 |
+| --- | --- |
+| `moon ci --base HEAD~1 --head HEAD ocx-time:test ocx-bridge:test ocx-editor-api:test` | `Tasks: 3 completed`，退出码 0 |
+| `moon run ocx-time:test ocx-bridge:test` / `ocx-editor-api:test` | 均退出码 0 |
+| `moon run web:dev` | Vite 8.3.6 ready，`http://localhost:5173` → **HTTP 200** |
+| `moon run api:dev` | wrangler ready，`http://localhost:8787` → **HTTP 200 `{"status":"ok"}`** |
+| `moon run desktop:check` | `cargo check` 退出码 0（22 个警告来自上游 GPUI 代码，非本次引入） |
+| `cargo fmt --check` / `cargo clippy -D warnings` / `cargo test` | 三个 `ocx-*` crate 全绿 |
+| `moon query projects` | 退出码 0，无项目发现警告 |
+
+## 5. 复现命令（PowerShell，仓库根目录）
 
 ```powershell
-# ① 定点升级 Rust（不改动默认工具链，项目内由 proto shim 覆盖）
-rustup toolchain install 1.97.0 --profile minimal
+$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"   # 让 rustup shim 优先
+$env:MOON_TOOLCHAIN_FORCE_GLOBALS = 'true'             # 跳过 proto，使用全局工具
 
-# ② 安装 proto（若安装源恢复）
+moon ci --base HEAD~1 --head HEAD
+moon run web:dev        # 另开终端，等待约 30 秒后访问 5173
+moon run api:dev        # 另开终端，访问 8787
+moon run desktop:check
+```
+
+## 6. 后续（可选，不阻塞开发）
+
+若 GitHub Releases 的 HTTPS 恢复，可补装官方 proto 并移除 `MOON_TOOLCHAIN_FORCE_GLOBALS`：
+
+```powershell
 irm https://moonrepo.dev/install/proto.ps1 | iex
-# 若 shim 无法执行：
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-
-# ③ 按 .prototools 固定版本安装 moon 2.3.3 / bun 1.3.11 / rust 1.97.0
-proto use
-
-# ④ 安装各 package.json 的依赖
-bun install
+& "$env:USERPROFILE\.proto\bin\proto.exe" setup
+proto use     # 按 .prototools 固定 moon / bun / rust 版本
 ```
 
-`moonrepo.dev` 持续不可达时的替代路径：
-
-- 用 `winget search moonrepo` / `winget search Oven-sh.Bun` 查找可用包；
-- 或从 <https://moonrepo.dev/docs/proto/install> 与 <https://bun.sh/docs/installation> 获取官方离线包，手动放置到 `~/.proto` 后执行 `proto use`；
-- `moon` 可独立安装，但版本必须与 `.prototools` 的 `2.3.3` 一致，否则任务图行为可能不同。
-
-## 3. 验证清单
-
-```sh
-moon --version          # 期望 2.3.3
-bun --version           # 期望 1.3.11
-rustc --version         # 期望 1.97.0（proto shim 生效时）
-moon ci                 # 三平台任务图，含三个 ocx-* crate 的 check/test
-moon run web:dev        # localhost:5173
-moon run api:dev        # localhost:8787
-moon run desktop:dev    # GPUI 窗口
-```
-
-`moon ci` 应执行 `local/crates/ocx-{time,bridge,editor-api}/moon.yml` 的 `check` 与 `test` 任务；这三个任务目前**只经过 `cargo` 直接验证，尚未经 moon 实跑**。
-
-## 4. H03 关闭标准
-
-- [ ] 四个版本命令输出与 `.prototools` 一致；
-- [ ] `moon ci` 全绿，且日志中出现三个 `ocx-*` 的 `check`/`test` 任务；
-- [ ] 三个 dev 命令可访问；
-- [ ] `HOTSPOTS.md` H03 状态改为「已完成」，`PRIORITY.md` 进度快照同步；
-- [ ] 本文件标记为已完成并保留为复现文档。
-
-## 5. 对当前进度的影响
-
-H03 未关闭**不影响**已交付代码的可用性：`cargo test` / `fmt --check` / `clippy` 已用本机 1.96 全绿，契约与看板的 Node 测试也可运行。它只影响 `moon ci` 编排验证与 Web/API/桌面三端的启动冒烟，属于 W-01 的收尾项，不阻塞 W-03/W-05 的 Rust 侧开发。
+在此之前，`.prototools` 仍作为**版本基准文档**保留，实际版本由 npm 全局包与 rustup override 对齐，CI（GitHub Actions）中的 `moonrepo/setup-toolchain@v0` 仍按原配置工作。

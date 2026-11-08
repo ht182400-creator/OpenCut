@@ -176,8 +176,8 @@ function main() {
     assertEqual("状态循环回到起点", api.nextStatus("已完成"), "未开始");
     assertEqual("非法状态回退", api.nextStatus("非法值"), "未开始");
 
-    // 3. 完成度计算（M0 有 4 个热点：H03/H06/H10/H14，其中 H10 已完成）
-    assertNear("M0 完成度", api.milestoneProgress("M0"), 1 / 4);
+    // 3. 完成度计算（M0 有 4 个热点：H03/H06/H10/H14，其中 H03/H10 已完成）
+    assertNear("M0 完成度", api.milestoneProgress("M0"), 1 / 2);
     assertNear("M1 完成度", api.milestoneProgress("M1"), 0);
     assertNear("未知里程碑完成度", api.milestoneProgress("M999"), 0);
 
@@ -187,7 +187,7 @@ function main() {
     // 直接验证决策台账 DOM 已更新，避免「数据改了但页面没渲染」的回归
     assertEqual("决策台账渲染卡片数", env.elements["question-list"].children.length, EXPECTED_QUESTIONS);
     assertEqual("统计显示已决 2 项", env.elements["question-stats"].textContent.includes("已决 2"), true);
-    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r3"), true);
+    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r4"), true);
 
     // 5. 持久化往返：改状态 → 保存 → 新环境读取
     env.context.__t.getState().hotspots.H03 = "已完成";

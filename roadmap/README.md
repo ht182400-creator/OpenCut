@@ -23,7 +23,7 @@
 | [`dashboard-io.js`](dashboard-io.js) | 看板导入导出层：进度 JSON 导出 / 导入 / 重置 | 随功能迭代 |
 | [`dashboard.css`](dashboard.css) / [`dashboard.js`](dashboard.js) | 看板样式与渲染交互逻辑（拆文件便于 `node --check`，单文件均 ≤500 行） | 随功能迭代 |
 | [`dashboard.test.cjs`](dashboard.test.cjs) | 看板回归测试（`node dashboard.test.cjs`，零依赖 DOM 桩，含正常/边界/异常用例） | 每次看板改动后 |
-| [`H03-toolchain-bootstrap.md`](H03-toolchain-bootstrap.md) | H03 工具链安装源探测、一键命令与关闭标准（大体积工具链由用户自行下载） | H03 关闭前 |
+| [`H03-toolchain-bootstrap.md`](H03-toolchain-bootstrap.md) | **H03 已关闭**：实际安装结果、proto 例外、环境要点、全部验证记录与复现命令 | 工具链变更时 |
 | [`../apps/web/src/local/editor-api.contract.json`](../apps/web/src/local/editor-api.contract.json) | Rust Editor API ↔ Web 的机器可读契约；校验脚本 `editor-api.contract.test.mjs` | 接口变更时 |
 | [`../readmCN.md`](../readmCN.md) | 重写版现状中文说明（项目导览） | 现状变化时 |
 | [`../.codebuddy/memory/2026-11-08.md`](../.codebuddy/memory/2026-11-08.md) | 当日开发记录与关键结论 | 每次工作收尾 |
@@ -757,6 +757,8 @@ git push origin main                                  # 绝不 --force
 | Rust 依赖隔离 | `cargo tree -p ocx-time` | 仅 `num-traits` / `serde` / `ocx-bridge`，**零 wasm-bindgen / web-sys**（`default = []`） |
 | **W-03 Editor API** | `cargo test -p ocx-editor-api` | 6 个内联单测（含 8 线程并发）+ 19 个 JSON 命令序列用例全绿；`fmt --check` / `clippy -D warnings` 通过 |
 | **跨语言契约** | `node apps/web/src/local/editor-api.contract.test.mjs` | 5/5 通过：常量、命令、错误码、payload 字段与 Rust 源码一致 |
+| **`moon ci`（H03 已关闭）** | `moon ci --base HEAD~1 --head HEAD ocx-time:test ocx-bridge:test ocx-editor-api:test` | `Tasks: 3 completed`，退出码 0 |
+| **三端冒烟** | `moon run web:dev` / `api:dev` / `desktop:check` | Vite 8.3.6 → HTTP 200；wrangler → `{"status":"ok"}`；`cargo check` 退出码 0 |
 | 导入测试 | `node dashboard.test.cjs` 用零依赖 DOM 桩按页面顺序加载三个脚本并触发 `init()` | 通过 |
 | 看板回归 | 数据完整性、依赖图、状态机全循环、完成度、持久化往返、渲染、导出/导入 JSON、重置两分支、**决策台账状态/结论与 DOM 渲染、数据版本** | **44 通过 / 0 失败** |
 | **兼容契约回归** | `node compat.test.cjs`：不变量、命名空间、判据权重、状态机、六能力台账、导出决策、三项用户决策、**契约↔看板交叉校验** | **45 通过 / 0 失败** |
