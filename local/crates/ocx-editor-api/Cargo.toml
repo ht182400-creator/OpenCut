@@ -1,0 +1,18 @@
+[package]
+name = "ocx-editor-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenCut 本地 core：版本化 Editor API、命令总线、能力发现与单后端注册约束"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+ocx-time = { path = "../ocx-time" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+serde_json = "1"

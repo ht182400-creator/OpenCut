@@ -201,15 +201,16 @@ roadmap/
 ├── compat-contract.json         # 机器可读真相源（已实现）
 └── compat.test.cjs              # 契约一致性校验（已实现、可运行）
 
-local/crates/                    # W-02 建立目录，W-03 起逐个填充
-├── ocx-editor-api/              # trait EditorApi / Command / 版本化 envelope
-├── ocx-time/                    # 经典版 time 迁入（关 wasm feature）
-├── ocx-domain/                  # serde schema、ripple、placement
-└── ocx-plugin-host/             # W-12
-apps/web/src/local/              # W-02 建目录；W-06 起放页面与适配层
+local/crates/                    # W-02 建立目录 ✅
+├── ocx-editor-api/              # ✅ W-03：EditorApi/Command、版本化信封、能力发现、单后端注册、undo/redo、内置参考后端
+├── ocx-bridge/                  # ✅ W-04：经典版 bridge 迁入（关 wasm）
+├── ocx-time/                    # ✅ W-04：经典版 time 迁入 + golden master
+├── ocx-domain/                  # ⏳ W-05：serde schema、ripple、placement
+└── ocx-plugin-host/             # ⏳ W-12
+apps/web/src/local/              # 目录 ✅；契约 JSON 与契约测试 ✅；TS 适配层 ⏳ W-06
 ```
 
-**当前状态说明（诚实边界）**：本仓库尚无 `bun`/`moon`/`proto`、Rust 为 1.96 低于锁定的 1.97（H03），因此**不创建无法编译验证的 Rust crate**（避免半成品与「版本幽灵」）。已落地的「实现」是：可执行契约 JSON + 契约测试 + 本文的完整接口规范；Rust/WIT/TS 骨架是 W-03 的施工蓝图，待 W-01 工具链就绪后按 §4 逐文件实现并接入 `moon ci`。
+**当前状态说明（诚实边界）**：`ocx-time` / `ocx-bridge` / `ocx-editor-api` 三个 crate 已真实落地，用本机 `cargo 1.96` 完成 `fmt --check` / `clippy -D warnings` / `cargo test` 全绿验证；`apps/web/src/local/editor-api.contract.json` 与 5 项 Node 契约测试保证 Rust 常量、命令清单、错误码与 Web 契约不漂移。**仍未完成**：WIT 插件契约、TS 适配层（W-06 随 Web 绑定接入并做类型验证）、`moon ci` 实跑（H03 工具链未装，见 `H03-toolchain-bootstrap.md`）。因此不创建无法验证的 TS 半成品。
 
 ---
 

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "description": "ocx-editor-api golden master 用例；每个 id 与 tests/CASES.md 一一对应，覆盖正常值、边界值、异常值与命令序列。",
+  "cases": [
+    { "id": "E01", "category": "正常", "input": { "steps": [ { "op": "execute", "kind": "addClip", "commandId": "c1", "payload": { "label": "intro", "durationTicks": 120000 } } ] }, "expected": { "error": null, "clipCount": 1, "ticks": 120000, "label": "intro" } },
+    { "id": "E02", "category": "正常", "input": { "steps": [ { "op": "execute", "kind": "addClip", "commandId": "c1", "payload": { "label": "a", "durationTicks": 60000 } }, { "op": "execute", "kind": "addClip", "commandId": "c2", "payload": { "label": "b", "durationTicks": 120000 } } ] }, "expected": { "error": null, "clipCount": 2, "ticks": 180000, "label": "b", "snapshotId": 2 } },
+    { "id": "E03", "category": "正常", "input": { "steps": [ { "op": "execute", "kind": "setPlayhead", "commandId": "c1", "payload": { "ticks": 5000 } } ] }, "expected": { "error": null, "clipCount": 0, "ticks": 5000 } },
+    { "id": "E04", "category": "正常", "input": { "steps": [ { "op": "execute", "kind": "addClip", "commandId": "c1", "payload": { "label": "intro", "durationTicks": 120000 } }, { "op": "undo" } ] }, "expected": { "error": null, "clipCount": 0, "ticks": 0 } },
+    { "id": "E05", "category": "正常", "input": { "steps": [ { "op": "execute", "kind": "addClip", "commandId": "c1", "payload": { "label": "intro", "durationTicks": 120000 } }, { "op": "undo" }, { "op": "redo" } ] }, "expected": { "error": null, "clipCount": 1, "ticks": 120000 } },
+    { "id": "E06", "category": "正常", "input": { "steps": [ { "op": "discover" } ] }, "expected": { "error": null, "backendId": "ocx-in-memory" } },
+    { "id": "E07", "category": "正常", "input": { "steps": [ { "op": "execute", "kind": "addClip", "commandId": "c1", "payload": { "label": "x", "durationTicks": 10 } }, { "op": "execute", "kind": "clear", "commandId": "c2", "payload": {} } ] }, "expected": { "error": null, "clipCount": 0, "ticks": 0, "label": "" } },
+
+    { "id": "E08", "category": "边界", "input": { "steps": [ { "op": "execute", "kind": "addClip", "commandId": "c1", "payload": { "label": "", "durationTicks": 0 } } ] }, "expected": { "error": null, "clipCount": 1, "ticks": 0, "label": "" } },
+    { "id": "E09", "category": "边界", "input": { "steps": [ { "op": "execute", "kind": "addClip", "commandId": "c1", "payload": { "label": "neg", "durationTicks": -120000 } } ] }, "expected": { "error": null, "clipCount": 1, "ticks": -120000 } },
+    { "id": "E10", "category": "边界", "input": { "steps": [ { "op": "execute", "kind": "addClip", "commandId": "c1", "payload": { "labelLength": 257, "durationTicks": 1 } } ] }, "expected": { "error": "INVALID_PAYLOAD", "clipCount": 0 } },
+    { "id": "E11", "category": "边界", "input": { "steps": [ { "op": "execute", "kind": "clear", "commandId": "", "payload": {} } ] }, "expected": { "error": "INVALID_PAYLOAD", "clipCount": 0 } },
+    { "id": "E12", "category": "边界", "input": { "steps": [ { "op": "undo" } ] }, "expected": { "error": "HISTORY_EMPTY", "clipCount": 0 } },
+    { "id": "E13", "category": "边界", "input": { "steps": [ { "op": "execute", "kind": "clear", "commandId": "c1", "payload": {} }, { "op": "undo" } ] }, "expected": { "error": "INVALID_PAYLOAD", "clipCount": 0 } },
+    { "id": "E14", "category": "边界", "input": { "steps": [ { "op": "snapshot", "ticks": -1 }, { "op": "execute", "kind": "setPlayhead", "commandId": "c1", "payload": { "ticks": 777 } } ] }, "expected": { "error": null, "atTicks": -1, "ticks": 777 } },
+
+    { "id": "E15", "category": "异常", "input": { "steps": [ { "op": "execute", "kind": "nope", "commandId": "c1", "payload": {} } ] }, "expected": { "error": "UNSUPPORTED_COMMAND", "clipCount": 0 } },
+    { "id": "E16", "category": "异常", "input": { "steps": [ { "op": "execute", "kind": "clear", "commandId": "c1", "payload": {}, "apiVersion": "9.9.9" } ] }, "expected": { "error": "VERSION_MISMATCH", "clipCount": 0 } },
+    { "id": "E17", "category": "异常", "input": { "steps": [ { "op": "execute", "kind": "clear", "commandId": "c1", "payload": {}, "schemaVersion": "999" } ] }, "expected": { "error": "VERSION_MISMATCH", "clipCount": 0 } },
+    { "id": "E18", "category": "异常", "input": { "steps": [ { "op": "execute", "kind": "addClip", "commandId": "c1", "payload": { "label": "x" } } ] }, "expected": { "error": "INVALID_PAYLOAD", "clipCount": 0 } },
+    { "id": "E19", "category": "异常", "input": { "steps": [ { "op": "register", "backendId": "backend-a" }, { "op": "register", "backendId": "backend-b" } ] }, "expected": { "error": "BACKEND_ALREADY_REGISTERED", "clipCount": 0 } }
+  ]
+}

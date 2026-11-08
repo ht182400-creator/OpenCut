@@ -25,7 +25,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **H01** | GPUI(blade) 与 wgpu 纹理不互通 | P0 | 阻塞 | 桌面端整体架构 | 本仓库 `Cargo.lock` 中 `gpui 0.2.2` 依赖 `blade-graphics/blade-macros/blade-util`，无 `wgpu`；经典版 `Cargo.lock` 为 `wgpu 29.0.1` | M1 做 spike：`render_frame_to_texture` → CPU readback → GPUI 显示，记录 1080p 单帧耗时 | 产出实测数据与「readback / 独立 wgpu 窗口 / 换后端」的书面决策，写入 ADR-04 | 2026-11-08 |
 | **H02** | 4.6 万行领域逻辑翻译缺回归网 | P0 | 未开始 | M2 全部 | 经典版仅 30 个 `bun:test`，集中在纯函数与 31 版存储迁移；`EditorCore`/命令/undo/ripple 无系统级测试 | 先做 golden master：把经典版 fixtures 转成 JSON 数据驱动用例，TS/Rust 同输入同输出 | `cargo test --workspace` 中 golden 用例 100% 对齐，覆盖空值/极值/异常分支 | 2026-11-08 |
-| **H03** | 本机工具链缺失且版本不符 | P0 | 阻塞 | 所有本地验证 | 实测：`bun`/`moon`/`proto` 均 NOT FOUND；`node_modules` 不存在；`rustc 1.96.0` 低于 `.prototools` 的 `1.97.0` | 安装 proto → `proto use` → `bun install`，逐个跑 `moon run web:dev / api:dev / desktop:dev` | 三个 dev 命令可访问；`moon ci` 在本机通过 | 2026-11-08 |
+| **H03** | 本机工具链缺失且版本不符 | P0 | 阻塞 | 所有本地验证 | 实测：`bun`/`moon`/`proto` 均 NOT FOUND；`rustc 1.96.0` 低于 `.prototools` 的 `1.97.0`；`moonrepo.dev` 安装源 HEAD 超时，bun/rust/npm 源均 200 | 按 `H03-toolchain-bootstrap.md` 由用户自行安装：`rustup toolchain install 1.97.0` → proto → `proto use` → `bun install` | `moon 2.3.3` / `bun 1.3.11` / `rustc 1.97.0`；`moon ci` 全绿且含三个 `ocx-*` 任务；三个 dev 可访问 | 2026-11-08 |
 | **H04** | 上游架构仍在设计中，长期分叉风险 | P1 | 进行中 | fork 可维护性 | 官方 README（2026-11-08 抓取）仍为 "What's coming"，明说架构设计中、不收外部贡献 | 落地 §7 的「新增优先 + 隔离目录 + 差异台账」；启用 `git rerere`；每 2~4 周小步同步 | `README.md` §7.7 台账与 `git remote -v` 一致；每次同步后 `moon ci` 全绿 | 2026-11-08 |
 | **H05** | 原生 Rust 渲染路径从未验证 | P0 | 未开始 | 桌面端可用性 | 经典版 `apps/desktop/src/main.rs` 仅 42 行且不引用任何 crate；`rust/README.md:29` 只是设计意图；CI 测试步骤是 `echo "No tests implemented yet"`；`GpuContext::try_gl_fallback` 原生直接返回错误 | M1 补 `render_frame_to_texture → Vec<u8>` 用例与原生 CI 任务 | `cargo test --workspace` 包含原生离屏渲染用例，三平台 CI 通过 | 2026-11-08 |
 | **H06** | workspace 尚未启用 `crates/*` | P0 | 进行中 | 所有 crate 迁移 | **已完成**：根 `Cargo.toml` 追加 `'local/crates/*'`、`.moon/workspace.yml` 追加 glob、迁入 `ocx-time`/`ocx-bridge` 并编译通过、两个 `moon.yml` 已定义 | 剩余：`crates/media/build.rs` 待写；`moon ci` 待安装 moon 后验证；rust 待升级到 1.97 | `cargo test -p ocx-time -p ocx-bridge` 全绿（已达成）；`moon ci` 含 Rust 任务并全绿（待验证） | 2026-11-08 |
@@ -112,6 +112,7 @@ flowchart LR
 | 2026-11-08 | 用户要求「默认就走 SSH」：`origin` URL 切换为 SSH over 443，`git push` 无参数即走 SSH；不设 `GIT_SSH_COMMAND` 时 `ls-remote` 与 `push --dry-run` 均返回 0；`upstream` 保持 HTTPS，`github-ssh` 保留为冗余备用 | `README.md` §7.5 |
 | 2026-11-08 | **历史重写完成**（用户明确授权「彻底清除」）：以干净基底 `cb02a1cd`、当前树创建新提交 `93b8d4bd`，丢弃含敏感内容的三个提交；两端用 `--force-with-lease` 改写 `main`；本地 `reflog expire` + `gc --prune=now` 后三个旧对象均已删除，`git log --all` 0 命中 | `.codebuddy/memory/2026-11-08.md` |
 | 2026-11-08 | **Web 版本改造开工（W-02/W-04）**：建立 `local/crates/ocx-time`、`ocx-bridge` 与 `apps/web/src/local/` 隔离目录；追加式启用 `Cargo.toml` members 与 `.moon/workspace.yml` glob；从经典版迁入 `time`/`bridge`（默认关闭 wasm、零浏览器依赖）；新增 40 个 JSON 数据驱动用例 + `CASES.md`；`cargo test` 12 测试函数、`fmt --check`、`clippy` 全绿。H06/H14 由「未开始」→「进行中」 | `PRIORITY.md` §2 进度快照 |
+| 2026-11-08 | **W-03 基石落地**：`ocx-editor-api`（版本化 EditorApi/Command、能力发现、单后端注册、undo/redo、内置参考后端）+ 6 内联单测（含并发）+ 19 个 JSON 序列用例；修复 `SceneSnapshot.state_ticks` 缺失与 `OnceLock` 重复注册错误信息两个真实 bug；新增跨语言契约 JSON + 5 项 Node 契约测试；H03 安装引导文档。TS 适配层/WIT 推迟到 W-06 | `COMPAT.md` §8 / `H03-toolchain-bootstrap.md` |
 
 ---
 

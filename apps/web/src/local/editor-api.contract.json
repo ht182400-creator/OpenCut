@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "description": "Rust Editor API 与 Web 适配层之间的机器可读契约；由 editor-api.contract.test.mjs 校验与 Rust 实现一致。",
+  "apiVersion": "0.1.0",
+  "schemaVersion": "1",
+  "fieldNaming": "camelCase",
+  "backendId": "ocx-in-memory",
+  "capabilities": ["command", "undo-redo", "snapshot", "discover"],
+  "envelope": ["apiVersion", "schemaVersion", "commandId", "kind", "payload"],
+  "commands": [
+    { "kind": "addClip", "payload": { "label": "string", "durationTicks": "i64" } },
+    { "kind": "setPlayhead", "payload": { "ticks": "i64" } },
+    { "kind": "clear", "payload": {} }
+  ],
+  "errors": [
+    "UNSUPPORTED_COMMAND",
+    "INVALID_PAYLOAD",
+    "VERSION_MISMATCH",
+    "BACKEND_ALREADY_REGISTERED",
+    "HISTORY_EMPTY",
+    "STATE_LOCKED"
+  ],
+  "invariants": ["I-01", "I-03", "I-05"],
+  "notes": "W-03 落地 Rust 侧；TS 适配层在 W-06 随 Web 绑定一起接入并做类型验证。所有调用必须经 editor-api（I-01），同一时刻只注册一个 core 后端（I-05）。"
+}

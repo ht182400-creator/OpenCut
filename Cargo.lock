@@ -3538,6 +3538,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ocx-editor-api"
+version = "0.1.0"
+dependencies = [
+ "ocx-time",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ocx-time"
 version = "0.1.0"
 dependencies = [
