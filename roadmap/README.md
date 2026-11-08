@@ -504,9 +504,9 @@ pwsh C:\Users\ht182\.codebuddy\skills\fork-repo-sync\scripts\sync-upstream.ps1
 pwsh C:\Users\ht182\.codebuddy\skills\fork-repo-sync\scripts\sync-upstream.ps1 -ExcludeDirs ".codebuddy","secrets"
 ```
 
-> 脚本默认排除 `.codebuddy/`（内部/敏感目录）。本仓库 `.gitignore` 忽略 `docs/` 但不忽略 `roadmap/`，因此**文档可以随 fork 正常提交**；`.codebuddy/` 目前未被 `.gitignore` 忽略，推送时务必显式排除（skill 已警告）。
+> 脚本默认排除 `.codebuddy/`，但 **2026-11-08 用户已决定把开发记录 `.codebuddy/memory/2026-11-08.md` 显式纳入版本控制并推送到 origin 与 forgejo**；使用 `sync-upstream.ps1` 时可传 `-ExcludeDirs @()` 避免误报警告（该检查只是 warning，不阻断推送）。本仓库 `.gitignore` 忽略 `docs/` 但不忽略 `roadmap/`，文档可随 fork 正常提交。
 
-**禁止清单**：`git push --force` / `git reset --hard` / `git merge -X theirs` / `git add -A` 盲提 / 把 `.codebuddy/`、`.env.local`、密钥推送到公开 fork。
+**禁止清单**：`git push --force` / `git reset --hard` / `git merge -X theirs` / `git add -A` 盲提（开发记录须逐个显式暂存）/ 把 `.env.local`、密钥等敏感文件推送到公开 fork。
 
 ### 7.6 冲突处理模板
 
@@ -525,7 +525,7 @@ pwsh C:\Users\ht182\.codebuddy\skills\fork-repo-sync\scripts\sync-upstream.ps1 -
 | --- | --- | --- | --- | --- | --- |
 | D01 | 新增 `readmCN.md` | 新增文件 | `e6680107` | 无 | — |
 | D02 | 新增 `roadmap/`（本文、热点、看板、css/js） | 新增目录 | `e6680107` | 无 | — |
-| D03 | 新增 `.codebuddy/memory/2026-11-08.md` | 新增目录 | `e6680107` | 无 | **推送时排除** |
+| D03 | 新增 `.codebuddy/memory/2026-11-08.md` | 新增文件（已跟踪） | `01e53c98` | 无 | **2026-11-08 用户决定显式纳入版本控制并双推**；仍禁止 `git add -A` 盲提其它内部文件 |
 | D04 | M0 时修改根 `Cargo.toml`（取消注释 `'crates/*'`） | 追加式改动 | 待更新 | 中 | 每次同步后复查 members |
 | D05 | M0 时修改 `.github/workflows/bun-ci.yml`（加 Rust 任务） | 追加式改动 | 待更新 | 中 | 每次同步后复查 CI |
 | D06 | M0 时追加 `.gitignore`（`.cache/media`、`.codebuddy/`） | 追加式改动 | 待更新 | 低 | 追加在文件末尾 |

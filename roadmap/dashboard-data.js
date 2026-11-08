@@ -77,5 +77,5 @@ const QUESTIONS = [
   { id: "Q05", text: "OTIO 作为原生格式还是仅交换格式？", status: DECISION_STATUS.OPEN, due: "M2 开始前", decision: "", source: "HOTSPOTS.md" },
   { id: "Q06", text: "上游若落地官方 Editor API，本地是否切换？", status: DECISION_STATUS.OPEN, due: "上游发布时", decision: "已有决策框架（README §7.9 / COMPAT §6），最终路线待发布时按判据打分", source: "COMPAT.md" },
   { id: "Q07", text: "Web 导出继续用 WebCodecs 还是统一走 FFmpeg-WASM？", status: DECISION_STATUS.DECIDED, due: "2026-11-08 已决", decision: "WebCodecs（Web）+ 原生 FFmpeg（桌面/headless）；Rust core 出 RenderFrame + ExportProfile", source: "PRIORITY.md" },
-  { id: "Q08", text: "是否把 .codebuddy/ 加入 .gitignore？", status: DECISION_STATUS.DECIDED, due: "2026-11-08 已决", decision: "不加入 .gitignore；靠显式暂存与 skill 排除控制推送", source: "PRIORITY.md" },
+  { id: "Q08", text: "是否把 .codebuddy/ 加入 .gitignore？", status: DECISION_STATUS.DECIDED, due: "2026-11-08 已决", decision: "不加入 .gitignore；开发记录已显式纳入版本控制并推送到 GitHub 与 Forgejo", source: "PRIORITY.md" },
 ];

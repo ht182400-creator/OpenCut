@@ -76,7 +76,7 @@
   ],
   "decisions": {
     "webFirst": { "value": true, "decidedAt": "2026-11-08", "note": "先做 Web 单端，桌面/移动后置；见 PRIORITY.md" },
-    "codebuddyGitignore": { "value": false, "decidedAt": "2026-11-08", "note": "用户决定不加入 .gitignore；靠显式暂存与 skill 排除控制推送" },
+    "codebuddyGitignore": { "value": false, "decidedAt": "2026-11-08", "note": "用户决定不加入 .gitignore；开发记录已显式纳入版本控制并推送到 GitHub 与 Forgejo；仍禁止 git add -A 盲提其它内部文件" },
     "webExportBackend": { "value": "webcodecs", "decidedAt": "2026-11-08", "note": "Rust core 出 RenderFrame+ExportProfile，Web 用 WebCodecs，桌面/headless 用原生 FFmpeg" }
   },
   "antiPatterns": [
@@ -85,6 +85,6 @@
     "在 UI 里写上游类型判断",
     "git merge -X theirs 覆盖本地",
     "把插件逻辑塞进 core",
-    "git add -A 提交 .codebuddy/"
+    "git add -A 盲提未审查的内部文件（.codebuddy/memory/*.md 须逐个显式暂存）"
   ]
 }

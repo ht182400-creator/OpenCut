@@ -86,7 +86,7 @@ flowchart LR
 | **Q05** | OTIO 作为原生格式还是仅交换格式？ | 双轨（推荐）/ 全用 OTIO | M2 开始前 | 倾向双轨 |
 | **Q06** | 上游若落地官方 Editor API，本地是否切换？ | 切换并做适配层 / 继续自有 core / 双轨共存 | 上游发布时 | 已有决策框架（`README.md` §7.9 / `COMPAT.md` §6）；最终路线待发布时按判据打分 |
 | **Q07** | Web 端导出继续用 WebCodecs 还是统一走 FFmpeg-WASM？ | WebCodecs / FFmpeg-WASM | **2026-11-08 已决** | **WebCodecs（Web）+ 原生 FFmpeg（桌面/headless）**；Rust core 出 `RenderFrame`+`ExportProfile`，见 `PRIORITY.md` §4 |
-| **Q08** | 是否把 `.codebuddy/` 加入 `.gitignore`？ | 加入 / 不加入 | **2026-11-08 已决** | **不加入**（用户决定）；靠显式暂存与 skill 排除控制推送，见 `PRIORITY.md` §5 |
+| **Q08** | 是否把 `.codebuddy/` 加入 `.gitignore`？ | 加入 / 不加入 | **2026-11-08 已决** | **不加入**（用户决定）；且开发记录 `.codebuddy/memory/2026-11-08.md` 已显式纳入版本控制并推送到 GitHub 与 Forgejo，见 `PRIORITY.md` §5 |
 
 ---
 
@@ -106,6 +106,7 @@ flowchart LR
 | 2026-11-08 | 落实四项用户决策：新增 `PRIORITY.md`（Web-first 15 项优先级表、W0~W5、导出后端决策）、`COMPAT.md`（兼容基石）、`compat-contract.json` + `compat.test.cjs`（41 断言全绿）；ADR-10~13、Q07/Q08 已决、新增 H14 | `README.md` §0/§9/§11 |
 | 2026-11-08 | 看板数据同步 H13/H14 与 Q07/Q08 已决状态，回归测试期望同步更新 | `dashboard-data.js` / `dashboard.test.cjs` |
 | 2026-11-08 | 修复「开放问题区显示旧文案」：根因为浏览器缓存旧 `dashboard-data.js` 且该区缺少状态/结论字段。已重构为**决策台账**（待决/已决徽章 + 结论 + 来源 + 筛选 + 统计），加脚本 `?v=20261108-r2` 缓存版本号、页首数据版本与「重新加载数据」按钮；新增契约↔看板交叉校验 | `dashboard.html` / `dashboard-data.js` / `dashboard.js` / `dashboard.css` |
+| 2026-11-08 | 用户决定把开发记录 `.codebuddy/memory/2026-11-08.md` 也推到 GitHub 与 Forgejo；同步更新 D03 台账、`PRIORITY.md` §5、Q08、`dashboard-data.js`、`compat-contract.json`、`COMPAT.md` 中关于「排除推送」的旧表述 | `README.md` §7.5/§7.7 |
 
 ---
 

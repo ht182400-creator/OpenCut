@@ -12,7 +12,7 @@
 | # | 议题 | 决策 | 落点 |
 | --- | --- | --- | --- |
 | 1 | 改造顺序 | **Web 单端优先**，桌面/移动后置；重排为 W0~W5 | 本文 §2 / §3 |
-| 2 | `.codebuddy/` | **不加入 `.gitignore`**（用户决定）；靠显式暂存与 skill 排除控制推送 | 本文 §5、`README.md` §7.5 |
+| 2 | `.codebuddy/` | **不加入 `.gitignore`**（用户决定）；开发记录已显式纳入版本控制并推送到 GitHub 与 Forgejo（2026-11-08） | 本文 §5、`README.md` §7.5 |
 | 3 | Web 导出 | **WebCodecs（Web）+ 原生 FFmpeg（桌面/headless）双后端**；Rust core 只输出 `RenderFrame` + `ExportProfile` | 本文 §4 |
 | 4 | C→B 兼容 | 定为**基石**，P0 即落地命名空间隔离、契约、适配层与回归网 | [`COMPAT.md`](COMPAT.md) |
 
@@ -180,11 +180,11 @@ Web 端不引入 FFmpeg → 无 LGPL 负担；桌面/headless 沿用重写版已
 
 | 后果 | 约束 / 操作 |
 | --- | --- |
-| `git status` 会持续显示 `?? .codebuddy/` | 这是**预期状态**，不是待清理的垃圾 |
-| 容易误 `git add -A` 把内部文件推到公开 fork | **禁止 `git add -A` / `git add .`**；一律显式 `git add <具体文件>` |
-| skill 默认排除 | `sync-upstream.ps1 -ExcludeDirs ".codebuddy"` 保持默认，不改脚本 |
-| 是否纳入版本控制 | 由你显式决定：若希望记忆随 fork 同步，显式 `git add .codebuddy/memory/2026-11-08.md` 并在 `README.md` §7.7 台账登记；若只作本地数据，保持不暂存即可 |
-| Q08 状态 | `HOTSPOTS.md` Q08 从「倾向加入」改为 **「已决定：不加入」** |
+| 版本控制状态 | **已纳入**：`.codebuddy/memory/2026-11-08.md` 于 2026-11-08 显式 `git add` 并推送到 GitHub 与 Forgejo，`git status` 不再显示 `?? .codebuddy/` |
+| 容易误 `git add -A` 把其它内部文件推到公开 fork | **禁止 `git add -A` / `git add .`**；一律显式 `git add <具体文件>`，开发记录逐文件暂存 |
+| skill 默认排除 | `sync-upstream.ps1` 默认 `-ExcludeDirs ".codebuddy"` 会误报警告（仅 warning，不阻断）；使用时可传 `-ExcludeDirs @()`，脚本本身不改 |
+| 台账登记 | `README.md` §7.7 D03 已更新为「显式纳入版本控制并双推」 |
+| Q08 状态 | `HOTSPOTS.md` Q08：**不加入 `.gitignore`**（不变）；开发记录纳入版本控制（增加说明） |
 
 > 系统侧说明：`.codebuddy/` 是项目相关数据存储，**不是临时缓存**，不得删除；本决策不改变这一点。
 

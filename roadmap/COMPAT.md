@@ -189,7 +189,7 @@ stateDiagram-v2
 | 6 | 六项全绿后停注册本地 impl，代码移到 `local/legacy/` 并打 tag | 契约测试 + `cargo test --workspace` 全绿 |
 | 7 | 更新台账、HOTSPOTS、ADR-09 | 文档与代码同 PR |
 
-**反模式（禁止）**：直接删本地实现再改调用方；两套 core 同时注册；在 UI 里写上游类型判断；用 `-X theirs` 覆盖；把插件逻辑塞进 core；`git add -A` 提交 `.codebuddy/`。
+**反模式（禁止）**：直接删本地实现再改调用方；两套 core 同时注册；在 UI 里写上游类型判断；用 `-X theirs` 覆盖；把插件逻辑塞进 core；`git add -A` 盲提未审查的内部文件（`.codebuddy/memory/*.md` 已获授权纳入版本控制，但仍须逐个显式暂存）。
 
 ---
 
