@@ -1,0 +1,30 @@
+//! OpenCut 本地 core 的领域层（W-05 第一批）。
+//!
+//! 本 crate 把经典版 `apps/web/src/ripple/` 的纯算法规则翻译成 Rust，
+//! 时间单位由「浮点秒」改为 `MediaTime` 的整数 ticks（120,000 ticks/秒）。
+//! 线性换算不改变算法语义，却消除了浮点比较带来的边界漂移。
+//!
+//! 对齐证据：`tests/fixtures/ripple_cases.json` 同时被
+//! `tests/golden_master.rs`（Rust）与 `tests/ripple-alignment.test.mjs`（经典版 TS 的 JS 参考实现）消费，
+//! 三者对同一份期望值比对；用例与文档见 `tests/CASES.md`。
+
+pub mod ripple;
+pub mod types;
+
+pub use ocx_time::TICKS_PER_SECOND;
+pub use ripple::{apply_ripple_adjustments, compute_ripple_adjustments, ripple_shift_elements};
+pub use types::{RippleAdjustment, SceneTracks, TimedElement, TimelineTrack};
+
+/// 把秒换算为 ticks（线性换算，四舍五入到最近 tick）。
+pub fn seconds_to_ticks(seconds: f64) -> i64 {
+    if !seconds.is_finite() {
+        return 0;
+    }
+    let scaled = seconds * TICKS_PER_SECOND as f64;
+    scaled.round().clamp(i64::MIN as f64, i64::MAX as f64) as i64
+}
+
+/// 把 ticks 换算为秒（供 UI / 交换格式使用）。
+pub fn ticks_to_seconds(ticks: i64) -> f64 {
+    ticks as f64 / TICKS_PER_SECOND as f64
+}

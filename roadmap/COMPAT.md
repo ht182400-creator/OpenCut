@@ -205,12 +205,12 @@ local/crates/                    # W-02 建立目录 ✅
 ├── ocx-editor-api/              # ✅ W-03：EditorApi/Command、版本化信封、能力发现、单后端注册、undo/redo、内置参考后端
 ├── ocx-bridge/                  # ✅ W-04：经典版 bridge 迁入（关 wasm）
 ├── ocx-time/                    # ✅ W-04：经典版 time 迁入 + golden master
-├── ocx-domain/                  # ⏳ W-05：serde schema、ripple、placement
+├── ocx-domain/                  # ✅ W-05 第一批：ripple（diff/shift/apply）+ 跨语言 golden master；⏳ serde schema / placement / animation 待续
 └── ocx-plugin-host/             # ⏳ W-12
 apps/web/src/local/              # 目录 ✅；契约 JSON 与契约测试 ✅；TS 适配层 ⏳ W-06
 ```
 
-**当前状态说明（诚实边界）**：`ocx-time` / `ocx-bridge` / `ocx-editor-api` 三个 crate 已真实落地，用 `cargo 1.97.0` 完成 `fmt --check` / `clippy -D warnings` / `cargo test` 全绿验证；`apps/web/src/local/editor-api.contract.json` 与 5 项 Node 契约测试保证 Rust 常量、命令清单、错误码与 Web 契约不漂移；`moon ci` 与三端 dev/check 冒烟已实跑通过（H03 已关闭，见 `H03-toolchain-bootstrap.md`）。**仍未完成**：WIT 插件契约、TS 适配层（W-06 随 Web 绑定接入并做类型验证）。因此不创建无法验证的 TS 半成品。
+**当前状态说明（诚实边界）**：`ocx-time` / `ocx-bridge` / `ocx-editor-api` / `ocx-domain` 四个 crate 已真实落地，用 `cargo 1.97.0` 完成 `fmt --check` / `clippy -D warnings` / `cargo test` 全绿验证；`ocx-domain` 的 18 个 JSON golden 用例由 Rust 与经典版 TS 的 JS 参考实现共用同一期望值（对齐 64/64）；`apps/web/src/local/editor-api.contract.json` 与 5 项 Node 契约测试保证 Rust 常量、命令清单、错误码与 Web 契约不漂移；`moon ci` 与三端 dev/check 冒烟已实跑通过（H03 已关闭，见 `H03-toolchain-bootstrap.md`）。**仍未完成**：WIT 插件契约、TS 适配层（W-06 随 Web 绑定接入并做类型验证）、domain 的 placement/animation/schema 后续批次。因此不创建无法验证的 TS 半成品。
 
 ---
 

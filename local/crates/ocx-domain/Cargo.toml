@@ -1,0 +1,17 @@
+[package]
+name = "ocx-domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenCut 本地 core：领域模型与 ripple 编辑（经典版 TS 规则的 Rust 翻译）"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+ocx-time = { path = "../ocx-time" }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
