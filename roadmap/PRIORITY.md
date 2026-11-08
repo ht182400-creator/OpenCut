@@ -59,14 +59,14 @@
 
 | 任务 | 状态 | 实证 |
 | --- | --- | --- |
-| W-01 | **已完成** | `bun 1.3.11` / `moon 2.3.3` / `rustc 1.97.0` 已安装并对齐；`moon ci` 三个 Rust 任务全绿；`web:dev`（HTTP 200）、`api:dev`（HTTP 200）、`desktop:check`（退出码 0）冒烟通过。`proto` 例外见 §6 |
+| W-01 | **已完成** | `bun 1.3.11` / `moon 2.3.3` / `rustc 1.97.0` 已安装并对齐；`moon ci` 三个 Rust 任务全绿；`web:dev`（HTTP 200）、`api:dev`（HTTP 200）、`desktop:check`（退出码 0）冒烟通过。`proto 0.63.2` 已补装（见 §6） |
 | W-02 | **已完成** | 建立 `local/crates/ocx-time`、`local/crates/ocx-bridge`、`apps/web/src/local/`；`Cargo.toml` 与 `.moon/workspace.yml` 以**追加式**启用隔离目录 |
 | W-03 | **Rust 侧已完成** | `local/crates/ocx-editor-api`（版本化 `EditorApi`/`Command`、能力发现、单后端注册、undo/redo、内置参考后端）；6 个内联单测 + 19 个 JSON 序列用例全绿；`apps/web/src/local/editor-api.contract.json` + 5 项跨语言契约测试。剩余：WIT 插件契约与 TS 适配层（W-06 随 Web 绑定接入） |
 | W-04 | **已完成** | 经典版 `time`/`bridge` 迁入（`ocx_` 前缀、默认关闭 `wasm` feature、零浏览器依赖）；`cargo test` 11 个内联单测 + 40 个 JSON 用例全绿，`fmt --check` 与 `clippy` 通过 |
 | W-05 及以后 | 未开始 | — |
 
 > **H03 已关闭**（2026-11-08）：用户授权后由助手实际安装并跑通全部验证。系统另有一套独立 Rust 1.96，需把 `~/.cargo/bin` 置于 PATH 最前使 rustup 项目级 override 生效；根目录没有 `package.json`，依赖须在两个 app 目录分别安装；`moon ci` 默认 base 为 `master`，本仓库为 `main`。完整记录见 [`H03-toolchain-bootstrap.md`](H03-toolchain-bootstrap.md) §6。
-> **唯一例外**：`proto` 的二进制托管在 GitHub Releases，本机 HTTPS 连接持续被重置（`curl --retry 4` 仍失败），官方脚本与手动下载均不通；改用 moon 官方 `MOON_TOOLCHAIN_FORCE_GLOBALS=true` 直接使用全局工具链，等价通过全部检查。若网络恢复可补装 proto 并移除该变量。
+> **proto 已补装**（用户要求「再试试」后）：经 `api.github.com` 的 release asset 端点下载官方 zip、SHA-256 与官方 digest 完全一致、`proto setup` 固化 PATH，`proto use` 已纳管 bun/rust。**残留**：proto 管理的 moon 2.3.3 预编译包仍受 GitHub Releases 限制，故 JS 任务仍需 `MOON_TOOLCHAIN_FORCE_GLOBALS=true`；Rust 任务不需要。详见 `H03-toolchain-bootstrap.md` §2–§3。
 
 **关键路径**：`W-01 → W-02 → W-03 → W-04 → W-05 → W-06 → W-07 → W-08`。
 **与「兼容是基石」的关系**：W-02/W-03 **排在迁代码之前**——先把隔离与契约立起来，再写业务，否则将来切换到上游 core 要重写所有调用方。

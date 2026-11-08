@@ -759,6 +759,7 @@ git push origin main                                  # 绝不 --force
 | **跨语言契约** | `node apps/web/src/local/editor-api.contract.test.mjs` | 5/5 通过：常量、命令、错误码、payload 字段与 Rust 源码一致 |
 | **`moon ci`（H03 已关闭）** | `moon ci --base HEAD~1 --head HEAD ocx-time:test ocx-bridge:test ocx-editor-api:test` | `Tasks: 3 completed`，退出码 0 |
 | **三端冒烟** | `moon run web:dev` / `api:dev` / `desktop:check` | Vite 8.3.6 → HTTP 200；wrangler → `{"status":"ok"}`；`cargo check` 退出码 0 |
+| **proto 补装** | 官方 release zip 经 `api.github.com` asset 端点下载，`Get-FileHash` 与官方 digest 一致；`proto setup --no-modify-profile` | `proto 0.63.2`，PATH 已固化；`proto use` 纳管 bun/rust（moon 预编译包仍受限，见 `H03-toolchain-bootstrap.md`） |
 | 导入测试 | `node dashboard.test.cjs` 用零依赖 DOM 桩按页面顺序加载三个脚本并触发 `init()` | 通过 |
 | 看板回归 | 数据完整性、依赖图、状态机全循环、完成度、持久化往返、渲染、导出/导入 JSON、重置两分支、**决策台账状态/结论与 DOM 渲染、数据版本** | **44 通过 / 0 失败** |
 | **兼容契约回归** | `node compat.test.cjs`：不变量、命名空间、判据权重、状态机、六能力台账、导出决策、三项用户决策、**契约↔看板交叉校验** | **45 通过 / 0 失败** |

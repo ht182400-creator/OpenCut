@@ -45,7 +45,7 @@ const MILESTONES = [
 const HOTSPOTS = [
   { id: "H01", title: "GPUI(blade) 与 wgpu 纹理不互通", priority: "P0", milestone: "M1", status: "阻塞", action: "M1 做离屏 readback spike，记录 1080p 单帧耗时并定 ADR-04" },
   { id: "H02", title: "领域逻辑翻译缺回归网", priority: "P0", milestone: "M2", status: "未开始", action: "先建 JSON 数据驱动 golden master，再动 Rust 翻译" },
-  { id: "H03", title: "本机工具链缺失且版本不符", priority: "P0", milestone: "M0", status: "已完成", action: "bun/moon/rust 1.97 已装并验证；proto 例外见 H03-toolchain-bootstrap.md" },
+  { id: "H03", title: "本机工具链缺失且版本不符", priority: "P0", milestone: "M0", status: "已完成", action: "bun/moon/rust 1.97 与 proto 0.63.2 均已装；moon 预编译包仍受限，JS 任务用 FORCE_GLOBALS" },
   { id: "H04", title: "上游架构未定，长期分叉风险", priority: "P1", milestone: "全程", status: "进行中", action: "落地新增优先 + 差异台账 + git rerere，每 2~4 周小步同步" },
   { id: "H05", title: "原生 Rust 渲染路径从未验证", priority: "P0", milestone: "M1", status: "未开始", action: "补 render_frame_to_texture → Vec<u8> 用例与原生 CI" },
   { id: "H06", title: "workspace 未启用 crates/*", priority: "P0", milestone: "M0", status: "进行中", action: "隔离目录与两个 crate 已迁入并编译通过；剩余 build.rs 与 moon ci 验证" },
@@ -60,8 +60,8 @@ const HOTSPOTS = [
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r4";
-const DATA_UPDATED_AT = "2026-11-08 22:25";
+const DATA_VERSION = "2026-11-08-r5";
+const DATA_UPDATED_AT = "2026-11-08 22:55";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**
