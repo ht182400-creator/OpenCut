@@ -44,7 +44,7 @@ const MILESTONES = [
 /** 热点：与 HOTSPOTS.md §1 的 H 编号一致；milestone 为「全程」时不计入单里程碑完成度。 */
 const HOTSPOTS = [
   { id: "H01", title: "GPUI(blade) 与 wgpu 纹理不互通", priority: "P0", milestone: "M1", status: "阻塞", action: "M1 做离屏 readback spike，记录 1080p 单帧耗时并定 ADR-04" },
-  { id: "H02", title: "领域逻辑翻译缺回归网", priority: "P0", milestone: "M2", status: "进行中", action: "W-05 两批：ocx-domain ripple + placement，共 47 个跨语言 golden 用例（64/64 与 100/100）；剩余 animation/命令层" },
+  { id: "H02", title: "领域逻辑翻译缺回归网", priority: "P0", milestone: "M2", status: "进行中", action: "W-05 三批：ripple + placement + animation，共 72 个跨语言 golden 用例（64/64、100/100、88/88）；剩余 keyframe-query/命令层" },
   { id: "H03", title: "本机工具链缺失且版本不符", priority: "P0", milestone: "M0", status: "已完成", action: "proto 0.63.2 已纳管 bun/moon/rust；moon 官方包校验通过；无需 FORCE_GLOBALS 旁路" },
   { id: "H04", title: "上游架构未定，长期分叉风险", priority: "P1", milestone: "全程", status: "进行中", action: "落地新增优先 + 差异台账 + git rerere，每 2~4 周小步同步" },
   { id: "H05", title: "原生 Rust 渲染路径从未验证", priority: "P0", milestone: "M1", status: "未开始", action: "补 render_frame_to_texture → Vec<u8> 用例与原生 CI" },
@@ -60,8 +60,8 @@ const HOTSPOTS = [
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r8";
-const DATA_UPDATED_AT = "2026-11-09 00:10";
+const DATA_VERSION = "2026-11-08-r9";
+const DATA_UPDATED_AT = "2026-11-09 00:40";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**

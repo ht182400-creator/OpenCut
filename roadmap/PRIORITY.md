@@ -63,7 +63,7 @@
 | W-02 | **已完成** | 建立 `local/crates/ocx-time`、`local/crates/ocx-bridge`、`apps/web/src/local/`；`Cargo.toml` 与 `.moon/workspace.yml` 以**追加式**启用隔离目录 |
 | W-03 | **Rust 侧已完成** | `local/crates/ocx-editor-api`（版本化 `EditorApi`/`Command`、能力发现、单后端注册、undo/redo、内置参考后端）；6 个内联单测 + 19 个 JSON 序列用例全绿；`apps/web/src/local/editor-api.contract.json` + 5 项跨语言契约测试。剩余：WIT 插件契约与 TS 适配层（W-06 随 Web 绑定接入） |
 | W-04 | **已完成** | 经典版 `time`/`bridge` 迁入（`ocx_` 前缀、默认关闭 `wasm` feature、零浏览器依赖）；`cargo test` 11 个内联单测 + 40 个 JSON 用例全绿，`fmt --check` 与 `clippy` 通过 |
-| W-05 | **第一、二批已完成** | 新建 `local/crates/ocx-domain`：① 经典版 `ripple/{diff,shift,apply}.ts` 逐函数翻译，18 个 JSON 用例（Rust 与 JS 参考实现共用期望值，对齐 64/64）；② 经典版 `timeline/placement/` 五组纯函数（compatibility / overlap / main-track / insert-index / resolve）翻译，29 个 JSON 用例对齐 **100/100**；共 9 个补充单测（并发、i64 极值、换算、空场景、文案），`moon run ocx-domain:test` 实跑通过。剩余：animation、命令层、serde 版本化 schema、经典版项目 JSON 兼容层 |
+| W-05 | **三批已完成** | 新建 `local/crates/ocx-domain`：① 经典版 `ripple/{diff,shift,apply}.ts`（18 用例，对齐 64/64）；② `timeline/placement/` 五组纯函数（29 用例，对齐 100/100）；③ `animation/{bezier,interpolation}.ts` 的贝塞尔求解、通道归一化、边界外推与 step/linear/bezier 求值（25 用例，对齐 88/88，浮点按 1e-5 容差）。累计 72 个 JSON 用例、13 个补充单测，`moon run ocx-domain:test` 实跑通过。剩余：`keyframe-query`、命令层、serde 版本化 schema、经典版项目 JSON 兼容层 |
 | W-06 及以后 | 未开始 | — |
 
 > **H03 已关闭**（2026-11-08）：用户授权后由助手实际安装并跑通全部验证。系统另有一套独立 Rust 1.96，需把 `~/.cargo/bin` 置于 PATH 最前使 rustup 项目级 override 生效；根目录没有 `package.json`，依赖须在两个 app 目录分别安装；`moon ci` 默认 base 为 `master`，本仓库为 `main`。完整记录见 [`H03-toolchain-bootstrap.md`](H03-toolchain-bootstrap.md) §6。

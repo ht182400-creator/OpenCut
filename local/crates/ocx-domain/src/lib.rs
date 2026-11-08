@@ -8,10 +8,20 @@
 //! `tests/golden_master.rs`（Rust）与 `tests/ripple-alignment.test.mjs`（经典版 TS 的 JS 参考实现）消费，
 //! 三者对同一份期望值比对；用例与文档见 `tests/CASES.md`。
 
+pub mod animation;
 pub mod placement;
 pub mod ripple;
 pub mod types;
 
+pub use animation::{
+    AnimationChannel, AnimationInterpolation, BEZIER_SOLVE_ITERATIONS, ChannelExtrapolation,
+    CurveHandle, DiscreteChannel, DiscreteKey, DiscreteValue, ExtrapolationMode, ParamValue,
+    ScalarChannel, ScalarKey, ScalarSegmentType, TangentMode, VALUE_EPSILON, get_bezier_point,
+    get_channel_value_at_time, get_default_left_handle, get_default_right_handle,
+    get_discrete_channel_value_at_time, get_scalar_channel_value_at_time,
+    get_scalar_segment_interpolation, normalize_discrete_channel, normalize_scalar_channel,
+    solve_bezier_progress_for_time,
+};
 pub use ocx_time::TICKS_PER_SECOND;
 pub use placement::{
     can_element_go_on_track, can_place_time_spans_on_track, enforce_main_track_start,

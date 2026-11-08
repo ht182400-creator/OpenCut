@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "ticksPerSecond": 120000,
+  "valueEpsilon": 1e-5,
+  "description": "ocx-domain animation golden master；时间为 ticks，数值为 f64，跨语言按 1e-5 容差比较（经典版贝塞尔 20 次二分的固有精度）。同一份期望值由 animation_golden_master.rs 与 animation-alignment.test.mjs 共同比对，ID 与 tests/ANIMATION_CASES.md 一一对应。",
+  "cases": [
+    { "id": "A01", "category": "正常", "kind": "bezierPoint", "input": { "progress": 0.5, "p0": 0, "p1": 0, "p2": 1, "p3": 1 }, "expected": { "value": 0.5 } },
+    { "id": "A02", "category": "边界", "kind": "bezierPoint", "input": { "progress": 0, "p0": 2, "p1": 5, "p2": 7, "p3": 8 }, "expected": { "value": 2 } },
+    { "id": "A03", "category": "边界", "kind": "bezierPoint", "input": { "progress": 1, "p0": 2, "p1": 5, "p2": 7, "p3": 8 }, "expected": { "value": 8 } },
+    { "id": "A04", "category": "正常", "kind": "bezierPoint", "input": { "progress": 0.5, "p0": 0, "p1": 1, "p2": 1, "p3": 1 }, "expected": { "value": 0.875 } },
+    { "id": "A05", "category": "正常", "kind": "defaultHandles", "input": { "leftKey": { "id": "a", "time": 0, "value": 0 }, "rightKey": { "id": "b", "time": 120000, "value": 12 } }, "expected": { "right": { "dt": 40000, "dv": 4 }, "left": { "dt": -40000, "dv": -4 } } },
+    { "id": "A06", "category": "正常", "kind": "solveProgress", "input": { "time": 60000, "leftKey": { "id": "a", "time": 0, "value": 0 }, "rightKey": { "id": "b", "time": 120000, "value": 10 } }, "expected": { "progress": 0.5 } },
+    { "id": "A07", "category": "正常", "kind": "solveProgress", "input": { "time": 30000, "leftKey": { "id": "a", "time": 0, "value": 0 }, "rightKey": { "id": "b", "time": 120000, "value": 10 } }, "expected": { "progress": 0.25 } },
+    { "id": "A08", "category": "边界", "kind": "solveProgress", "input": { "time": 60000, "leftKey": { "id": "a", "time": 0, "value": 0, "rightHandle": { "dt": 0, "dv": 0 } }, "rightKey": { "id": "b", "time": 120000, "value": 10, "leftHandle": { "dt": 0, "dv": 0 } } }, "expected": { "progress": 0.5 } },
+    { "id": "A09", "category": "正常", "kind": "segmentInterpolationAll", "input": {}, "expected": { "step": "hold", "linear": "linear", "bezier": "bezier" } },
+    { "id": "A10", "category": "正常", "kind": "normalizeScalar", "input": { "channel": { "keys": [ { "id": "b", "time": 120000, "value": 10, "leftHandle": { "dt": -999999, "dv": -3 } }, { "id": "a", "time": 0, "value": 0, "rightHandle": { "dt": 999999, "dv": 2 } } ] } }, "expected": { "channel": { "keys": [ { "id": "a", "time": 0, "value": 0, "rightHandle": { "dt": 120000, "dv": 2 }, "segmentToNext": "linear", "tangentMode": "flat" }, { "id": "b", "time": 120000, "value": 10, "leftHandle": { "dt": -120000, "dv": -3 }, "segmentToNext": "linear", "tangentMode": "flat" } ] } } },
+    { "id": "A11", "category": "正常", "kind": "normalizeDiscrete", "input": { "channel": { "keys": [ { "id": "b", "time": 120000, "value": "on" }, { "id": "a", "time": 0, "value": false } ] } }, "expected": { "channel": { "keys": [ { "id": "a", "time": 0, "value": false }, { "id": "b", "time": 120000, "value": "on" } ] } } },
+    { "id": "A12", "category": "正常", "kind": "scalarValue", "input": { "channel": { "keys": [ { "id": "a", "time": 0, "value": 0, "segmentToNext": "linear" }, { "id": "b", "time": 120000, "value": 10 } ] }, "time": 60000, "fallbackValue": -1 }, "expected": { "value": 5 } },
+    { "id": "A13", "category": "正常", "kind": "scalarValue", "input": { "channel": { "keys": [ { "id": "a", "time": 0, "value": 0, "segmentToNext": "step" }, { "id": "b", "time": 120000, "value": 10 } ] }, "time": 60000, "fallbackValue": -1 }, "expected": { "value": 0 } },
+    { "id": "A14", "category": "正常", "kind": "scalarValue", "input": { "channel": { "keys": [ { "id": "a", "time": 0, "value": 0, "segmentToNext": "bezier" }, { "id": "b", "time": 120000, "value": 10 } ] }, "time": 60000, "fallbackValue": -1 }, "expected": { "value": 5 } },
+    { "id": "A15", "category": "边界", "kind": "scalarValue", "input": { "channel": { "keys": [ { "id": "a", "time": 0, "value": 0 }, { "id": "b", "time": 120000, "value": 10 } ] }, "time": -60000, "fallbackValue": -1 }, "expected": { "value": 0 } },
+    { "id": "A16", "category": "边界", "kind": "scalarValue", "input": { "channel": { "extrapolation": { "before": "hold", "after": "linear" }, "keys": [ { "id": "a", "time": 0, "value": 0 }, { "id": "b", "time": 120000, "value": 10 } ] }, "time": 180000, "fallbackValue": -1 }, "expected": { "value": 15 } },
+    { "id": "A17", "category": "边界", "kind": "scalarValue", "input": { "channel": { "keys": [] }, "time": 60000, "fallbackValue": 3 }, "expected": { "value": 3 } },
+    { "id": "A18", "category": "边界", "kind": "scalarValue", "input": { "channel": { "keys": [ { "id": "a", "time": 0, "value": 7 } ] }, "time": 999999, "fallbackValue": -1 }, "expected": { "value": 7 } },
+    { "id": "A19", "category": "边界", "kind": "scalarValue", "input": { "channel": { "keys": [ { "id": "a", "time": 0, "value": 0 }, { "id": "b", "time": 120000, "value": 10 } ] }, "time": 120000, "fallbackValue": -1 }, "expected": { "value": 10 } },
+    { "id": "A20", "category": "正常", "kind": "discreteValue", "input": { "channel": { "keys": [ { "id": "a", "time": 0, "value": false }, { "id": "b", "time": 120000, "value": "on" } ] }, "time": 180000, "fallbackValue": "fallback" }, "expected": { "value": "on" } },
+    { "id": "A21", "category": "边界", "kind": "discreteValue", "input": { "channel": { "keys": [ { "id": "a", "time": 0, "value": false }, { "id": "b", "time": 120000, "value": "on" } ] }, "time": -1, "fallbackValue": "fallback" }, "expected": { "value": "fallback" } },
+    { "id": "A22", "category": "正常", "kind": "channelValue", "input": { "channel": { "keys": [ { "id": "a", "time": 0, "value": 0 }, { "id": "b", "time": 120000, "value": 10 } ] }, "time": 60000, "fallbackValue": 0 }, "expected": { "value": 5 } },
+    { "id": "A23", "category": "异常", "kind": "channelValue", "input": { "channel": { "keys": [ { "id": "a", "time": 0, "value": 0 }, { "id": "b", "time": 120000, "value": 10 } ] }, "time": 60000, "fallbackValue": "mismatch" }, "expected": { "value": "mismatch" } },
+    { "id": "A24", "category": "正常", "kind": "channelValue", "input": { "channel": { "keys": [ { "id": "a", "time": 0, "value": false }, { "id": "b", "time": 120000, "value": true } ] }, "time": 180000, "fallbackValue": false }, "expected": { "value": true } },
+    { "id": "A25", "category": "边界", "kind": "channelValue", "input": { "channel": { "keys": [] }, "time": 60000, "fallbackValue": 42 }, "expected": { "value": 42 } }
+  ]
+}
