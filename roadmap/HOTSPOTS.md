@@ -107,6 +107,9 @@ flowchart LR
 | 2026-11-08 | 看板数据同步 H13/H14 与 Q07/Q08 已决状态，回归测试期望同步更新 | `dashboard-data.js` / `dashboard.test.cjs` |
 | 2026-11-08 | 修复「开放问题区显示旧文案」：根因为浏览器缓存旧 `dashboard-data.js` 且该区缺少状态/结论字段。已重构为**决策台账**（待决/已决徽章 + 结论 + 来源 + 筛选 + 统计），加脚本 `?v=20261108-r2` 缓存版本号、页首数据版本与「重新加载数据」按钮；新增契约↔看板交叉校验 | `dashboard.html` / `dashboard-data.js` / `dashboard.js` / `dashboard.css` |
 | 2026-11-08 | 用户决定把开发记录 `.codebuddy/memory/2026-11-08.md` 也推到 GitHub 与 Forgejo；同步更新 D03 台账、`PRIORITY.md` §5、Q08、`dashboard-data.js`、`compat-contract.json`、`COMPAT.md` 中关于「排除推送」的旧表述 | `README.md` §7.5/§7.7 |
+| 2026-11-08 | 用户提供 SSH 指纹线索用于排查（**指纹值不记录**）：核实为本机 SSH 公钥标识；GitHub 22 端口不通但 `ssh.github.com:443` 认证成功，新增备用远程 `github-ssh`，`ls-remote` 与 `push --dry-run` 均通过 | `README.md` §7.5 |
+| 2026-11-08 | **安全纠正**：用户指出公钥指纹不得写入文档。已从 `README.md` / `HOTSPOTS.md` / 开发记录中清除全部指纹、公钥路径、本机用户名与主机名、绝对路径及账号名，并加入「禁止写入任何公钥/密钥指纹与本机标识」的清单 | `README.md` §7.5 禁止清单 |
+| 2026-11-08 | 用户要求「默认就走 SSH」：`origin` URL 切换为 SSH over 443，`git push` 无参数即走 SSH；不设 `GIT_SSH_COMMAND` 时 `ls-remote` 与 `push --dry-run` 均返回 0；`upstream` 保持 HTTPS，`github-ssh` 保留为冗余备用 | `README.md` §7.5 |
 
 ---
 

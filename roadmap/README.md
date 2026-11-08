@@ -425,7 +425,7 @@ flowchart LR
 2. **语义漂移**：上游重构了目录/接口，你的代码能合并但编译不过（例如上游把 `apps/web` 换框架、改 `Cargo.toml` 的 workspace members）。
 3. **依赖漂移**：上游升级 Rust/bun/wgpu 版本，与你锁定的本地依赖不兼容。
 
-> 当前实测：`origin` = `https://github.com/ht182400-creator/OpenCut.git`，`upstream` = `https://github.com/OpenCut-app/OpenCut.git`，工作区 clean；**上游官方 README 与本地一致，暂无待同步的架构变更**。但重写版明确「架构仍在设计中」，未来必然出现大改，因此现在就要把隔离规则立起来。
+> 当前实测：`origin` = 自己的 fork（默认走 SSH over 443，URL 用 `git remote -v` 查看），`upstream` = 官方只读同步源（HTTPS），工作区 clean；**上游官方 README 与本地一致，暂无待同步的架构变更**。但重写版明确「架构仍在设计中」，未来必然出现大改，因此现在就要把隔离规则立起来。
 
 ### 7.2 上游变更分级响应
 
@@ -499,14 +499,26 @@ git push origin main
 **一键脚本**（已加载的 `fork-repo-sync` skill，自动探测分支、遇冲突/脏工作区中止、从不 force）：
 
 ```powershell
-pwsh C:\Users\ht182\.codebuddy\skills\fork-repo-sync\scripts\sync-upstream.ps1
+pwsh <skill 目录>/fork-repo-sync/scripts/sync-upstream.ps1
 # 需要额外排除目录时：
-pwsh C:\Users\ht182\.codebuddy\skills\fork-repo-sync\scripts\sync-upstream.ps1 -ExcludeDirs ".codebuddy","secrets"
+pwsh <skill 目录>/fork-repo-sync/scripts/sync-upstream.ps1 -ExcludeDirs ".codebuddy","secrets"
 ```
 
-> 脚本默认排除 `.codebuddy/`，但 **2026-11-08 用户已决定把开发记录 `.codebuddy/memory/2026-11-08.md` 显式纳入版本控制并推送到 origin 与 forgejo**；使用 `sync-upstream.ps1` 时可传 `-ExcludeDirs @()` 避免误报警告（该检查只是 warning，不阻断推送）。本仓库 `.gitignore` 忽略 `docs/` 但不忽略 `roadmap/`，文档可随 fork 正常提交。
+> `<skill 目录>` 请以本机实际安装路径替换（用 `git remote -v` 可查远程配置）。脚本默认排除 `.codebuddy/`，但 **2026-11-08 用户已决定把开发记录 `.codebuddy/memory/2026-11-08.md` 显式纳入版本控制并推送到 origin 与 forgejo**；使用 `sync-upstream.ps1` 时可传 `-ExcludeDirs @()` 避免误报警告（该检查只是 warning，不阻断推送）。本仓库 `.gitignore` 忽略 `docs/` 但不忽略 `roadmap/`，文档可随 fork 正常提交。
 
-**禁止清单**：`git push --force` / `git reset --hard` / `git merge -X theirs` / `git add -A` 盲提（开发记录须逐个显式暂存）/ 把 `.env.local`、密钥等敏感文件推送到公开 fork。
+**禁止清单**：`git push --force` / `git reset --hard` / `git merge -X theirs` / `git add -A` 盲提（开发记录须逐个显式暂存）/ 把 `.env.local`、私钥、**任何公钥或密钥指纹**、本机用户名/主机名/绝对路径写入文档或推送到公开 fork。
+
+**GitHub SSH over 443 通道（2026-11-08 起为默认）**：本机已配置并在 GitHub 账号完成 SSH 认证（**公钥内容、指纹与本机标识一律不记录在文档中**）。实测 GitHub 22 端口不可达、HTTPS 443 间歇性超时，但 `ssh.github.com:443` 的 SSH 认证成功，`known_hosts` 中的 GitHub 主机密钥也与官方公布值一致。
+
+```sh
+# origin 已切换为 SSH（用户 2026-11-08 要求「默认就走 SSH」）
+git remote set-url origin ssh://git@ssh.github.com:443/<owner>/<repo>.git
+git ls-remote origin HEAD          # 验证读：应与本地 HEAD 一致
+git push --dry-run origin main     # 验证写权限
+git push                           # 无参数即默认走 SSH
+```
+
+> `<owner>/<repo>` 请用 `git remote -v` 中的实际值替换。**`origin` 现在就是 SSH over 443**，`git push` / `git fetch origin` 默认走该通道，无需再记备用远程；`github-ssh` 保留为同 URL 的冗余备用。实测在**不设置任何 `GIT_SSH_COMMAND`** 的情况下读与写验证均返回 0。`upstream` 仍保持 HTTPS（只读同步源，不受影响）；若其 fetch 遇到超时，可临时 `git -c http.version=HTTP/1.1 fetch upstream`，或另行把 `upstream` 也切到 SSH（需单独评估）。需要回退时执行 `git remote set-url origin https://github.com/<owner>/<repo>.git`（可逆）。
 
 ### 7.6 冲突处理模板
 
