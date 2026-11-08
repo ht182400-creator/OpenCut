@@ -1,0 +1,20 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'rust'
+
+tasks:
+  check:
+    command: 'cargo check -p ocx-bridge'
+    inputs:
+      - 'src/**/*'
+      - 'Cargo.toml'
+      - '/Cargo.toml'
+      - '/Cargo.lock'
+
+  test:
+    command: 'cargo test -p ocx-bridge'
+    inputs:
+      - 'src/**/*'
+      - 'Cargo.toml'
+      - '/Cargo.toml'
+      - '/Cargo.lock'

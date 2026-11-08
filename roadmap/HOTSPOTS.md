@@ -28,17 +28,17 @@
 | **H03** | 本机工具链缺失且版本不符 | P0 | 阻塞 | 所有本地验证 | 实测：`bun`/`moon`/`proto` 均 NOT FOUND；`node_modules` 不存在；`rustc 1.96.0` 低于 `.prototools` 的 `1.97.0` | 安装 proto → `proto use` → `bun install`，逐个跑 `moon run web:dev / api:dev / desktop:dev` | 三个 dev 命令可访问；`moon ci` 在本机通过 | 2026-11-08 |
 | **H04** | 上游架构仍在设计中，长期分叉风险 | P1 | 进行中 | fork 可维护性 | 官方 README（2026-11-08 抓取）仍为 "What's coming"，明说架构设计中、不收外部贡献 | 落地 §7 的「新增优先 + 隔离目录 + 差异台账」；启用 `git rerere`；每 2~4 周小步同步 | `README.md` §7.7 台账与 `git remote -v` 一致；每次同步后 `moon ci` 全绿 | 2026-11-08 |
 | **H05** | 原生 Rust 渲染路径从未验证 | P0 | 未开始 | 桌面端可用性 | 经典版 `apps/desktop/src/main.rs` 仅 42 行且不引用任何 crate；`rust/README.md:29` 只是设计意图；CI 测试步骤是 `echo "No tests implemented yet"`；`GpuContext::try_gl_fallback` 原生直接返回错误 | M1 补 `render_frame_to_texture → Vec<u8>` 用例与原生 CI 任务 | `cargo test --workspace` 包含原生离屏渲染用例，三平台 CI 通过 | 2026-11-08 |
-| **H06** | workspace 尚未启用 `crates/*` | P0 | 未开始 | 所有 crate 迁移 | 本仓库 `Cargo.toml:3-6` 中 `'crates/*'` 被注释，`resolver = "3"`；`crates/media/build.rs` 只存在于 `setup.ts` 注释 | M0 取消注释、迁入 `time`/`bridge`、补 `build.rs` | `cargo test -p time` 通过；`moon ci` 含 Rust 任务 | 2026-11-08 |
+| **H06** | workspace 尚未启用 `crates/*` | P0 | 进行中 | 所有 crate 迁移 | **已完成**：根 `Cargo.toml` 追加 `'local/crates/*'`、`.moon/workspace.yml` 追加 glob、迁入 `ocx-time`/`ocx-bridge` 并编译通过、两个 `moon.yml` 已定义 | 剩余：`crates/media/build.rs` 待写；`moon ci` 待安装 moon 后验证；rust 待升级到 1.97 | `cargo test -p ocx-time -p ocx-bridge` 全绿（已达成）；`moon ci` 含 Rust 任务并全绿（待验证） | 2026-11-08 |
 | **H07** | 插件运行时未选型 | P1 | 未开始 | M5 与「一等插件」路线图 | 调研：Extism 官方默认沙箱/能力限额；WIT Component Model 类型化接口；Figma Realms 的 API 可替换原则 | M2 期间并行做 Extism spike（不占关键路径），验证 wasm32 与原生双目标 | 产出对比数据与 ADR-03 结论；示例插件越权被拒 | 2026-11-08 |
 | **H08** | MCP 规范版本与长任务模型 | P2 | 未开始 | AI Agent / headless | 官方规范 `2026-07-28`：无状态、`server/discover`、Tools/Resources/Prompts、**Sampling/Logging 已弃用**、Tasks extension 承载长请求 | M5 按官方映射实现，避免照抄旧版教程 | MCP 客户端可完成「打开→剪辑→导出」，长导出可查进度 | 2026-11-08 |
-| **H09** | 许可证合规三项 | P1 | 未开始 | 分发合法性 | 经典版 MIT © 2025-2026 vs 重写版 © 2026；FFmpeg 8.1.3 LGPL-2.1-or-later；字体 sprite 无 OFL 声明 | M1 起迁移文件保留版权声明、补 NOTICES；M4 校验 LGPL 随附 | 产物含 `BUILD.md`/`COPYING.LGPLv2.1`；字体归属文件齐备 | 2026-11-08 |
+| **H09** | 许可证合规三项 | P1 | 未开始 | 分发合法性 | 经典版 MIT © 2025-2026 vs 重写版 © 2026（已由 `local/crates/NOTICE.md` 保留声明）；FFmpeg 8.1.3 LGPL-2.1-or-later；字体 sprite 无 OFL 声明 | M4 校验 LGPL 随附；补齐字体归属文件 | 产物含 `BUILD.md`/`COPYING.LGPLv2.1`；字体归属文件齐备 | 2026-11-08 |
 | **H10** | `docs/` 被 `.gitignore` 忽略 | P2 | 已完成 | 文档可同步性 | 本仓库 `.gitignore:7` 为 `docs/` | 已改用 `roadmap/` 目录 | 本文与看板位于 `roadmap/` 且 `git status` 可见 | 2026-11-08 |
 | **H11** | 经典版 31 版项目迁移兼容 | P1 | 未开始 | 老用户数据 | 经典版 `migrations/index.ts` 为 `CURRENT_PROJECT_VERSION = 31`，`migrations/AGENTS.md` 规定 additive-only | M4 写只读兼容层，字段只增不删 | 经典版导出的项目 JSON 能被新 core 打开且剪辑决策不丢失 | 2026-11-08 |
 | **H12** | 4K 预览性能（代理/缓存/快照） | P2 | 未开始 | 使用体验 | 调研：Olive 代理剪辑与 90 秒版本快照、Kdenlive 代理任务、OpenShot 3.5.1 Optimize Preview | M4 引入代理文件 + 预览帧缓存；M6 加时间线版本快照 | 4K 素材 scrub 无卡顿（设定量化阈值后再测），快照可回溯 | 2026-11-08 |
 | **H13** | 上游落地六项能力导致双实现收敛（L3） | P1 | 进行中 | 全部 M3~M5 能力 | 官方 README 的 Editor API / 插件优先 / Rust core 多端 / MCP / Headless / scripting 与本地计划完全重叠；Git 能自动合并但会产生静默语义冲突 | 按 `README.md` §7.9 先做命名空间隔离（`local/crates/*`、`ocx.*` 工具前缀）、建 `upstream-mirror`、填能力级台账；落地当天用 `git merge-tree --write-tree` 预演 | 六行能力台账填齐（含上游真实路径/SHA）；预演退出码已记录；决策门选定路线；`moon ci` + 三端冒烟全绿 | 2026-11-08 |
-| **H14** | **C→B 兼容层基石尚未落到代码**（用户指定为基石） | P0 | 未开始 | 所有本地能力 | `COMPAT.md` / `compat-contract.json` 已完成规范与可执行契约（41 项测试全绿），但 `local/crates/*`、`editor-api` 适配层、`apps/web/src/local/` 目录尚未建立；本机缺 bun/moon/proto（H03） | W-02 建隔离目录与命名空间；W-03 落 `EditorApi`/`Command` trait、WIT 插件契约、TS 适配层；所有调用强制走适配层（I-01） | `node compat.test.cjs` 全绿；`git ls-files` 中本地新增资产全部在隔离路径；静态检查无绕过适配层的 import；`moon ci` 全绿 | 2026-11-08 |
+| **H14** | **C→B 兼容层基石尚未落到代码**（用户指定为基石） | P0 | 进行中 | 所有本地能力 | **已完成**：`local/crates/ocx-*` 与 `apps/web/src/local/` 隔离目录、`COMPAT.md` 契约、`compat-contract.json` + 45 项契约测试全绿；`ocx-time`/`ocx-bridge` 已迁入并编译通过 | 剩余：W-03 的 `EditorApi`/`Command` trait、WIT 插件契约、TS 适配层；`moon ci` 待工具链 | `node compat.test.cjs` 全绿；`cargo test -p ocx-time` 全绿；本地新增资产全部在隔离路径；无绕过适配层的 import | 2026-11-08 |
 
-**热点分布**：P0 = 6 项（H01/H02/H03/H05/H06/H14）、P1 = 6 项、P2 = 3 项（含已完成的 H10，共 14 项）。**当前关键阻塞是 H03（连环境都没装）→ H01/H05（桌面 GPU 路径）**；H14 是用户指定的基石，规范已完成但代码未落地；H13 属未来触发型风险。
+**热点分布**：P0 = 6 项（H01/H02/H03/H05/H06/H14）、P1 = 6 项、P2 = 3 项（含已完成的 H10，共 14 项）。**当前关键阻塞是 H03（缺 bun/moon/proto、rust 1.96）→ H01/H05（桌面 GPU 路径）**；H06/H14 已由「未开始」推进到「进行中」（W-02/W-04 真实代码落地）；H13 属未来触发型风险。
 
 ---
 
@@ -111,6 +111,7 @@ flowchart LR
 | 2026-11-08 | **安全纠正**：用户指出公钥指纹不得写入文档。已从 `README.md` / `HOTSPOTS.md` / 开发记录中清除全部指纹、公钥路径、本机用户名与主机名、绝对路径及账号名，并加入「禁止写入任何公钥/密钥指纹与本机标识」的清单 | `README.md` §7.5 禁止清单 |
 | 2026-11-08 | 用户要求「默认就走 SSH」：`origin` URL 切换为 SSH over 443，`git push` 无参数即走 SSH；不设 `GIT_SSH_COMMAND` 时 `ls-remote` 与 `push --dry-run` 均返回 0；`upstream` 保持 HTTPS，`github-ssh` 保留为冗余备用 | `README.md` §7.5 |
 | 2026-11-08 | **历史重写完成**（用户明确授权「彻底清除」）：以干净基底 `cb02a1cd`、当前树创建新提交 `93b8d4bd`，丢弃含敏感内容的三个提交；两端用 `--force-with-lease` 改写 `main`；本地 `reflog expire` + `gc --prune=now` 后三个旧对象均已删除，`git log --all` 0 命中 | `.codebuddy/memory/2026-11-08.md` |
+| 2026-11-08 | **Web 版本改造开工（W-02/W-04）**：建立 `local/crates/ocx-time`、`ocx-bridge` 与 `apps/web/src/local/` 隔离目录；追加式启用 `Cargo.toml` members 与 `.moon/workspace.yml` glob；从经典版迁入 `time`/`bridge`（默认关闭 wasm、零浏览器依赖）；新增 40 个 JSON 数据驱动用例 + `CASES.md`；`cargo test` 12 测试函数、`fmt --check`、`clippy` 全绿。H06/H14 由「未开始」→「进行中」 | `PRIORITY.md` §2 进度快照 |
 
 ---
 

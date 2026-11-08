@@ -1,0 +1,25 @@
+[package]
+name = "ocx-time"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenCut 本地 core：MediaTime / FrameRate / Timecode 纯算法"
+
+[lib]
+path = "src/time.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+ocx-bridge = { path = "../ocx-bridge" }
+num-traits = "0.2.19"
+serde = { version = "1", features = ["derive"] }
+# 仅在 wasm feature 下启用：原生与桌面构建不引入任何浏览器依赖
+tsify-next = { version = "0.5", optional = true }
+wasm-bindgen = { version = "0.2.115", optional = true }
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen", "dep:tsify-next", "tsify-next/js"]
+
+[dev-dependencies]
+serde_json = "1"

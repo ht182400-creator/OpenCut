@@ -55,6 +55,18 @@
 | **W-14** | 桌面 GPUI 接入（spike 先行） | P2 | H01 决策后才有确定方案 | W-07 + M1 spike | GPUI 显示 wgpu 合成帧 | 桌面与 Web 输出像素一致帧 | T+48~56w | R1/H01 |
 | **W-15** | 移动端 / 协同评估 | P2 | 长线 | W-11 | UniFFI 或 flutter_rust_bridge 原型 | 移动端可打开同一项目 JSON | T+56w+ | Q02/Q03 |
 
+### 进度快照（2026-11-08 开工首日）
+
+| 任务 | 状态 | 实证 |
+| --- | --- | --- |
+| W-01 | 部分完成 | 本机 `rustc/cargo 1.96` 可编译验证；`bun`/`moon`/`proto` 仍未安装（H03 未关闭），`moon ci` 未验证 |
+| W-02 | **已完成** | 建立 `local/crates/ocx-time`、`local/crates/ocx-bridge`、`apps/web/src/local/`；`Cargo.toml` 与 `.moon/workspace.yml` 以**追加式**启用隔离目录 |
+| W-03 | 进行中 | `COMPAT.md` + `compat-contract.json` + 45 项契约测试已落地；`EditorApi`/`Command` trait、WIT、TS 适配层待写 |
+| W-04 | **已完成** | 经典版 `time`/`bridge` 迁入（`ocx_` 前缀、默认关闭 `wasm` feature、零浏览器依赖）；`cargo test` 11 个内联单测 + 40 个 JSON 用例全绿，`fmt --check` 与 `clippy` 通过 |
+| W-05 及以后 | 未开始 | — |
+
+> 诚实边界：本机 rustc 1.96 低于 `.prototools` 锁定的 1.97，本次编译验证使用现有工具链完成（edition 2024 所需最低版本为 1.85）。**H03 未关闭**，工具链升级与 `moon ci` 验证仍是待办，不视为绕过版本要求。
+
 **关键路径**：`W-01 → W-02 → W-03 → W-04 → W-05 → W-06 → W-07 → W-08`。
 **与「兼容是基石」的关系**：W-02/W-03 **排在迁代码之前**——先把隔离与契约立起来，再写业务，否则将来切换到上游 core 要重写所有调用方。
 

@@ -48,20 +48,20 @@ const HOTSPOTS = [
   { id: "H03", title: "本机工具链缺失且版本不符", priority: "P0", milestone: "M0", status: "阻塞", action: "安装 proto → proto use → bun install，逐个跑三个 dev" },
   { id: "H04", title: "上游架构未定，长期分叉风险", priority: "P1", milestone: "全程", status: "进行中", action: "落地新增优先 + 差异台账 + git rerere，每 2~4 周小步同步" },
   { id: "H05", title: "原生 Rust 渲染路径从未验证", priority: "P0", milestone: "M1", status: "未开始", action: "补 render_frame_to_texture → Vec<u8> 用例与原生 CI" },
-  { id: "H06", title: "workspace 未启用 crates/*", priority: "P0", milestone: "M0", status: "未开始", action: "取消注释，迁入 time/bridge，补 crates/media/build.rs" },
+  { id: "H06", title: "workspace 未启用 crates/*", priority: "P0", milestone: "M0", status: "进行中", action: "隔离目录与两个 crate 已迁入并编译通过；剩余 build.rs 与 moon ci 验证" },
   { id: "H07", title: "插件运行时未选型", priority: "P1", milestone: "M3", status: "未开始", action: "M2 期间并行做 Extism spike，验证 wasm32 与原生双目标" },
   { id: "H08", title: "MCP 规范版本与长任务模型", priority: "P2", milestone: "M5", status: "未开始", action: "按 2026-07-28 规范实现，Tasks extension 承载长导出" },
-  { id: "H09", title: "许可证合规（MIT/LGPL/OFL）", priority: "P1", milestone: "全程", status: "未开始", action: "补 NOTICES、LGPL 随附、字体归属文件" },
+  { id: "H09", title: "许可证合规（MIT/LGPL/OFL）", priority: "P1", milestone: "全程", status: "未开始", action: "MIT 声明已由 NOTICE.md 保留；剩余 LGPL 随附与字体归属" },
   { id: "H10", title: "docs/ 被 .gitignore 忽略", priority: "P2", milestone: "M0", status: "已完成", action: "已改用 roadmap/，文档可随 fork 正常提交" },
   { id: "H11", title: "经典版 31 版项目迁移兼容", priority: "P1", milestone: "M4", status: "未开始", action: "M4 写 additive-only 只读兼容层并补迁移测试" },
   { id: "H12", title: "4K 预览性能（代理/缓存/快照）", priority: "P2", milestone: "M6", status: "未开始", action: "引入代理文件与预览帧缓存，量化 scrub 指标后再验收" },
   { id: "H13", title: "上游落地六项能力导致双实现收敛（L3）", priority: "P1", milestone: "全程", status: "进行中", action: "按 README.md §7.9 做命名空间隔离、upstream-mirror、能力台账与 merge-tree 预演" },
-  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "未开始", action: "W-02 建 local/crates/* 隔离目录；W-03 落 EditorApi/Command/WIT/TS 适配层" },
+  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "隔离目录与契约已落地；剩余 EditorApi/Command trait、WIT 与 TS 适配层" },
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r2";
-const DATA_UPDATED_AT = "2026-11-08 12:35";
+const DATA_VERSION = "2026-11-08-r3";
+const DATA_UPDATED_AT = "2026-11-08 21:20";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**

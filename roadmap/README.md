@@ -750,10 +750,13 @@ git push origin main                                  # 绝不 --force
 | 检查项 | 命令 / 方式 | 结果 |
 | --- | --- | --- |
 | 编译 / 语法 | `node --check` 五个脚本（data / io / 主逻辑 / 看板测试 / 契约测试）+ `JSON.parse` 校验契约 | 全部通过 |
+| **Rust core 回归** | `cargo test -p ocx-time -p ocx-bridge`：11 个内联单测 + `tests/golden_master.rs` 内 40 个 JSON 数据驱动用例（正常/边界/异常三类齐全，含案例文档 ID 一一对应校验） | **12 个测试函数全绿**，退出码 0 |
+| Rust 静态检查 | `cargo fmt --check -p ocx-time -p ocx-bridge` 与 `cargo clippy --all-targets` | 均通过，0 警告 |
+| Rust 依赖隔离 | `cargo tree -p ocx-time` | 仅 `num-traits` / `serde` / `ocx-bridge`，**零 wasm-bindgen / web-sys**（`default = []`） |
 | 导入测试 | `node dashboard.test.cjs` 用零依赖 DOM 桩按页面顺序加载三个脚本并触发 `init()` | 通过 |
 | 看板回归 | 数据完整性、依赖图、状态机全循环、完成度、持久化往返、渲染、导出/导入 JSON、重置两分支、**决策台账状态/结论与 DOM 渲染、数据版本** | **44 通过 / 0 失败** |
 | **兼容契约回归** | `node compat.test.cjs`：不变量、命名空间、判据权重、状态机、六能力台账、导出决策、三项用户决策、**契约↔看板交叉校验** | **45 通过 / 0 失败** |
-| 缓存版本校验 | `dashboard.html` 的 CSS/JS 均带 `?v=20261108-r2`；去掉查询参数后资源存在 | 4/4 通过 |
+| 缓存版本校验 | `dashboard.html` 的 CSS/JS 均带 `?v=20261108-r3`；去掉查询参数后资源存在 | 4/4 通过 |
 | 边界与异常 | 未知 ID、非法状态、脏 JSON、版本不匹配、取消重置、空契约、权重不等、非法路径、预填上游 SHA | 全部按预期回退或拒绝，无未捕获异常 |
 | 测试日志 | 分层 `INFO / PASS / FAIL`，FAIL 标红；落盘到系统临时目录 `opencut-*-test-YYYYMMDDHHMMSS.log` | 已生成，不污染仓库 |
 | 静态诊断 | IDE diagnostics（JS / HTML / CSS） | 0 条 |

@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "description": "ocx-time golden master 用例；每个 id 与 tests/CASES.md 一一对应，覆盖正常值、边界值与异常值。",
+  "cases": [
+    { "id": "T01", "kind": "from_seconds", "category": "正常", "input": { "seconds": 0.0 }, "expected": 0 },
+    { "id": "T02", "kind": "from_seconds", "category": "正常", "input": { "seconds": 1.0 }, "expected": 120000 },
+    { "id": "T03", "kind": "from_seconds", "category": "正常", "input": { "seconds": 0.25 }, "expected": 30000 },
+    { "id": "T04", "kind": "from_seconds", "category": "边界", "input": { "seconds": -1.25 }, "expected": -150000 },
+    { "id": "T05", "kind": "from_seconds", "category": "边界", "input": { "seconds": 1000000000000.0 }, "expected": 120000000000000000 },
+    { "id": "T06", "kind": "from_seconds", "category": "异常", "input": { "seconds": 1e300 }, "expected": null },
+    { "id": "T07", "kind": "from_seconds_non_finite", "category": "异常", "input": { "variant": "nan" }, "expected": null },
+    { "id": "T08", "kind": "from_seconds_non_finite", "category": "异常", "input": { "variant": "inf" }, "expected": null },
+    { "id": "T09", "kind": "from_seconds_non_finite", "category": "异常", "input": { "variant": "neg_inf" }, "expected": null },
+
+    { "id": "F01", "kind": "ticks_per_frame", "category": "正常", "input": { "numerator": 24000, "denominator": 1001 }, "expected": 5005 },
+    { "id": "F02", "kind": "ticks_per_frame", "category": "正常", "input": { "numerator": 30000, "denominator": 1001 }, "expected": 4004 },
+    { "id": "F03", "kind": "ticks_per_frame", "category": "正常", "input": { "numerator": 30, "denominator": 1 }, "expected": 4000 },
+    { "id": "F04", "kind": "ticks_per_frame", "category": "正常", "input": { "numerator": 120, "denominator": 1 }, "expected": 1000 },
+    { "id": "F05", "kind": "ticks_per_frame", "category": "边界", "input": { "numerator": 0, "denominator": 1 }, "expected": null },
+    { "id": "F06", "kind": "ticks_per_frame", "category": "异常", "input": { "numerator": 1, "denominator": 0 }, "expected": null },
+    { "id": "F07", "kind": "ticks_per_frame", "category": "异常", "input": { "numerator": 7, "denominator": 3 }, "expected": null },
+    { "id": "F08", "kind": "ticks_per_frame", "category": "边界", "input": { "numerator": 4294967295, "denominator": 1 }, "expected": null },
+
+    { "id": "R01", "kind": "round_to_frame", "category": "正常", "input": { "ticks": 4000, "numerator": 30, "denominator": 1 }, "expected": 4000 },
+    { "id": "R02", "kind": "round_to_frame", "category": "边界", "input": { "ticks": 5999, "numerator": 30, "denominator": 1 }, "expected": 4000 },
+    { "id": "R03", "kind": "round_to_frame", "category": "边界", "input": { "ticks": 6000, "numerator": 30, "denominator": 1 }, "expected": 8000 },
+    { "id": "R04", "kind": "round_to_frame", "category": "正常", "input": { "ticks": 2503, "numerator": 24000, "denominator": 1001 }, "expected": 5005 },
+    { "id": "R05", "kind": "round_to_frame", "category": "异常", "input": { "ticks": 0, "numerator": 0, "denominator": 1 }, "expected": null },
+    { "id": "R06", "kind": "round_to_frame", "category": "边界", "input": { "ticks": -1, "numerator": 30, "denominator": 1 }, "expected": 0 },
+
+    { "id": "A01", "kind": "is_frame_aligned", "category": "正常", "input": { "ticks": 4000, "numerator": 30, "denominator": 1 }, "expected": true },
+    { "id": "A02", "kind": "is_frame_aligned", "category": "边界", "input": { "ticks": 4001, "numerator": 30, "denominator": 1 }, "expected": false },
+    { "id": "A03", "kind": "is_frame_aligned", "category": "异常", "input": { "ticks": 0, "numerator": 7, "denominator": 3 }, "expected": null },
+
+    { "id": "C01", "kind": "clamp", "category": "正常", "input": { "ticks": 5000, "min": 0, "max": 4000 }, "expected": 4000 },
+    { "id": "C02", "kind": "clamp", "category": "边界", "input": { "ticks": -10, "min": 0, "max": 4000 }, "expected": 0 },
+    { "id": "C03", "kind": "clamp", "category": "正常", "input": { "ticks": 2000, "min": 0, "max": 4000 }, "expected": 2000 },
+
+    { "id": "G01", "kind": "guess_timecode_format", "category": "正常", "input": { "timeCode": "01:23" }, "expected": "MM:SS" },
+    { "id": "G02", "kind": "guess_timecode_format", "category": "正常", "input": { "timeCode": "01:02:03" }, "expected": "HH:MM:SS" },
+    { "id": "G03", "kind": "guess_timecode_format", "category": "正常", "input": { "timeCode": "01:02:03:04" }, "expected": "HH:MM:SS:FF" },
+    { "id": "G04", "kind": "guess_timecode_format", "category": "边界", "input": { "timeCode": "" }, "expected": null },
+    { "id": "G05", "kind": "guess_timecode_format", "category": "异常", "input": { "timeCode": "abc" }, "expected": null },
+    { "id": "G06", "kind": "guess_timecode_format", "category": "边界", "input": { "timeCode": "01" }, "expected": null },
+
+    { "id": "M01", "kind": "format_timecode", "category": "正常", "input": { "ticks": 0 }, "expected": "00:00:00:00" },
+    { "id": "M02", "kind": "format_timecode", "category": "正常", "input": { "ticks": 120000 }, "expected": "00:00:01:00" },
+    { "id": "M03", "kind": "format_timecode", "category": "边界", "input": { "ticks": 7830000 }, "expected": "00:01:05:25" },
+    { "id": "M04", "kind": "format_timecode", "category": "边界", "input": { "ticks": -1 }, "expected": "00:00:00:00" },
+    { "id": "M05", "kind": "format_timecode", "category": "正常", "input": { "ticks": 7830000, "format": "MM:SS" }, "expected": "01:05" }
+  ]
+}
