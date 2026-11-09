@@ -187,7 +187,7 @@ function main() {
     // 直接验证决策台账 DOM 已更新，避免「数据改了但页面没渲染」的回归
     assertEqual("决策台账渲染卡片数", env.elements["question-list"].children.length, EXPECTED_QUESTIONS);
     assertEqual("统计显示已决 2 项", env.elements["question-stats"].textContent.includes("已决 2"), true);
-    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r16"), true);
+    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r17"), true);
 
     // 5. 持久化往返：改状态 → 保存 → 新环境读取
     env.context.__t.getState().hotspots.H03 = "已完成";

@@ -21,8 +21,10 @@ import {
 } from '../local/editor-ui'
 import { exportProjectToMp4, isExportSupported } from '../local/export'
 import {
+  clearFrameCache,
   createDemoVideoFile,
   decodeVideoFile,
+  getFrameCacheStats,
   isVideoFile,
   mediaFrameAt,
   type DecodedMedia,
@@ -102,7 +104,7 @@ function effectiveDuration(elements: CoreElement[]): number {
 
 /**
  * Web-first 编辑器：导入项目 JSON 与真实音视频素材 → 删除/分割片段 →
- * 逐帧预览（按片段 trimStart 映射到素材帧）→ 带 AAC 音轨导出 MP4。
+ * 逐帧预览（代理帧缓存 + 片段 trimStart 映射）→ 带 AAC 音轨导出 MP4。
  * 所有 core 调用都经 `editor-adapter`（I-01），错误统一友好提示。
  * @returns {React.ReactElement} 页面
  */
@@ -118,6 +120,7 @@ function Editor() {
   const [playing, setPlaying] = useState(false)
   const [media, setMedia] = useState<DecodedMedia | null>(null)
   const [mediaStatus, setMediaStatus] = useState('未加载素材')
+  const [cacheInfo, setCacheInfo] = useState('代理缓存 0 份')
   const [exportState, setExportState] = useState<ExportState>({
     status: 'idle', done: 0, total: 0, message: '', url: null, bytes: 0,
   })
@@ -125,6 +128,14 @@ function Editor() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const projectFileRef = useRef<HTMLInputElement>(null)
   const videoFileRef = useRef<HTMLInputElement>(null)
+
+  /** 刷新缓存统计展示。 */
+  const refreshCacheInfo = () => {
+    const stats = getFrameCacheStats()
+    setCacheInfo(
+      `代理缓存 ${stats.entries} 份 / ${stats.cachedFrames} 帧 / ${(stats.cachedBytes / 1048576).toFixed(1)}MB · 命中 ${stats.hits} / 未命中 ${stats.misses}`,
+    )
+  }
 
   /** 载入项目 JSON 文本并初始化会话。 */
   const loadProject = async (text: string, name: string) => {
@@ -179,6 +190,7 @@ function Editor() {
       }
     }
     void load()
+    refreshCacheInfo()
   }, [])
 
   /** 删除选中片段，由 core 计算并应用 ripple。 */
@@ -194,8 +206,6 @@ function Editor() {
       const applied = session.adapter.evaluate<ApplyResponse>({
         kind: 'rippleApply', tracks: before, adjustments: ripple.adjustments,
       })
-      // applyRippleAdjustments 只做位移、不删除元素；按 after 的 id 集合移除被删片段，
-      // 并从原片段表恢复 trimStart（core 的 TimedElement 不携带素材裁剪信息）
       const remainingIds = new Set(after.map((item) => item.id))
       const trimById = new Map(elements.map((item) => [item.id, item.trimStart]))
       const next = applied.tracks.main.elements
@@ -229,7 +239,7 @@ function Editor() {
     setPlaying(false)
   }
 
-  /** 生成当前帧像素：按片段 trimStart 取素材帧，交给 core 合成。 */
+  /** 生成当前帧像素：按片段 trimStart 取代理帧，交给 core 合成。 */
   const frameSource = (index: number): Uint8Array => {
     if (!session) throw new Error('会话尚未就绪')
     const timeTicks = index * session.ticksPerFrame
@@ -342,9 +352,13 @@ function Editor() {
           frameCount: Math.min(frameCount, MAX_DECODE_FRAMES),
           onProgress: (done, total) => setMediaStatus(`解码中 ${done}/${total}`),
         })
+        const cost = decoded.fromCache ? '代理缓存命中 · 0ms' : `解码 ${decoded.decodeMilliseconds}ms`
         setMedia(decoded)
-        setMediaStatus(`已载入 ${decoded.name} · ${decoded.frames.length} 帧 · ${decoded.durationSeconds.toFixed(2)}s · ${decoded.audio ? '含音轨' : '无音轨'}`)
+        setMediaStatus(
+          `已载入 ${decoded.name} · ${decoded.frames.length} 代理帧 · ${decoded.durationSeconds.toFixed(2)}s · ${decoded.audio ? '含音轨' : '无音轨'} · ${cost}`,
+        )
         setFrameIndex(0)
+        refreshCacheInfo()
       } catch (error) {
         setErrorText(error instanceof Error ? error.message : String(error))
         setMediaStatus('素材解码失败')
@@ -375,7 +389,7 @@ function Editor() {
     <main style={{ maxWidth: 880, margin: '32px auto', padding: '0 16px', color: '#0f172a' }}>
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 编辑器</h1>
       <p style={{ color: '#475569', fontSize: 13, marginBottom: 18 }}>
-        导入项目 JSON 与真实音视频素材，删除或在播放头分割片段，逐帧预览，导出带 AAC 音轨的 MP4。浏览器负责编解码，Rust core（WASM）负责合成与出帧。
+        导入项目 JSON 与真实音视频素材，删除或在播放头分割片段，逐帧预览，导出带 AAC 音轨的 MP4。代理帧缓存避免重复解码，Rust core（WASM）负责合成与出帧。
       </p>
 
       <div
@@ -399,9 +413,13 @@ function Editor() {
         <button type="button" style={BUTTON_STYLE} onClick={() => void handleDemoClip()}>
           生成演示素材
         </button>
+        <button type="button" style={BUTTON_STYLE} onClick={() => { clearFrameCache(); refreshCacheInfo() }}>
+          清除帧缓存
+        </button>
         <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
           当前：{sourceName} · {mediaStatus}
         </span>
+        <span style={{ color: TEXT_MUTED, fontSize: 13 }}>{cacheInfo}</span>
         <button type="button" style={BUTTON_STYLE} onClick={() => void handleExport()} disabled={!session || exportState.status === 'running'}>
           导出 MP4
         </button>

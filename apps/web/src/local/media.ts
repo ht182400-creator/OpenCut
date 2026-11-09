@@ -1,15 +1,22 @@
 /**
- * 真实媒体解码（W-08）：浏览器负责解码，Rust core 负责合成与帧契约。
+ * 真实媒体解码（W-08 / W-09）：浏览器负责解码，Rust core 负责合成与帧契约。
  *
- * 用原生 `<video>` + canvas 逐帧抽帧，零第三方解码依赖、支持浏览器能播的任何容器/编码；
+ * 用原生 `<video>` + canvas 逐帧抽取**代理尺寸**的 RGBA 帧（W-09：即使 4K 素材
+ * 也只解到 320×180，预览与合成的像素量恒定），零第三方解码依赖；
  * 音频用 Web Audio `decodeAudioData` 解成 planar PCM（无音轨时静默降级）。
- * 抽出的 RGBA 帧交给 `composite_frame_rgba` 合成，预览与导出共用同一帧源。
+ * 抽出的帧与音轨按素材指纹进入 `frameCache`，重复导入直接命中，不再逐帧 seek。
  */
 
 import { createToneAudio, decodeAudioFromFile, type PcmAudio } from './audio';
 import { exportProjectToMp4 } from './export';
+import {
+  buildCacheKey,
+  frameCache,
+  type FrameCacheStats,
+  type CachedMedia,
+} from './frame-cache';
 
-/** 解码结果：按帧索引缓存的 RGBA8 像素与可选音轨。 */
+/** 解码结果：按帧索引缓存的代理 RGBA8 像素与可选音轨。 */
 export interface DecodedMedia {
   name: string;
   frames: Uint8Array[];
@@ -18,9 +25,13 @@ export interface DecodedMedia {
   height: number;
   durationSeconds: number;
   fps: number;
+  /** 本次是否命中代理帧缓存。 */
+  fromCache: boolean;
+  /** 未命中时实际解码耗时（毫秒）。 */
+  decodeMilliseconds: number;
 }
 
-/** 抽帧选项。 */
+/** 抽帧选项（宽高即代理尺寸）。 */
 export interface DecodeOptions {
   width: number;
   height: number;
@@ -81,10 +92,20 @@ function seekTo(video: HTMLVideoElement, seconds: number): Promise<void> {
   });
 }
 
+/** 清空代理帧缓存（素材变更或用户手动失效）。 */
+export function clearFrameCache(): void {
+  frameCache.clear();
+}
+
+/** 读取代理帧缓存统计，用于量化命中率与内存占用。 */
+export function getFrameCacheStats(): FrameCacheStats {
+  return frameCache.stats();
+}
+
 /**
- * 解码本地视频文件并抽取指定数量的 RGBA 帧与可选音轨。
+ * 解码本地视频文件并抽取指定数量的代理 RGBA 帧与可选音轨；命中缓存时跳过 seek。
  * @param file 用户选择的视频文件
- * @param options 抽帧尺寸、帧率与数量
+ * @param options 代理尺寸、帧率与数量
  * @returns {Promise<DecodedMedia>} 缓存的帧像素与 PCM
  */
 export async function decodeVideoFile(
@@ -94,6 +115,21 @@ export async function decodeVideoFile(
   if (!isVideoFile(file)) {
     throw new Error('请选择视频文件（mp4 / webm 等）');
   }
+  const cacheKey = buildCacheKey({
+    name: file.name,
+    size: file.size,
+    lastModified: file.lastModified,
+    width: options.width,
+    height: options.height,
+    fps: options.fps,
+    frameCount: options.frameCount,
+  });
+  const cached = frameCache.get(cacheKey);
+  if (cached) {
+    return { name: file.name, ...cached, fromCache: true, decodeMilliseconds: 0 };
+  }
+
+  const started = performance.now();
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
   video.muted = true;
@@ -123,14 +159,21 @@ export async function decodeVideoFile(
       frames.push(new Uint8Array(pixels));
       options.onProgress?.(frameIndex + 1, options.frameCount);
     }
-    return {
-      name: file.name,
+
+    const cachedValue: CachedMedia = {
       frames,
       audio,
-      width: options.width,
-      height: options.height,
       durationSeconds: duration,
       fps: options.fps,
+      width: options.width,
+      height: options.height,
+    };
+    frameCache.set(cacheKey, cachedValue);
+    return {
+      name: file.name,
+      ...cachedValue,
+      fromCache: false,
+      decodeMilliseconds: Math.round(performance.now() - started),
     };
   } finally {
     URL.revokeObjectURL(url);
@@ -148,7 +191,7 @@ export function mediaFrameAt(media: DecodedMedia, frameIndex: number): Uint8Arra
 }
 
 /**
- * 现场生成一段带 AAC 音轨的真实 MP4 作为演示素材，供无素材时体验完整链路。
+ * 现场生成一段带 AAC 音轨的真实 MP4 作为演示素材（固定 lastModified 以便缓存命中）。
  * 画面是渐变背景 + 横向移动的白色方块，音轨是 440Hz 正弦波。
  * @returns {Promise<File>} 可作为输入重新导入的视频文件
  */
@@ -192,5 +235,8 @@ export async function createDemoVideoFile(
     frameSource,
     audioSource: createToneAudio(frameCount / fps),
   });
-  return new File([result.blob], 'demo-clip.mp4', { type: 'video/mp4' });
+  return new File([result.blob], 'demo-clip.mp4', {
+    type: 'video/mp4',
+    lastModified: 0,
+  });
 }

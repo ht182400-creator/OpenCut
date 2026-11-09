@@ -26,6 +26,7 @@ describe('media 纯函数', () => {
     const media: DecodedMedia = {
       name: 'clip', frames, audio: null,
       width: 1, height: 1, durationSeconds: 0.1, fps: 30,
+      fromCache: false, decodeMilliseconds: 12,
     };
     expect(mediaFrameAt(media, 0)).toBe(frames[0]);
     expect(mediaFrameAt(media, 2)).toBe(frames[0]);
@@ -36,6 +37,7 @@ describe('media 纯函数', () => {
     const empty: DecodedMedia = {
       name: 'empty', frames: [], audio: null,
       width: 320, height: 180, durationSeconds: 0, fps: 30,
+      fromCache: true, decodeMilliseconds: 0,
     };
     expect(() => mediaFrameAt(empty, 0)).toThrow(/没有可用帧/);
   });
