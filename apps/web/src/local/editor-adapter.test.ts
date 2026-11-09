@@ -5,6 +5,7 @@ import {
   SUPPORTED_KINDS,
   formatCoreError,
   validateFrameRequest,
+  validateOtioText,
   validateRequest,
 } from './editor-adapter';
 import { DEFAULT_ENCODER_CONFIG, probeWebCodecsSupport } from './webcodecs';
@@ -84,6 +85,23 @@ describe('validateFrameRequest', () => {
     expect(() => validateFrameRequest({ ...valid, frameIndex: -1 })).toThrow(/非负整数/);
     expect(() => validateFrameRequest({ ...valid, frameIndex: 1.5 })).toThrow(/非负整数/);
     expect(() => validateFrameRequest(null)).toThrow(/帧请求必须是对象/);
+  });
+});
+
+describe('validateOtioText', () => {
+  it('合法 JSON 文本通过', () => {
+    expect(() => validateOtioText('{"OTIO_SCHEMA":"Timeline.1"}')).not.toThrow();
+  });
+
+  it('空字符串、空白与非字符串被拒绝', () => {
+    expect(() => validateOtioText('')).toThrow(/非空字符串/);
+    expect(() => validateOtioText('   ')).toThrow(/非空字符串/);
+    expect(() => validateOtioText(null)).toThrow(/非空字符串/);
+    expect(() => validateOtioText(42)).toThrow(/非空字符串/);
+  });
+
+  it('错误提示带自定义名称', () => {
+    expect(() => validateOtioText('', '时间轴 JSON')).toThrow(/时间轴 JSON/);
   });
 });
 

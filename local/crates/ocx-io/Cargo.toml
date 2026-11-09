@@ -1,0 +1,15 @@
+[package]
+name = "ocx-io"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenCut 本地 core：OpenTimelineIO 子集导入导出与 additive-only 版本化 schema"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+ocx-time = { path = "../ocx-time" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

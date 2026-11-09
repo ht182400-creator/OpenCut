@@ -56,12 +56,12 @@ const HOTSPOTS = [
   { id: "H11", title: "经典版 31 版项目迁移兼容", priority: "P1", milestone: "M4", status: "进行中", action: "只读兼容层已落地（additive-only、25 用例 / 107/107、/editor 加载真实项目）；剩余写回与迁移测试" },
   { id: "H12", title: "4K 预览性能（代理/缓存/快照）", priority: "P2", milestone: "M6", status: "进行中", action: "W-09 两批：内存 LRU + IndexedDB 三级缓存、代理 MP4，跨刷新 11733ms→107ms，单帧 <16ms 阈值；剩余真实 4K 素材基准与版本快照" },
   { id: "H13", title: "上游落地六项能力导致双实现收敛（L3）", priority: "P1", milestone: "全程", status: "进行中", action: "按 README.md §7.9 做命名空间隔离、upstream-mirror、能力台账与 merge-tree 预演" },
-  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "W-08 三批 + W-09 两批：真实音视频导入、片段级映射、AAC 音轨、代理帧三级缓存；剩余裁剪时长/拖拽" },
+  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "W-10 第一批：ocx-io 实现 OTIO 双向交换与版本化 schema，WASM 契约 57/57；七个 crate 全绿，剩余 Web 端 OTIO 导入导出 UI" },
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r19";
-const DATA_UPDATED_AT = "2026-11-09 21:00";
+const DATA_VERSION = "2026-11-08-r20";
+const DATA_UPDATED_AT = "2026-11-09 21:15";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**

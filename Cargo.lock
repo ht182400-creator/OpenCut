@@ -3535,6 +3535,7 @@ version = "0.1.0"
 dependencies = [
  "ocx-domain",
  "ocx-editor-api",
+ "ocx-io",
  "ocx-render",
  "ocx-time",
  "serde",
@@ -3561,6 +3562,15 @@ dependencies = [
 
 [[package]]
 name = "ocx-editor-api"
+version = "0.1.0"
+dependencies = [
+ "ocx-time",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ocx-io"
 version = "0.1.0"
 dependencies = [
  "ocx-time",

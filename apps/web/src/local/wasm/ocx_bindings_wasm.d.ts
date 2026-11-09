@@ -34,6 +34,18 @@ export function discover(): string;
 export function domain_eval(request_json: string): string;
 
 /**
+ * 导出内部 `EditTimeline` 为 OTIO JSON 文本（W-10）。
+ * 返回 `{"ok":true,"otio":"<JSON 文本>"}` 或 `{"ok":false,"error":"CODE"}`。
+ */
+export function otio_export(timeline_json: string): string;
+
+/**
+ * 导入 OTIO JSON 为内部 `EditTimeline`（W-10）。
+ * 返回 `{"ok":true,"timeline":{...}}` 或 `{"ok":false,"error":"CODE"}`。
+ */
+export function otio_import(otio_json: string): string;
+
+/**
  * 参数值类型探测（number / boolean / string）。
  */
 export function param_kind(value_json: string): string;
@@ -67,6 +79,8 @@ export interface InitOutput {
     readonly composite_frame_rgba: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly discover: () => [number, number, number, number];
     readonly domain_eval: (a: number, b: number) => [number, number, number, number];
+    readonly otio_export: (a: number, b: number) => [number, number, number, number];
+    readonly otio_import: (a: number, b: number) => [number, number, number, number];
     readonly param_kind: (a: number, b: number) => [number, number, number, number];
     readonly read_classic_project: (a: number, b: number) => [number, number, number, number];
     readonly render_frame_rgba: (a: number, b: number) => [number, number, number, number];

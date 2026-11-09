@@ -16,6 +16,8 @@ import init, {
   composite_frame_rgba,
   discover,
   domain_eval,
+  otio_export,
+  otio_import,
   param_kind,
   read_classic_project,
   render_frame_rgba,
@@ -379,6 +381,52 @@ try {
       /INVALID_BASE_FRAME|合成预览帧/,
     ),
   );
+
+  const otioDoc = {
+    OTIO_SCHEMA: "Timeline.1",
+    name: "wasm-otio",
+    metadata: { opencut: { schemaVersion: 1 } },
+    tracks: {
+      OTIO_SCHEMA: "Stack.1",
+      children: [{
+        OTIO_SCHEMA: "Track.1", name: "V1", kind: "Video",
+        children: [{
+          OTIO_SCHEMA: "Clip.1", name: "clip-a",
+          source_range: {
+            OTIO_SCHEMA: "TimeRange.1",
+            start_time: { OTIO_SCHEMA: "RationalTime.1", value: 0, rate: 30 },
+            duration: { OTIO_SCHEMA: "RationalTime.1", value: 30, rate: 30 },
+          },
+          media_reference: { OTIO_SCHEMA: "ExternalReference.1", target_url: "a.mp4" },
+        }],
+      }],
+    },
+  };
+  const imported = JSON.parse(otio_import(JSON.stringify(otioDoc)));
+  check("OTIO 导入成功", () => assert.equal(imported.ok, true));
+  check("OTIO 导入时间轴名称", () => assert.equal(imported.timeline.name, "wasm-otio"));
+  check("OTIO 导入片段时长", () =>
+    assert.equal(imported.timeline.tracks[0].clips[0].durationTicks, 120000));
+  const exportedWrap = JSON.parse(otio_export(JSON.stringify(imported.timeline)));
+  check("OTIO 导出成功", () => assert.equal(exportedWrap.ok, true));
+  const exportedDoc = JSON.parse(exportedWrap.otio);
+  check("OTIO 导出根类型", () => assert.equal(exportedDoc.OTIO_SCHEMA, "Timeline.1"));
+  check("OTIO 导出写回 schemaVersion", () =>
+    assert.equal(exportedDoc.metadata.opencut.schemaVersion, 1));
+  check("OTIO 往返保留素材引用", () =>
+    assert.equal(exportedDoc.tracks.children[0].children[0].media_reference.target_url, "a.mp4"));
+  const reimported = JSON.parse(otio_import(exportedWrap.otio));
+  check("OTIO 往返剪辑决策一致", () =>
+    assert.deepEqual(reimported.timeline.tracks, imported.timeline.tracks));
+  check("OTIO 未来版本被拒绝", () =>
+    assert.equal(
+      JSON.parse(otio_import(JSON.stringify({
+        ...otioDoc, metadata: { opencut: { schemaVersion: 2 } },
+      }))).error,
+      "UNSUPPORTED_IO_VERSION",
+    ));
+  check("OTIO 非法 JSON 被拒绝", () =>
+    assert.equal(JSON.parse(otio_import("{ 非法")).error, "INVALID_JSON"));
 
   check("未知 kind 被明确拒绝", () => {
     assert.throws(() => domain_eval(JSON.stringify({ kind: "nope" })), /不支持的 kind/);

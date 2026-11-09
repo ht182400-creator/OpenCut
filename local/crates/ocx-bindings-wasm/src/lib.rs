@@ -17,6 +17,7 @@ use ocx_domain::{
     compute_ripple_adjustments, get_scalar_channel_value_at_time, resolve_track_placement,
 };
 use ocx_editor_api::{API_VERSION, CommandEnvelope, EditorApi, InMemoryBackend, SCHEMA_VERSION};
+use ocx_io::{EditTimeline, export_otio, import_otio};
 use ocx_render::{
     ExportProfile, FrameParams, build_frame_plan, composite_frame, render_frame,
     validate_export_profile,
@@ -155,6 +156,28 @@ pub fn domain_eval(request_json: &str) -> Result<String, JsValue> {
 #[wasm_bindgen]
 pub fn read_classic_project(project_json: &str) -> Result<String, JsValue> {
     legacy::read_classic_project_wasm(project_json)
+}
+
+/// 导入 OTIO JSON 为内部 `EditTimeline`（W-10）。
+/// 返回 `{"ok":true,"timeline":{...}}` 或 `{"ok":false,"error":"CODE"}`。
+#[wasm_bindgen]
+pub fn otio_import(otio_json: &str) -> Result<String, JsValue> {
+    match import_otio(otio_json) {
+        Ok(timeline) => to_json(&json!({ "ok": true, "timeline": timeline })),
+        Err(error) => to_json(&json!({ "ok": false, "error": error.code() })),
+    }
+}
+
+/// 导出内部 `EditTimeline` 为 OTIO JSON 文本（W-10）。
+/// 返回 `{"ok":true,"otio":"<JSON 文本>"}` 或 `{"ok":false,"error":"CODE"}`。
+#[wasm_bindgen]
+pub fn otio_export(timeline_json: &str) -> Result<String, JsValue> {
+    let timeline: EditTimeline =
+        serde_json::from_str(timeline_json).map_err(|error| js_error("解析时间轴 JSON", error))?;
+    match export_otio(&timeline) {
+        Ok(text) => to_json(&json!({ "ok": true, "otio": text })),
+        Err(error) => to_json(&json!({ "ok": false, "error": error.code() })),
+    }
 }
 
 /// 生成确定性预览帧的 RGBA8 像素（行优先，长度为 `width * height * 4`）。

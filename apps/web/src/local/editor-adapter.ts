@@ -191,6 +191,29 @@ export function formatCoreError(error: unknown): string {
   return `Rust core 调用失败：${detail}`;
 }
 
+/** OTIO 导入导出结果信封（W-10）。 */
+export interface OtioResult {
+  ok: boolean;
+  timeline?: unknown;
+  otio?: string;
+  error?: string;
+}
+
+/**
+ * 校验 OTIO/时间轴 JSON 文本，避免把空值送进 WASM。
+ * @param text 待校验输入
+ * @param label 错误提示里的名称
+ * @returns {void}
+ */
+export function validateOtioText(
+  text: unknown,
+  label = 'OTIO 文本',
+): asserts text is string {
+  if (typeof text !== 'string' || text.trim().length === 0) {
+    throw new Error(`${label}必须是非空字符串；请检查后重试。`);
+  }
+}
+
 type Glue = typeof import('./wasm/ocx_bindings_wasm.js');
 
 /** 业务侧唯一可见的 core 接口。 */
@@ -207,6 +230,10 @@ export interface EditorAdapter {
   compositeFrameRgba(basePixels: Uint8Array, request: CoreCompositeRequest): Uint8Array;
   /** 读取经典版项目 JSON（只读）。 */
   readClassicProject(projectJson: string): ProjectResult;
+  /** 导入 OTIO JSON 为内部时间轴（W-10）。 */
+  otioImport(otioJson: string): OtioResult;
+  /** 导出内部时间轴为 OTIO JSON 文本（W-10）。 */
+  otioExport(timelineJson: string): OtioResult;
 }
 
 let adapterPromise: Promise<EditorAdapter> | null = null;
@@ -244,6 +271,14 @@ export async function createEditorAdapter(): Promise<EditorAdapter> {
         },
         readClassicProject: (projectJson: string): ProjectResult =>
           JSON.parse(glue.read_classic_project(projectJson)) as ProjectResult,
+        otioImport: (otioJson: string): OtioResult => {
+          validateOtioText(otioJson, 'OTIO 文档');
+          return JSON.parse(glue.otio_import(otioJson)) as OtioResult;
+        },
+        otioExport: (timelineJson: string): OtioResult => {
+          validateOtioText(timelineJson, '时间轴 JSON');
+          return JSON.parse(glue.otio_export(timelineJson)) as OtioResult;
+        },
       };
     } catch (error) {
       adapterPromise = null;

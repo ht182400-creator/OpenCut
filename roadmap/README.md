@@ -773,6 +773,7 @@ git push origin main                                  # 绝不 --force
 | **W-08 第三批 / 音频调度** | `agent-browser` 真实浏览器 + `vitest run` | 演示素材带 AAC 音轨并可被 `decodeAudioData` 解出 PCM；导出 90 帧 / 3.00s / 87,306 字节含 AAC 音轨，重新解码得 3.008s、48kHz、双声道、峰值 `0.2506`（440Hz 正弦）；删除片段后导出 60 帧 / 2.00s / 56,889 字节、音轨 2.005s；29.97fps 累积采样 1601/1602 与 core `FramePlan` 一致；vitest 39/39、`vite build` 退出码 0 |
 | **W-09 第一批 / 代理帧缓存** | `agent-browser` 真实浏览器 + `vitest run` | 按素材指纹 LRU 缓存 320×180 代理帧与 PCM；首次导入解码 10,370ms / 未命中 1，重复导入「代理缓存命中 · 0ms」/ 命中 1，缓存 1 份 / 90 帧 / 20.5MB；清除帧缓存后条目归零；缓存单测 8 项、vitest 47/47、`vite build` 退出码 0 |
 | **W-09 第二批 / 持久化与量化阈值** | `agent-browser` 真实浏览器 + `vitest run` | 新增 `frame-store.ts`（IndexedDB、异常降级、可注入后端）与三级缓存；首次解码 11,733ms 写入持久化 1 份 / 20.5MB，重新加载页面后再导入命中「持久化缓存 · 107ms」；`createProxyFile` 生成 32,655 字节 `ftyp/isom` 代理 MP4；单帧合成耗时 1.90ms / 0.70ms 均低于设定阈值 16ms；清除缓存后内存与持久化同步归零；持久化单测 9 项、vitest 57/57、`vite build` 退出码 0 |
+| **W-10 第一批 / OTIO 双向交换** | `cargo test -p ocx-io` + `node apps/web/src/local/editor-wasm.contract.mjs` | 15 个 JSON 用例（正常 / 多轨 / Gap / 29.97fps / 新旧媒体引用 / 7 类异常）+ 10 个单测全绿，每个成功用例额外校验「导入→导出→再导入」剪辑决策指纹一致；七 crate `fmt` / `clippy` / `test` 全绿；重建 WASM（710,722 B）后 Node 契约 **57/57**、vitest 60/60、`vite build` 退出码 0 |
 | 导入测试 | `node dashboard.test.cjs` 用零依赖 DOM 桩按页面顺序加载三个脚本并触发 `init()` | 通过 |
 | 看板回归 | 数据完整性、依赖图、状态机全循环、完成度、持久化往返、渲染、导出/导入 JSON、重置两分支、**决策台账状态/结论与 DOM 渲染、数据版本** | **44 通过 / 0 失败** |
 | **兼容契约回归** | `node compat.test.cjs`：不变量、命名空间、判据权重、状态机、六能力台账、导出决策、三项用户决策、**契约↔看板交叉校验** | **45 通过 / 0 失败** |
