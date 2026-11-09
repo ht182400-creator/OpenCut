@@ -3,6 +3,7 @@
 export const memory: WebAssembly.Memory;
 export const api_version: () => [number, number];
 export const channel_kind: (a: number, b: number) => [number, number, number, number];
+export const composite_frame_rgba: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const discover: () => [number, number, number, number];
 export const domain_eval: (a: number, b: number) => [number, number, number, number];
 export const param_kind: (a: number, b: number) => [number, number, number, number];

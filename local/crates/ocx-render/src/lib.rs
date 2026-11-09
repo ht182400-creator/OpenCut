@@ -15,7 +15,8 @@ pub mod profile;
 pub const TOLERANCE_SECONDS: f64 = 1e-9;
 
 pub use frame::{
-    DEFAULT_RECT_DIVISOR, FrameError, FrameParams, MAX_FRAME_PIXELS, RenderFrame, render_frame,
+    DEFAULT_RECT_DIVISOR, FrameError, FrameParams, MAX_FRAME_PIXELS, RenderFrame, composite_frame,
+    render_frame,
 };
 pub use ocx_time::TICKS_PER_SECOND;
 pub use plan::{FramePlan, MAX_FRAME_COUNT, PlanError, build_frame_plan, frame_index_at_time};

@@ -1,5 +1,5 @@
 /**
- * OpenCut Web 端 `editor-api` 适配层（W-06 / W-07 / W-05 第四批）。
+ * OpenCut Web 端 `editor-api` 适配层（W-06 / W-07 / W-05 第四批 / W-08）。
  *
  * 不变量 I-01：业务代码只能经本模块访问 Rust core，
  * 禁止在其它文件直接 import `./wasm/ocx_bindings_wasm.js`。
@@ -43,6 +43,16 @@ export interface CoreFrameRequest {
   timeTicks: number;
   durationTicks: number;
   profile: unknown;
+  params: unknown;
+}
+
+/** 真实素材合成请求：底图像素单独传，其余字段走 JSON。 */
+export interface CoreCompositeRequest {
+  width: number;
+  height: number;
+  frameIndex: number;
+  timeTicks: number;
+  durationTicks: number;
   params: unknown;
 }
 
@@ -144,6 +154,31 @@ export function validateFrameRequest(request: unknown): asserts request is CoreF
 }
 
 /**
+ * 校验真实素材合成请求（宽高必须为正整数）。
+ * @param request 待校验的未知输入
+ * @returns {void}
+ */
+export function validateCompositeRequest(
+  request: unknown,
+): asserts request is CoreCompositeRequest {
+  if (!request || typeof request !== 'object') {
+    throw new Error('合成请求必须是对象；请检查调用参数后重试。');
+  }
+  const candidate = request as Record<string, unknown>;
+  for (const field of ['width', 'height', 'frameIndex', 'timeTicks', 'durationTicks', 'params']) {
+    if (!(field in candidate)) {
+      throw new Error(`合成请求缺少必填字段 ${field}；请补齐后重试。`);
+    }
+  }
+  for (const field of ['width', 'height']) {
+    const value = candidate[field];
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+      throw new Error(`${field} 必须是正整数；请检查后重试。`);
+    }
+  }
+}
+
+/**
  * 把 core 抛出的异常整理成用户可理解的中文提示。
  * @param error 未知异常
  * @returns {string} 友好错误文案
@@ -163,8 +198,10 @@ export interface EditorAdapter {
   discover(): DiscoverResult;
   /** 统一领域求值入口。 */
   evaluate<T = unknown>(request: CoreRequest): T;
-  /** 生成预览帧的 RGBA8 像素。 */
+  /** 生成确定性合成帧的 RGBA8 像素。 */
   renderFrameRgba(request: CoreFrameRequest): Uint8Array;
+  /** 把浏览器解码的底图与 core 图层合成，得到最终帧像素。 */
+  compositeFrameRgba(basePixels: Uint8Array, request: CoreCompositeRequest): Uint8Array;
   /** 读取经典版项目 JSON（只读）。 */
   readClassicProject(projectJson: string): ProjectResult;
 }
@@ -194,6 +231,13 @@ export async function createEditorAdapter(): Promise<EditorAdapter> {
         renderFrameRgba: (request: CoreFrameRequest): Uint8Array => {
           validateFrameRequest(request);
           return glue.render_frame_rgba(JSON.stringify(request));
+        },
+        compositeFrameRgba: (
+          basePixels: Uint8Array,
+          request: CoreCompositeRequest,
+        ): Uint8Array => {
+          validateCompositeRequest(request);
+          return glue.composite_frame_rgba(basePixels, JSON.stringify(request));
         },
         readClassicProject: (projectJson: string): ProjectResult =>
           JSON.parse(glue.read_classic_project(projectJson)) as ProjectResult,

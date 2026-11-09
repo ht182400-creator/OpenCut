@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import init, {
   api_version,
   channel_kind,
+  composite_frame_rgba,
   discover,
   domain_eval,
   param_kind,
@@ -340,6 +341,39 @@ try {
     assert.throws(
       () => domain_eval(JSON.stringify({ kind: "keyframeQuery", op: "nope" })),
       /不支持的 op/,
+    ),
+  );
+
+  const compositeRequest = {
+    width: 8,
+    height: 4,
+    frameIndex: 0,
+    timeTicks: 0,
+    durationTicks: 4000,
+    params: FRAME_PARAMS,
+  };
+  const baseFrame = new Uint8Array(8 * 4 * 4).fill(70);
+  const composed = composite_frame_rgba(baseFrame, JSON.stringify(compositeRequest));
+  check("合成帧返回 Uint8Array", () =>
+    assert.equal(composed instanceof Uint8Array, true),
+  );
+  check("合成帧字节数", () => assert.equal(composed.length, 128));
+  check("合成帧保留真实底图", () =>
+    assert.deepEqual(Array.from(composed.slice(0, 4)), [70, 70, 70, 70]),
+  );
+  // 坐标 (3,2) 的行优先偏移：((2 * 8) + 3) * 4 = 76
+  check("合成帧叠加前景", () =>
+    assert.deepEqual(Array.from(composed.slice(76, 80)), [100, 150, 200, 255]),
+  );
+  const composedNext = composite_frame_rgba(
+    baseFrame,
+    JSON.stringify({ ...compositeRequest, frameIndex: 5 }),
+  );
+  check("合成帧随时间变化", () => assert.equal(composedNext[76], 105));
+  check("底图长度不符被拒绝", () =>
+    assert.throws(
+      () => composite_frame_rgba(new Uint8Array(3), JSON.stringify(compositeRequest)),
+      /INVALID_BASE_FRAME|合成预览帧/,
     ),
   );
 

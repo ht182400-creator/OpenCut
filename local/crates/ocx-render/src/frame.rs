@@ -21,6 +21,7 @@ pub enum FrameError {
     InvalidProfile,
     FrameTooLarge,
     InvalidOpacity,
+    InvalidBaseFrame,
 }
 
 impl FrameError {
@@ -30,6 +31,7 @@ impl FrameError {
             FrameError::InvalidProfile => "INVALID_PROFILE",
             FrameError::FrameTooLarge => "FRAME_TOO_LARGE",
             FrameError::InvalidOpacity => "INVALID_OPACITY",
+            FrameError::InvalidBaseFrame => "INVALID_BASE_FRAME",
         }
     }
 }
@@ -40,6 +42,7 @@ impl fmt::Display for FrameError {
             FrameError::InvalidProfile => "导出配置校验未通过",
             FrameError::FrameTooLarge => "帧像素数超出上限；请减小分辨率",
             FrameError::InvalidOpacity => "透明度必须是 0~1 的有限数值",
+            FrameError::InvalidBaseFrame => "底图像素长度必须等于宽 × 高 × 4；请检查解码结果",
         };
         write!(formatter, "{}：{detail}", self.code())
     }
@@ -158,6 +161,63 @@ pub fn render_frame(
         for x in 0..width {
             let inside = x >= x0 && x < x1 && y >= y0 && y < y1;
             pixels_rgba.extend_from_slice(if inside { &accent } else { &background });
+        }
+    }
+
+    Ok(RenderFrame {
+        frame_index,
+        time_ticks,
+        duration_ticks,
+        width,
+        height,
+        pixels_rgba,
+    })
+}
+
+/// 把浏览器解码的底图与 core 的程序化图层合成，产出最终 `RenderFrame`（W-08）。
+///
+/// 真实素材的解码由浏览器完成（WebCodecs / `<video>`），core 只负责确定性的合成与帧契约；
+/// 预览与导出共用这个函数，因此导出画面与预览逐像素一致。
+/// 前景矩形按 `opacity` 与底图混合，矩形之外原样保留真实画面；输出 alpha 恒为 255。
+pub fn composite_frame(
+    base_rgba: &[u8],
+    width: u32,
+    height: u32,
+    frame_index: u64,
+    time_ticks: i64,
+    duration_ticks: i64,
+    params: &FrameParams,
+) -> Result<RenderFrame, FrameError> {
+    if !params.opacity.is_finite() || !(0.0..=1.0).contains(&params.opacity) {
+        return Err(FrameError::InvalidOpacity);
+    }
+    if width == 0 || height == 0 || width.saturating_mul(height) > MAX_FRAME_PIXELS {
+        return Err(FrameError::FrameTooLarge);
+    }
+    let expected = width as usize * height as usize * 4;
+    if base_rgba.len() != expected {
+        return Err(FrameError::InvalidBaseFrame);
+    }
+
+    let (x0, y0, x1, y1) = rect_bounds(width, height, params);
+    let frame_tint = (frame_index % 256) as u8;
+    let accent = [
+        params.accent_rgba[0].wrapping_add(frame_tint),
+        params.accent_rgba[1],
+        params.accent_rgba[2],
+    ];
+    let mix = params.opacity;
+
+    let mut pixels_rgba = base_rgba.to_vec();
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let offset = ((y as usize) * (width as usize) + (x as usize)) * 4;
+            for channel in 0..3 {
+                let base = f64::from(pixels_rgba[offset + channel]);
+                let overlay = f64::from(accent[channel]);
+                pixels_rgba[offset + channel] = (overlay * mix + base * (1.0 - mix)).round() as u8;
+            }
+            pixels_rgba[offset + 3] = 255;
         }
     }
 

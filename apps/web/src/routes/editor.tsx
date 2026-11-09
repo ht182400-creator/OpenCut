@@ -8,6 +8,13 @@ import {
   type ProjectView,
 } from '../local/editor-adapter'
 import { exportProjectToMp4, isExportSupported } from '../local/export'
+import {
+  createDemoVideoFile,
+  decodeVideoFile,
+  isVideoFile,
+  mediaFrameAt,
+  type DecodedMedia,
+} from '../local/media'
 import { probeWebCodecsSupport, type WebCodecsSupport } from '../local/webcodecs'
 
 export const Route = createFileRoute('/editor')({ component: Editor })
@@ -16,6 +23,8 @@ const PROJECT_FIXTURE_URL = '/fixtures/classic-project-v31.json'
 const TICKS_PER_SECOND = 120000
 const PREVIEW_WIDTH = 320
 const PREVIEW_HEIGHT = 180
+/** 单次解码的最大帧数，避免长项目逐帧 seek 过慢。 */
+const MAX_DECODE_FRAMES = 90
 const TEXT_MAIN = '#e5e7eb'
 const TEXT_MUTED = '#94a3b8'
 const PANEL_STYLE: React.CSSProperties = {
@@ -103,7 +112,7 @@ const BASE_PROFILE: Record<string, unknown> = {
 const DEMO_PARAMS = {
   backgroundRgba: [17, 24, 39, 255],
   accentRgba: [249, 115, 22, 255],
-  opacity: 1,
+  opacity: 0.65,
   positionX: 0.5,
   positionY: 0.5,
 }
@@ -157,8 +166,8 @@ function effectiveDuration(elements: CoreElement[]): number {
 }
 
 /**
- * Web-first 编辑器：导入经典版项目 → 选中并删除片段（core ripple）→
- * 拖动播放头逐帧预览 → 用 WebCodecs 导出 MP4。
+ * Web-first 编辑器：导入项目 JSON 与真实视频素材 → 删除片段（core ripple）→
+ * 逐帧预览（浏览器解码 + core 合成）→ WebCodecs 导出 MP4。
  * 所有 core 调用都经 `editor-adapter`（I-01），错误统一友好提示。
  * @returns {React.ReactElement} 页面
  */
@@ -172,12 +181,15 @@ function Editor() {
   const [frameIndex, setFrameIndex] = useState(0)
   const [frameCount, setFrameCount] = useState(1)
   const [playing, setPlaying] = useState(false)
+  const [media, setMedia] = useState<DecodedMedia | null>(null)
+  const [mediaStatus, setMediaStatus] = useState('未加载素材')
   const [exportState, setExportState] = useState<ExportState>({
     status: 'idle', done: 0, total: 0, message: '', url: null, bytes: 0,
   })
   const [sourceName, setSourceName] = useState('内置示例项目')
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const projectFileRef = useRef<HTMLInputElement>(null)
+  const videoFileRef = useRef<HTMLInputElement>(null)
 
   /** 载入项目 JSON 文本并初始化会话。 */
   const loadProject = async (text: string, name: string) => {
@@ -242,7 +254,7 @@ function Editor() {
       const applied = session.adapter.evaluate<ApplyResponse>({
         kind: 'rippleApply', tracks: before, adjustments: ripple.adjustments,
       })
-      // applyRippleAdjustments 只做位移、不删除元素；需按 after 的 id 集合移除被删片段
+      // applyRippleAdjustments 只做位移、不删除元素；按 after 的 id 集合移除被删片段
       const remainingIds = new Set(after.map((item) => item.id))
       const next = applied.tracks.main.elements.filter((item) => remainingIds.has(item.id))
       const plan = session.adapter.evaluate<FramePlanView>({
@@ -259,14 +271,33 @@ function Editor() {
     }
   }
 
-  /** 逐帧预览：frameIndex 或会话变化时重新向 core 取像素并绘制。 */
+  /** 生成当前帧像素：有素材时 core 合成真实底图，否则 core 确定性合成帧。 */
+  const frameSource = (index: number): Uint8Array => {
+    if (!session) throw new Error('会话尚未就绪')
+    if (media) {
+      return session.adapter.compositeFrameRgba(mediaFrameAt(media, index), {
+        width: PREVIEW_WIDTH,
+        height: PREVIEW_HEIGHT,
+        frameIndex: index,
+        timeTicks: index * session.ticksPerFrame,
+        durationTicks: session.ticksPerFrame,
+        params: DEMO_PARAMS,
+      })
+    }
+    return session.adapter.renderFrameRgba({
+      frameIndex: index,
+      timeTicks: index * session.ticksPerFrame,
+      durationTicks: session.ticksPerFrame,
+      profile: session.profile,
+      params: DEMO_PARAMS,
+    })
+  }
+
+  /** 逐帧预览：帧号、会话或素材变化时重新向 core 取像素并绘制。 */
   useEffect(() => {
     if (!session) return
     try {
-      const pixels = session.adapter.renderFrameRgba({
-        frameIndex, timeTicks: frameIndex * session.ticksPerFrame,
-        durationTicks: session.ticksPerFrame, profile: session.profile, params: DEMO_PARAMS,
-      })
+      const pixels = frameSource(frameIndex)
       const canvas = canvasRef.current
       const context = canvas?.getContext('2d')
       if (canvas && context) {
@@ -277,7 +308,7 @@ function Editor() {
     } catch (error) {
       setErrorText(formatCoreError(error))
     }
-  }, [session, frameIndex])
+  }, [session, frameIndex, media])
 
   /** 播放：按帧率推进播放头，循环播放。 */
   useEffect(() => {
@@ -299,9 +330,10 @@ function Editor() {
     setExportState({ status: 'running', done: 0, total: frameCount, message: '', url: null, bytes: 0 })
     try {
       const result = await exportProjectToMp4({
-        adapter: session.adapter, width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT,
+        width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT,
         fps: session.fps, frameCount, ticksPerFrame: session.ticksPerFrame,
         profile: session.profile, params: DEMO_PARAMS,
+        frameSource,
         onProgress: (done, total) => setExportState((previous) => ({ ...previous, done, total })),
       })
       setExportState({
@@ -317,17 +349,54 @@ function Editor() {
     }
   }
 
-  /** 读取用户选择/拖入的项目文件。 */
+  /** 读取用户选择/拖入的文件：视频走解码，其余按项目 JSON 处理。 */
   const readFile = async (file: File | undefined) => {
     if (!file) return
+    if (isVideoFile(file)) {
+      if (!session) {
+        setErrorText('请先加载项目 JSON，再导入视频素材')
+        return
+      }
+      setErrorText(null)
+      setMediaStatus('解码中 0/' + Math.min(frameCount, MAX_DECODE_FRAMES))
+      try {
+        const decoded = await decodeVideoFile(file, {
+          width: PREVIEW_WIDTH,
+          height: PREVIEW_HEIGHT,
+          fps: session.fps,
+          frameCount: Math.min(frameCount, MAX_DECODE_FRAMES),
+          onProgress: (done, total) => setMediaStatus(`解码中 ${done}/${total}`),
+        })
+        setMedia(decoded)
+        setMediaStatus(`已载入 ${decoded.name} · ${decoded.frames.length} 帧 · ${decoded.durationSeconds.toFixed(2)}s`)
+        setFrameIndex(0)
+      } catch (error) {
+        setErrorText(error instanceof Error ? error.message : String(error))
+        setMediaStatus('素材解码失败')
+      }
+      return
+    }
     await loadProject(await file.text(), file.name)
+  }
+
+  /** 生成并导入一段演示视频，便于无素材时体验完整链路。 */
+  const handleDemoClip = async () => {
+    setErrorText(null)
+    setMediaStatus('正在生成演示素材…')
+    try {
+      const file = await createDemoVideoFile()
+      await readFile(file)
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : String(error))
+      setMediaStatus('演示素材生成失败')
+    }
   }
 
   return (
     <main style={{ maxWidth: 880, margin: '32px auto', padding: '0 16px', color: '#0f172a' }}>
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 编辑器</h1>
       <p style={{ color: '#475569', fontSize: 13, marginBottom: 18 }}>
-        导入经典版项目 JSON，点击片段选中并删除，拖动播放头预览，导出 MP4。全部计算由 Rust core（WASM）完成。
+        导入项目 JSON 与真实视频素材，点击片段删除，拖动播放头预览，导出 MP4。浏览器负责解码，Rust core（WASM）负责合成与出帧。
       </p>
 
       <div
@@ -340,24 +409,25 @@ function Editor() {
       >
         <label style={BUTTON_STYLE}>
           导入项目 JSON
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".json,application/json"
-            style={{ display: 'none' }}
-            onChange={(event) => void readFile(event.target.files?.[0])}
-          />
+          <input ref={projectFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
+            onChange={(event) => void readFile(event.target.files?.[0])} />
         </label>
+        <label style={BUTTON_STYLE}>
+          导入视频素材
+          <input ref={videoFileRef} type="file" accept="video/*,.mp4,.webm" style={{ display: 'none' }}
+            onChange={(event) => void readFile(event.target.files?.[0])} />
+        </label>
+        <button type="button" style={BUTTON_STYLE} onClick={() => void handleDemoClip()}>
+          生成演示素材
+        </button>
         <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
-          当前：{sourceName}（也可把 .json 拖到此处）
+          当前：{sourceName} · {mediaStatus}
         </span>
         <button type="button" style={BUTTON_STYLE} onClick={() => void handleExport()} disabled={!session || exportState.status === 'running'}>
           导出 MP4
         </button>
         {exportState.status === 'running' && (
-          <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
-            编码中 {exportState.done}/{exportState.total}
-          </span>
+          <span style={{ color: TEXT_MUTED, fontSize: 13 }}>编码中 {exportState.done}/{exportState.total}</span>
         )}
         {exportState.status === 'done' && exportState.url && (
           <a href={exportState.url} download="opencut-export.mp4" style={{ color: '#7dd3fc', fontSize: 13 }}>
@@ -411,25 +481,16 @@ function Editor() {
 
           <section style={PANEL_STYLE}>
             <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>预览与播放头</h2>
-            <canvas
-              ref={canvasRef}
-              width={PREVIEW_WIDTH}
-              height={PREVIEW_HEIGHT}
-              style={{ borderRadius: 6, border: '1px solid #334155', display: 'block' }}
-            />
+            <canvas ref={canvasRef} width={PREVIEW_WIDTH} height={PREVIEW_HEIGHT}
+              style={{ borderRadius: 6, border: '1px solid #334155', display: 'block' }} />
             <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <button type="button" style={BUTTON_STYLE} onClick={() => setPlaying((value) => !value)}>
                 {playing ? '暂停' : '播放'}
               </button>
-              <input
-                type="range"
-                min={0}
-                max={Math.max(frameCount - 1, 0)}
+              <input type="range" min={0} max={Math.max(frameCount - 1, 0)}
                 value={Math.min(frameIndex, frameCount - 1)}
                 onChange={(event) => { setPlaying(false); setFrameIndex(Number(event.target.value)) }}
-                style={{ flex: 1, minWidth: 200 }}
-                aria-label="播放头"
-              />
+                style={{ flex: 1, minWidth: 200 }} aria-label="播放头" />
               <span style={{ color: TEXT_MUTED, fontSize: 13, whiteSpace: 'nowrap' }}>
                 帧 {frameIndex + 1}/{frameCount} · {(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s
               </span>

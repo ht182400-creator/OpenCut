@@ -1,8 +1,8 @@
 /**
- * 真实导出（W-07 第二批）：core 合成帧 → VideoFrame → VideoEncoder → MP4 容器。
+ * 真实导出（W-07 第二批 / W-08）：帧源 → VideoFrame → VideoEncoder → MP4 容器。
  *
- * 不依赖 GPU/H01 的原生渲染路径：像素由 `renderFrameRgba` 确定性生成，
- * 预览与导出共用同一份帧，因此导出结果可逐帧复现、可自动化校验。
+ * 帧源可替换：默认用 core 的确定性合成帧（W-07），W-08 起可用「core.compositeFrameRgba
+ * (浏览器解码帧)」作为真实素材帧源。预览与导出共用同一帧源，因此逐像素一致。
  * 所有浏览器 API 通过自定义接口访问，避免依赖 DOM lib 的 WebCodecs 类型差异。
  */
 
@@ -74,9 +74,10 @@ export function isExportSupported(): boolean {
   return typeof scope.VideoEncoder !== 'undefined' && typeof scope.VideoFrame !== 'undefined';
 }
 
-/** 导出选项。 */
+/** 导出选项：`frameSource` 优先于 `adapter` 的默认合成帧。 */
 export interface ExportOptions {
-  adapter: EditorAdapter;
+  adapter?: EditorAdapter;
+  frameSource?: (frameIndex: number) => Uint8Array;
   width: number;
   height: number;
   fps: number;
@@ -96,6 +97,23 @@ export interface ExportResult {
   durationSeconds: number;
 }
 
+/** 取第 i 帧像素：优先真实素材帧源，否则回退 core 合成帧。 */
+function framePixels(options: ExportOptions, frameIndex: number): Uint8Array {
+  if (options.frameSource) {
+    return options.frameSource(frameIndex);
+  }
+  if (options.adapter) {
+    return options.adapter.renderFrameRgba({
+      frameIndex,
+      timeTicks: frameIndex * options.ticksPerFrame,
+      durationTicks: options.ticksPerFrame,
+      profile: options.profile,
+      params: options.params,
+    });
+  }
+  throw new Error('导出缺少帧源；请提供 frameSource 或 adapter');
+}
+
 /**
  * 编码并封装为 MP4；任何异常都会转成中文提示并清理编码器。
  * @param options 导出选项
@@ -106,6 +124,9 @@ export async function exportProjectToMp4(options: ExportOptions): Promise<Export
   if (invalid) throw new Error(invalid);
   if (!isExportSupported()) {
     throw new Error('当前浏览器不支持 WebCodecs 导出；请使用支持 VideoEncoder 的浏览器');
+  }
+  if (!options.frameSource && !options.adapter) {
+    throw new Error('导出缺少帧源；请提供 frameSource 或 adapter');
   }
 
   const scope = globalThis as unknown as Record<string, unknown>;
@@ -148,13 +169,7 @@ export async function exportProjectToMp4(options: ExportOptions): Promise<Export
 
     for (let frameIndex = 0; frameIndex < options.frameCount; frameIndex += 1) {
       if (encoderError) throw encoderError;
-      const pixels = options.adapter.renderFrameRgba({
-        frameIndex,
-        timeTicks: frameIndex * options.ticksPerFrame,
-        durationTicks: options.ticksPerFrame,
-        profile: options.profile,
-        params: options.params,
-      });
+      const pixels = framePixels(options, frameIndex);
       const frame = new FrameCtor(pixels, {
         format: 'RGBA',
         codedWidth: options.width,

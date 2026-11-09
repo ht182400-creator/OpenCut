@@ -12,6 +12,14 @@ export function api_version(): string;
 export function channel_kind(channel_json: string): string;
 
 /**
+ * 把浏览器解码的底图 RGBA 与 core 程序化图层合成，返回最终帧像素（W-08）。
+ *
+ * `base_pixels` 直接以 `Uint8Array` 传入，避免 base64 膨胀；请求字段：
+ * `width` / `height` / `frameIndex` / `timeTicks` / `durationTicks` / `params`。
+ */
+export function composite_frame_rgba(base_pixels: Uint8Array | number[], request_json: string): Uint8Array;
+
+/**
  * 能力发现结果（对齐 MCP `server/discover` 思路）。
  */
 export function discover(): string;
@@ -56,6 +64,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly api_version: () => [number, number];
     readonly channel_kind: (a: number, b: number) => [number, number, number, number];
+    readonly composite_frame_rgba: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly discover: () => [number, number, number, number];
     readonly domain_eval: (a: number, b: number) => [number, number, number, number];
     readonly param_kind: (a: number, b: number) => [number, number, number, number];

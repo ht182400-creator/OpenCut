@@ -18,7 +18,8 @@ use ocx_domain::{
 };
 use ocx_editor_api::{API_VERSION, CommandEnvelope, EditorApi, InMemoryBackend, SCHEMA_VERSION};
 use ocx_render::{
-    ExportProfile, FrameParams, build_frame_plan, render_frame, validate_export_profile,
+    ExportProfile, FrameParams, build_frame_plan, composite_frame, render_frame,
+    validate_export_profile,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -173,6 +174,33 @@ pub fn render_frame_rgba(request_json: &str) -> Result<Vec<u8>, JsValue> {
     let params: FrameParams = parse_field(&request, "params")?;
     let frame = render_frame(frame_index, time_ticks, duration_ticks, &profile, &params)
         .map_err(|error| js_error("生成预览帧", error))?;
+    Ok(frame.pixels_rgba)
+}
+
+/// 把浏览器解码的底图 RGBA 与 core 程序化图层合成，返回最终帧像素（W-08）。
+///
+/// `base_pixels` 直接以 `Uint8Array` 传入，避免 base64 膨胀；请求字段：
+/// `width` / `height` / `frameIndex` / `timeTicks` / `durationTicks` / `params`。
+#[wasm_bindgen]
+pub fn composite_frame_rgba(base_pixels: &[u8], request_json: &str) -> Result<Vec<u8>, JsValue> {
+    let request: Value =
+        serde_json::from_str(request_json).map_err(|error| js_error("解析合成请求 JSON", error))?;
+    let width = request["width"].as_u64().unwrap_or(0) as u32;
+    let height = request["height"].as_u64().unwrap_or(0) as u32;
+    let frame_index = request["frameIndex"].as_u64().unwrap_or(0);
+    let time_ticks = request["timeTicks"].as_i64().unwrap_or(0);
+    let duration_ticks = request["durationTicks"].as_i64().unwrap_or(0);
+    let params: FrameParams = parse_field(&request, "params")?;
+    let frame = composite_frame(
+        base_pixels,
+        width,
+        height,
+        frame_index,
+        time_ticks,
+        duration_ticks,
+        &params,
+    )
+    .map_err(|error| js_error("合成预览帧", error))?;
     Ok(frame.pixels_rgba)
 }
 

@@ -44,6 +44,36 @@ export function channel_kind(channel_json) {
 }
 
 /**
+ * 把浏览器解码的底图 RGBA 与 core 程序化图层合成，返回最终帧像素（W-08）。
+ *
+ * `base_pixels` 直接以 `Uint8Array` 传入，避免 base64 膨胀；请求字段：
+ * `width` / `height` / `frameIndex` / `timeTicks` / `durationTicks` / `params`。
+ * @param {Uint8Array | number[]} base_pixels
+ * @param {string} request_json
+ * @returns {Uint8Array}
+ */
+export function composite_frame_rgba(base_pixels, request_json) {
+    let ptr0, len0, ptr1, len1;
+    try {
+        ptr0 = passArray8ToWasm0(base_pixels, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passStringToWasm0(request_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        len1 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr1) { wasm.__wbindgen_free(ptr1, len1 * 1, 1); }
+        if (ptr0) { wasm.__wbindgen_free(ptr0, len0 * 1, 1); }
+        throw e;
+    }
+    const ret = wasm.composite_frame_rgba(ptr0, len0, ptr1, len1);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v3;
+}
+
+/**
  * 能力发现结果（对齐 MCP `server/discover` 思路）。
  * @returns {string}
  */
@@ -225,6 +255,13 @@ function getUint8ArrayMemory0() {
         cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
     }
     return cachedUint8ArrayMemory0;
+}
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passStringToWasm0(arg, malloc, realloc) {
