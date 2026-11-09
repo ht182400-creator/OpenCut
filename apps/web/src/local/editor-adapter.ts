@@ -62,6 +62,9 @@ export interface ProjectElementView {
   elementType: string;
   startTime: number;
   duration: number;
+  /** 素材内起始/结束时间（ticks），经典版可选字段，缺省为 0。 */
+  trimStart: number;
+  trimEnd: number;
 }
 
 /** 经典版项目只读视图的轨道。 */

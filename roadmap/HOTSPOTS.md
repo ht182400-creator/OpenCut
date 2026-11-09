@@ -124,6 +124,7 @@ flowchart LR
 | 2026-11-09 | **W-05 第四批 / H11 前置**：翻译经典版 `keyframe-query.ts`（含 `channel-data`/`path` 规则与 `formatLinearRgba`）并新建经典版 31 版项目 JSON **只读**兼容层（additive-only、5 个稳定错误码、高于 v31 拒绝）；25 个 JSON 用例对齐 107/107、WASM 契约扩至 40/40、四套跨语言对齐 107/88/100/64。`/editor` 改为加载 `classic-project-v31.json` 并由 core 解析，移除硬编码 DEMO，闭合 W-06 DoD「加载项目」。H02 证据更新、H11 由「未开始」→「进行中」。看板数据版本 bump 至 `2026-11-08-r12` | `PRIORITY.md` §2 / `local/crates/ocx-domain/tests/LEGACY_CASES.md` |
 | 2026-11-09 | **W-07 第二批 / 真实导出闭环**（用户「等能干活了再测试」）：新增 `mp4-muxer`（MIT）与 `export.ts`，用 WebCodecs 把 core 合成帧编码封装为 MP4；`/editor` 升级为导入项目 JSON、点击删除片段、播放头逐帧预览、导出下载，并修复截图反馈的对比度问题。真实浏览器验证上传/删除/播放/导出全链路，导出 60 帧 2.00s、`ftyp isom` 有效容器；修掉「删除只位移不移除元素」的真实 bug。看板数据版本 bump 至 `2026-11-08-r13` | `PRIORITY.md` §2 / `apps/web/src/local/export.ts` |
 | 2026-11-09 | **W-08 第一批 / 真实素材闭环**（用户「按照项目优化进度，接着做吧」）：按关键路径接真实视频。浏览器 `<video>` + canvas 解码，Rust core 新增 `composite_frame` 合成真实底图并产出 `RenderFrame`，`export.ts` 支持可替换 `frameSource`，预览与导出共用帧源。真实浏览器验证：演示 mp4 解码后预览像素由色块变为真实画面、播放头帧 41/90 画面变化、导出 90 帧 / 3.00s / 36,376 字节并把 blob 重新解码确认 `ftyp isom` 与真实画面；删除片段后导出 60 帧 / 2.00s。看板数据版本 bump 至 `2026-11-08-r14` | `PRIORITY.md` §2 / `apps/web/src/local/media.ts` |
+| 2026-11-09 | **W-08 第二批 / 剪辑真正改变画面**（用户「继续」）：修复上一批的语义缺口——原先删除片段只缩短时长、画面内容不变。只读提取经典版元素的 `trimStart`/`trimEnd`，新增 `timeline.ts` 的片段→素材帧映射与「在播放头分割」；删除后恢复并保留 trimStart。真实浏览器分别导出未剪辑与剪辑后的 MP4 并重新解码，首帧 hash `2010631942` → `1357128289`；分割后 3 片段且 `trim=180000` 连续。看板数据版本 bump 至 `2026-11-08-r15` | `PRIORITY.md` §2 / `apps/web/src/local/timeline.ts` |
 
 ---
 

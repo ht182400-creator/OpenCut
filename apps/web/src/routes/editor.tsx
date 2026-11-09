@@ -7,6 +7,17 @@ import {
   type EditorAdapter,
   type ProjectView,
 } from '../local/editor-adapter'
+import {
+  BUTTON_STYLE,
+  PANEL_STYLE,
+  PREVIEW_HEIGHT,
+  PREVIEW_WIDTH,
+  TEXT_MAIN,
+  TEXT_MUTED,
+  Timeline,
+  blankFrame,
+  type CoreElement,
+} from '../local/editor-ui'
 import { exportProjectToMp4, isExportSupported } from '../local/export'
 import {
   createDemoVideoFile,
@@ -15,49 +26,15 @@ import {
   mediaFrameAt,
   type DecodedMedia,
 } from '../local/media'
+import { clipAtTime, mapProjectFrame, splitClipAt } from '../local/timeline'
 import { probeWebCodecsSupport, type WebCodecsSupport } from '../local/webcodecs'
 
 export const Route = createFileRoute('/editor')({ component: Editor })
 
 const PROJECT_FIXTURE_URL = '/fixtures/classic-project-v31.json'
 const TICKS_PER_SECOND = 120000
-const PREVIEW_WIDTH = 320
-const PREVIEW_HEIGHT = 180
 /** 单次解码的最大帧数，避免长项目逐帧 seek 过慢。 */
 const MAX_DECODE_FRAMES = 90
-const TEXT_MAIN = '#e5e7eb'
-const TEXT_MUTED = '#94a3b8'
-const PANEL_STYLE: React.CSSProperties = {
-  background: '#111827',
-  border: '1px solid #334155',
-  borderRadius: 8,
-  padding: 16,
-  marginBottom: 12,
-  color: TEXT_MAIN,
-}
-const BUTTON_STYLE: React.CSSProperties = {
-  background: '#334155',
-  color: TEXT_MAIN,
-  border: '1px solid #475569',
-  borderRadius: 6,
-  padding: '7px 12px',
-  fontSize: 13,
-  cursor: 'pointer',
-  display: 'inline-block',
-}
-const TRACK_STYLE: React.CSSProperties = {
-  position: 'relative',
-  height: 36,
-  background: '#1f2937',
-  borderRadius: 6,
-  overflow: 'hidden',
-}
-
-interface CoreElement {
-  id: string
-  startTime: number
-  duration: number
-}
 
 interface RippleAdjustment {
   trackId: string
@@ -117,57 +94,14 @@ const DEMO_PARAMS = {
   positionY: 0.5,
 }
 
-/**
- * 可点击的时间轴：按 ticks 归一化定位，选中片段后可执行删除。
- * @param props 元素、选中项与回调
- * @returns {React.ReactElement} 时间轴
- */
-function Timeline(props: {
-  elements: CoreElement[]
-  selectedId: string | null
-  onSelect?: (id: string) => void
-}) {
-  const total = Math.max(...props.elements.map((item) => item.startTime + item.duration), 1)
-  return (
-    <div style={TRACK_STYLE}>
-      {props.elements.map((element) => (
-        <div
-          key={element.id}
-          onClick={() => props.onSelect?.(element.id)}
-          title={`${element.id}: ${element.startTime} + ${element.duration} ticks`}
-          style={{
-            position: 'absolute',
-            left: `${(element.startTime / total) * 100}%`,
-            width: `${(element.duration / total) * 100}%`,
-            height: '100%',
-            background: element.id.includes('intro') || element.id.includes('title')
-              ? '#6366f1'
-              : '#22c55e',
-            color: '#ffffff',
-            fontSize: 12,
-            padding: '8px 6px',
-            boxSizing: 'border-box',
-            borderRight: '1px solid #111827',
-            outline: props.selectedId === element.id ? '2px solid #fbbf24' : 'none',
-            outlineOffset: -2,
-            cursor: props.onSelect ? 'pointer' : 'default',
-          }}
-        >
-          {element.id}
-        </div>
-      ))}
-    </div>
-  )
-}
-
 /** 计算当前元素集合覆盖的总时长（ticks）。 */
 function effectiveDuration(elements: CoreElement[]): number {
   return Math.max(...elements.map((item) => item.startTime + item.duration), 0)
 }
 
 /**
- * Web-first 编辑器：导入项目 JSON 与真实视频素材 → 删除片段（core ripple）→
- * 逐帧预览（浏览器解码 + core 合成）→ WebCodecs 导出 MP4。
+ * Web-first 编辑器：导入项目 JSON 与真实视频素材 → 删除/分割片段 →
+ * 逐帧预览（按片段 trimStart 映射到素材帧）→ WebCodecs 导出 MP4。
  * 所有 core 调用都经 `editor-adapter`（I-01），错误统一友好提示。
  * @returns {React.ReactElement} 页面
  */
@@ -201,7 +135,12 @@ function Editor() {
       if ('error' in project) throw new Error(`项目不兼容：${project.error}`)
       const tracks = project.scenes.flatMap((scene) => scene.tracks)
       const mainTrack = tracks.find((track) => track.trackType === 'video' && track.id === 'main')
-      const mainElements: CoreElement[] = mainTrack?.elements ?? []
+      const mainElements: CoreElement[] = (mainTrack?.elements ?? []).map((element) => ({
+        id: element.id,
+        startTime: element.startTime,
+        duration: element.duration,
+        trimStart: element.trimStart,
+      }))
       if (mainElements.length === 0) throw new Error('项目中没有可编辑的主轨片段')
 
       const fps = project.fps.numerator / project.fps.denominator
@@ -254,9 +193,13 @@ function Editor() {
       const applied = session.adapter.evaluate<ApplyResponse>({
         kind: 'rippleApply', tracks: before, adjustments: ripple.adjustments,
       })
-      // applyRippleAdjustments 只做位移、不删除元素；按 after 的 id 集合移除被删片段
+      // applyRippleAdjustments 只做位移、不删除元素；按 after 的 id 集合移除被删片段，
+      // 并从原片段表恢复 trimStart（core 的 TimedElement 不携带素材裁剪信息）
       const remainingIds = new Set(after.map((item) => item.id))
-      const next = applied.tracks.main.elements.filter((item) => remainingIds.has(item.id))
+      const trimById = new Map(elements.map((item) => [item.id, item.trimStart]))
+      const next = applied.tracks.main.elements
+        .filter((item) => remainingIds.has(item.id))
+        .map((item) => ({ ...item, trimStart: trimById.get(item.id) ?? 0 }))
       const plan = session.adapter.evaluate<FramePlanView>({
         kind: 'buildFramePlan', durationTicks: effectiveDuration(next), profile: session.profile,
       })
@@ -271,29 +214,48 @@ function Editor() {
     }
   }
 
-  /** 生成当前帧像素：有素材时 core 合成真实底图，否则 core 确定性合成帧。 */
+  /** 在播放头处分割选中片段：素材 trimStart 连续，不改变总时长。 */
+  const splitAtPlayhead = () => {
+    if (!session || !selectedId) return
+    setErrorText(null)
+    const next = splitClipAt(elements, selectedId, frameIndex * session.ticksPerFrame)
+    if (next === elements) {
+      setErrorText('播放头不在选中片段内部，无法分割')
+      return
+    }
+    setElements(next)
+    setSelectedId(null)
+    setPlaying(false)
+  }
+
+  /** 生成当前帧像素：按片段 trimStart 取素材帧，交给 core 合成。 */
   const frameSource = (index: number): Uint8Array => {
     if (!session) throw new Error('会话尚未就绪')
+    const timeTicks = index * session.ticksPerFrame
     if (media) {
-      return session.adapter.compositeFrameRgba(mediaFrameAt(media, index), {
+      const mapping = mapProjectFrame(elements, timeTicks, session.fps, media.frames.length)
+      const base = mapping.sourceFrameIndex === null
+        ? blankFrame()
+        : mediaFrameAt(media, mapping.sourceFrameIndex)
+      return session.adapter.compositeFrameRgba(base, {
         width: PREVIEW_WIDTH,
         height: PREVIEW_HEIGHT,
         frameIndex: index,
-        timeTicks: index * session.ticksPerFrame,
+        timeTicks,
         durationTicks: session.ticksPerFrame,
         params: DEMO_PARAMS,
       })
     }
     return session.adapter.renderFrameRgba({
       frameIndex: index,
-      timeTicks: index * session.ticksPerFrame,
+      timeTicks,
       durationTicks: session.ticksPerFrame,
       profile: session.profile,
       params: DEMO_PARAMS,
     })
   }
 
-  /** 逐帧预览：帧号、会话或素材变化时重新向 core 取像素并绘制。 */
+  /** 逐帧预览：帧号、会话、片段或素材变化时重新向 core 取像素并绘制。 */
   useEffect(() => {
     if (!session) return
     try {
@@ -308,7 +270,7 @@ function Editor() {
     } catch (error) {
       setErrorText(formatCoreError(error))
     }
-  }, [session, frameIndex, media])
+  }, [session, frameIndex, media, elements])
 
   /** 播放：按帧率推进播放头，循环播放。 */
   useEffect(() => {
@@ -392,11 +354,15 @@ function Editor() {
     }
   }
 
+  const activeClip = session
+    ? clipAtTime(elements, frameIndex * session.ticksPerFrame)?.id ?? '空档'
+    : '—'
+
   return (
     <main style={{ maxWidth: 880, margin: '32px auto', padding: '0 16px', color: '#0f172a' }}>
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 编辑器</h1>
       <p style={{ color: '#475569', fontSize: 13, marginBottom: 18 }}>
-        导入项目 JSON 与真实视频素材，点击片段删除，拖动播放头预览，导出 MP4。浏览器负责解码，Rust core（WASM）负责合成与出帧。
+        导入项目 JSON 与真实视频素材，删除或在播放头分割片段，逐帧预览，导出 MP4。浏览器负责解码，Rust core（WASM）负责合成与出帧。
       </p>
 
       <div
@@ -468,6 +434,9 @@ function Editor() {
               <button type="button" style={BUTTON_STYLE} onClick={deleteSelected} disabled={!selectedId || elements.length < 2}>
                 删除选中片段
               </button>
+              <button type="button" style={BUTTON_STYLE} onClick={splitAtPlayhead} disabled={!selectedId}>
+                在播放头分割
+              </button>
               <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
                 {selectedId ? `已选中 ${selectedId}` : '未选中片段'} · 剩余 {elements.length} 个
               </span>
@@ -492,7 +461,7 @@ function Editor() {
                 onChange={(event) => { setPlaying(false); setFrameIndex(Number(event.target.value)) }}
                 style={{ flex: 1, minWidth: 200 }} aria-label="播放头" />
               <span style={{ color: TEXT_MUTED, fontSize: 13, whiteSpace: 'nowrap' }}>
-                帧 {frameIndex + 1}/{frameCount} · {(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s
+                帧 {frameIndex + 1}/{frameCount} · {(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s · 片段 {activeClip}
               </span>
             </div>
           </section>

@@ -80,6 +80,12 @@ pub struct ElementView {
     pub element_type: String,
     pub start_time: i64,
     pub duration: i64,
+    /// 素材内起始时间（ticks）。经典版为可选字段，缺失按 0 处理，不记 warning。
+    #[serde(default)]
+    pub trim_start: i64,
+    /// 素材内结束时间（ticks）。
+    #[serde(default)]
+    pub trim_end: i64,
 }
 
 /// 轨道视图：`overlay → main → audio` 顺序，与经典版一致。
@@ -162,6 +168,8 @@ fn parse_track(raw: &Value, default_type: &str, warnings: &mut Vec<String>) -> T
                     element_type: string_field(element, "type", "unknown", warnings),
                     start_time: ticks_field(element, "startTime", warnings),
                     duration: ticks_field(element, "duration", warnings),
+                    trim_start: element["trimStart"].as_i64().unwrap_or(0),
+                    trim_end: element["trimEnd"].as_i64().unwrap_or(0),
                 })
                 .collect()
         })

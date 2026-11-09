@@ -273,8 +273,8 @@ try {
           id: "main",
           type: "video",
           elements: [
-            { id: "e1", type: "video", startTime: 0, duration: 120000 },
-            { id: "e2", type: "video", startTime: 120000, duration: 120000 },
+            { id: "e1", type: "video", startTime: 0, duration: 120000, trimStart: 0 },
+            { id: "e2", type: "video", startTime: 120000, duration: 120000, trimStart: 60000 },
           ],
         },
         audio: [],
@@ -297,6 +297,9 @@ try {
   );
   check("项目只读视图元素数", () =>
     assert.equal(projectView.scenes[0].tracks[0].elements.length, 2),
+  );
+  check("项目元素 trimStart 被读取", () =>
+    assert.equal(projectView.scenes[0].tracks[0].elements[1].trimStart, 60000),
   );
   check("未来项目版本被拒绝", () =>
     assert.equal(

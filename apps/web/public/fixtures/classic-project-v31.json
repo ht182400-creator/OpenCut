@@ -58,8 +58,8 @@
               "mediaId": "media-body",
               "startTime": 120000,
               "duration": 240000,
-              "trimStart": 0,
-              "trimEnd": 240000,
+              "trimStart": 120000,
+              "trimEnd": 360000,
               "params": {}
             }
           ]

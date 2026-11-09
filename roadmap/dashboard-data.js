@@ -56,12 +56,12 @@ const HOTSPOTS = [
   { id: "H11", title: "经典版 31 版项目迁移兼容", priority: "P1", milestone: "M4", status: "进行中", action: "只读兼容层已落地（additive-only、25 用例 / 107/107、/editor 加载真实项目）；剩余写回与迁移测试" },
   { id: "H12", title: "4K 预览性能（代理/缓存/快照）", priority: "P2", milestone: "M6", status: "未开始", action: "引入代理文件与预览帧缓存，量化 scrub 指标后再验收" },
   { id: "H13", title: "上游落地六项能力导致双实现收敛（L3）", priority: "P1", milestone: "全程", status: "进行中", action: "按 README.md §7.9 做命名空间隔离、upstream-mirror、能力台账与 merge-tree 预演" },
-  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "W-08 第一批：真实视频导入/解码/core 合成/剪辑/导出闭环，浏览器端到端验证；剩余音频与拖拽交互" },
+  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "W-08 两批：真实视频导入/解码/core 合成，按片段 trimStart 映射素材帧使剪辑改变导出画面；剩余音频与裁剪时长" },
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r14";
-const DATA_UPDATED_AT = "2026-11-09 19:45";
+const DATA_VERSION = "2026-11-08-r15";
+const DATA_UPDATED_AT = "2026-11-09 20:00";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**

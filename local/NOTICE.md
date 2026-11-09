@@ -28,3 +28,5 @@
 **追加（W-07 第二批）**：新增前端依赖 `mp4-muxer@5.2.2`（MIT，纯 TypeScript 的 MP4 封装库），仅用于把 `VideoEncoder` 输出的 H.264 chunk 封装为 MP4；`apps/web/src/local/export.ts` 与交互式编辑器逻辑为本地新写实现。经典版 `services/renderer/scene-exporter.ts` 使用 `mediabunny`，本实现未拷贝其代码。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-08 第一批）**：`apps/web/src/local/media.ts`、`ocx-render/src/frame.rs` 的 `composite_frame`、`ocx-bindings-wasm` 的 `composite_frame_rgba` 均为本地新写实现，未拷贝经典版 `services/renderer/*` 或 `mediabunny` 的解码/合成代码；真实视频解码使用浏览器原生 `<video>` + canvas，未新增第三方解码依赖。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-08 第二批）**：`apps/web/src/local/timeline.ts` 的片段→素材帧映射与分割逻辑为本地新写实现；`project_compat.rs` 仅按经典版 `project/types.ts` 已存在的可选字段 `trimStart`/`trimEnd` 做只读提取（additive-only，缺省补 0、不记 warning），未拷贝经典版渲染或时间轴实现。`apps/web/public/fixtures/classic-project-v31.json` 为示例数据，其中 `clip-body.trimStart` 设为 `120000` 仅用于演示两个片段引用同一素材的不同区间。经典版 MIT © 2025-2026 声明仍由上文保留。
