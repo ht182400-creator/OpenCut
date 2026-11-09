@@ -1,16 +1,19 @@
 /**
- * 真实媒体解码（W-08 第一批）：浏览器负责解码，Rust core 负责合成与帧契约。
+ * 真实媒体解码（W-08）：浏览器负责解码，Rust core 负责合成与帧契约。
  *
  * 用原生 `<video>` + canvas 逐帧抽帧，零第三方解码依赖、支持浏览器能播的任何容器/编码；
+ * 音频用 Web Audio `decodeAudioData` 解成 planar PCM（无音轨时静默降级）。
  * 抽出的 RGBA 帧交给 `composite_frame_rgba` 合成，预览与导出共用同一帧源。
  */
 
+import { createToneAudio, decodeAudioFromFile, type PcmAudio } from './audio';
 import { exportProjectToMp4 } from './export';
 
-/** 解码结果：按帧索引缓存的 RGBA8 像素。 */
+/** 解码结果：按帧索引缓存的 RGBA8 像素与可选音轨。 */
 export interface DecodedMedia {
   name: string;
   frames: Uint8Array[];
+  audio: PcmAudio | null;
   width: number;
   height: number;
   durationSeconds: number;
@@ -79,10 +82,10 @@ function seekTo(video: HTMLVideoElement, seconds: number): Promise<void> {
 }
 
 /**
- * 解码本地视频文件并抽取指定数量的 RGBA 帧。
+ * 解码本地视频文件并抽取指定数量的 RGBA 帧与可选音轨。
  * @param file 用户选择的视频文件
  * @param options 抽帧尺寸、帧率与数量
- * @returns {Promise<DecodedMedia>} 缓存的帧像素
+ * @returns {Promise<DecodedMedia>} 缓存的帧像素与 PCM
  */
 export async function decodeVideoFile(
   file: File,
@@ -101,6 +104,7 @@ export async function decodeVideoFile(
       video.onloadedmetadata = () => resolve();
       video.onerror = () => reject(new Error('浏览器无法解码该视频文件'));
     });
+    const audio = await decodeAudioFromFile(file);
     const duration = Number.isFinite(video.duration) && video.duration > 0
       ? video.duration
       : options.frameCount / options.fps;
@@ -122,6 +126,7 @@ export async function decodeVideoFile(
     return {
       name: file.name,
       frames,
+      audio,
       width: options.width,
       height: options.height,
       durationSeconds: duration,
@@ -143,8 +148,8 @@ export function mediaFrameAt(media: DecodedMedia, frameIndex: number): Uint8Arra
 }
 
 /**
- * 现场生成一段真实 H.264 MP4 作为演示素材，供无素材时体验完整链路。
- * 画面是渐变背景 + 横向移动的白色方块，便于肉眼确认解码/合成/导出确实生效。
+ * 现场生成一段带 AAC 音轨的真实 MP4 作为演示素材，供无素材时体验完整链路。
+ * 画面是渐变背景 + 横向移动的白色方块，音轨是 440Hz 正弦波。
  * @returns {Promise<File>} 可作为输入重新导入的视频文件
  */
 export async function createDemoVideoFile(
@@ -185,6 +190,7 @@ export async function createDemoVideoFile(
     profile: {},
     params: {},
     frameSource,
+    audioSource: createToneAudio(frameCount / fps),
   });
   return new File([result.blob], 'demo-clip.mp4', { type: 'video/mp4' });
 }

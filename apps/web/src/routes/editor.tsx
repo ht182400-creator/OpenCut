@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
+import { buildTimelineAudio, isAacEncodingSupported, type PcmAudio } from '../local/audio'
 import {
   createEditorAdapter,
   formatCoreError,
@@ -100,8 +101,8 @@ function effectiveDuration(elements: CoreElement[]): number {
 }
 
 /**
- * Web-first 编辑器：导入项目 JSON 与真实视频素材 → 删除/分割片段 →
- * 逐帧预览（按片段 trimStart 映射到素材帧）→ WebCodecs 导出 MP4。
+ * Web-first 编辑器：导入项目 JSON 与真实音视频素材 → 删除/分割片段 →
+ * 逐帧预览（按片段 trimStart 映射到素材帧）→ 带 AAC 音轨导出 MP4。
  * 所有 core 调用都经 `editor-adapter`（I-01），错误统一友好提示。
  * @returns {React.ReactElement} 页面
  */
@@ -281,7 +282,7 @@ function Editor() {
     return () => window.clearInterval(timer)
   }, [playing, frameCount, session])
 
-  /** 真实导出：编码 core 帧并生成可下载的 MP4。 */
+  /** 真实导出：编码 core 帧与可选 AAC 音轨，生成可下载的 MP4。 */
   const handleExport = async () => {
     if (!session) return
     if (!isExportSupported()) {
@@ -291,16 +292,28 @@ function Editor() {
     if (exportState.url) URL.revokeObjectURL(exportState.url)
     setExportState({ status: 'running', done: 0, total: frameCount, message: '', url: null, bytes: 0 })
     try {
+      let audioSource: PcmAudio | undefined
+      if (media?.audio && await isAacEncodingSupported()) {
+        audioSource = buildTimelineAudio({
+          clips: elements,
+          frameCount,
+          fps: session.fps,
+          ticksPerFrame: session.ticksPerFrame,
+          sourceAudio: media.audio,
+          ticksPerSecond: TICKS_PER_SECOND,
+        })
+      }
       const result = await exportProjectToMp4({
         width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT,
         fps: session.fps, frameCount, ticksPerFrame: session.ticksPerFrame,
         profile: session.profile, params: DEMO_PARAMS,
         frameSource,
+        audioSource,
         onProgress: (done, total) => setExportState((previous) => ({ ...previous, done, total })),
       })
       setExportState({
         status: 'done', done: result.frameCount, total: frameCount,
-        message: `已导出 ${result.frameCount} 帧 · ${result.durationSeconds.toFixed(2)}s`,
+        message: `已导出 ${result.frameCount} 帧 · ${result.durationSeconds.toFixed(2)}s${result.hasAudio ? ' · 含 AAC 音轨' : ''}`,
         url: URL.createObjectURL(result.blob), bytes: result.bytes,
       })
     } catch (error) {
@@ -330,7 +343,7 @@ function Editor() {
           onProgress: (done, total) => setMediaStatus(`解码中 ${done}/${total}`),
         })
         setMedia(decoded)
-        setMediaStatus(`已载入 ${decoded.name} · ${decoded.frames.length} 帧 · ${decoded.durationSeconds.toFixed(2)}s`)
+        setMediaStatus(`已载入 ${decoded.name} · ${decoded.frames.length} 帧 · ${decoded.durationSeconds.toFixed(2)}s · ${decoded.audio ? '含音轨' : '无音轨'}`)
         setFrameIndex(0)
       } catch (error) {
         setErrorText(error instanceof Error ? error.message : String(error))
@@ -341,7 +354,7 @@ function Editor() {
     await loadProject(await file.text(), file.name)
   }
 
-  /** 生成并导入一段演示视频，便于无素材时体验完整链路。 */
+  /** 生成并导入一段演示音视频，便于无素材时体验完整链路。 */
   const handleDemoClip = async () => {
     setErrorText(null)
     setMediaStatus('正在生成演示素材…')
@@ -362,7 +375,7 @@ function Editor() {
     <main style={{ maxWidth: 880, margin: '32px auto', padding: '0 16px', color: '#0f172a' }}>
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 编辑器</h1>
       <p style={{ color: '#475569', fontSize: 13, marginBottom: 18 }}>
-        导入项目 JSON 与真实视频素材，删除或在播放头分割片段，逐帧预览，导出 MP4。浏览器负责解码，Rust core（WASM）负责合成与出帧。
+        导入项目 JSON 与真实音视频素材，删除或在播放头分割片段，逐帧预览，导出带 AAC 音轨的 MP4。浏览器负责编解码，Rust core（WASM）负责合成与出帧。
       </p>
 
       <div

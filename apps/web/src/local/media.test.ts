@@ -24,7 +24,8 @@ describe('media 纯函数', () => {
   it('短素材按索引循环复用帧', () => {
     const frames = [new Uint8Array([1, 2, 3, 4]), new Uint8Array([5, 6, 7, 8])];
     const media: DecodedMedia = {
-      name: 'clip', frames, width: 1, height: 1, durationSeconds: 0.1, fps: 30,
+      name: 'clip', frames, audio: null,
+      width: 1, height: 1, durationSeconds: 0.1, fps: 30,
     };
     expect(mediaFrameAt(media, 0)).toBe(frames[0]);
     expect(mediaFrameAt(media, 2)).toBe(frames[0]);
@@ -33,7 +34,8 @@ describe('media 纯函数', () => {
 
   it('空素材被明确拒绝', () => {
     const empty: DecodedMedia = {
-      name: 'empty', frames: [], width: 320, height: 180, durationSeconds: 0, fps: 30,
+      name: 'empty', frames: [], audio: null,
+      width: 320, height: 180, durationSeconds: 0, fps: 30,
     };
     expect(() => mediaFrameAt(empty, 0)).toThrow(/没有可用帧/);
   });

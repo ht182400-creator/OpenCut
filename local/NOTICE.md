@@ -30,3 +30,5 @@
 **追加（W-08 第一批）**：`apps/web/src/local/media.ts`、`ocx-render/src/frame.rs` 的 `composite_frame`、`ocx-bindings-wasm` 的 `composite_frame_rgba` 均为本地新写实现，未拷贝经典版 `services/renderer/*` 或 `mediabunny` 的解码/合成代码；真实视频解码使用浏览器原生 `<video>` + canvas，未新增第三方解码依赖。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-08 第二批）**：`apps/web/src/local/timeline.ts` 的片段→素材帧映射与分割逻辑为本地新写实现；`project_compat.rs` 仅按经典版 `project/types.ts` 已存在的可选字段 `trimStart`/`trimEnd` 做只读提取（additive-only，缺省补 0、不记 warning），未拷贝经典版渲染或时间轴实现。`apps/web/public/fixtures/classic-project-v31.json` 为示例数据，其中 `clip-body.trimStart` 设为 `120000` 仅用于演示两个片段引用同一素材的不同区间。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-08 第三批）**：`apps/web/src/local/audio.ts` 的音频解码/编码辅助与时间轴重排为本地新写实现；AAC codec 字符串 `mp4a.40.2` 与「导出前 `AudioEncoder.isConfigSupported` 探测」遵循 `PRIORITY.md` §4.5 的既有约定，未拷贝经典版导出器代码。演示音源为程序生成的 440Hz 正弦波，不含第三方音频素材。经典版 MIT © 2025-2026 声明仍由上文保留。

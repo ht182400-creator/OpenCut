@@ -125,6 +125,7 @@ flowchart LR
 | 2026-11-09 | **W-07 第二批 / 真实导出闭环**（用户「等能干活了再测试」）：新增 `mp4-muxer`（MIT）与 `export.ts`，用 WebCodecs 把 core 合成帧编码封装为 MP4；`/editor` 升级为导入项目 JSON、点击删除片段、播放头逐帧预览、导出下载，并修复截图反馈的对比度问题。真实浏览器验证上传/删除/播放/导出全链路，导出 60 帧 2.00s、`ftyp isom` 有效容器；修掉「删除只位移不移除元素」的真实 bug。看板数据版本 bump 至 `2026-11-08-r13` | `PRIORITY.md` §2 / `apps/web/src/local/export.ts` |
 | 2026-11-09 | **W-08 第一批 / 真实素材闭环**（用户「按照项目优化进度，接着做吧」）：按关键路径接真实视频。浏览器 `<video>` + canvas 解码，Rust core 新增 `composite_frame` 合成真实底图并产出 `RenderFrame`，`export.ts` 支持可替换 `frameSource`，预览与导出共用帧源。真实浏览器验证：演示 mp4 解码后预览像素由色块变为真实画面、播放头帧 41/90 画面变化、导出 90 帧 / 3.00s / 36,376 字节并把 blob 重新解码确认 `ftyp isom` 与真实画面；删除片段后导出 60 帧 / 2.00s。看板数据版本 bump 至 `2026-11-08-r14` | `PRIORITY.md` §2 / `apps/web/src/local/media.ts` |
 | 2026-11-09 | **W-08 第二批 / 剪辑真正改变画面**（用户「继续」）：修复上一批的语义缺口——原先删除片段只缩短时长、画面内容不变。只读提取经典版元素的 `trimStart`/`trimEnd`，新增 `timeline.ts` 的片段→素材帧映射与「在播放头分割」；删除后恢复并保留 trimStart。真实浏览器分别导出未剪辑与剪辑后的 MP4 并重新解码，首帧 hash `2010631942` → `1357128289`；分割后 3 片段且 `trim=180000` 连续。看板数据版本 bump 至 `2026-11-08-r15` | `PRIORITY.md` §2 / `apps/web/src/local/timeline.ts` |
+| 2026-11-09 | **W-08 第三批 / 音频调度**（用户「继续」）：闭合 W-08 风险栏的音频项。新增 `audio.ts`（Web Audio 解码、`AudioEncoder` AAC 编码、`FramePlan` 累积采样音画同步、`buildTimelineAudio` 按片段重排音频），`export.ts` 支持可选音轨，`media.ts` 演示素材带 440Hz 正弦音轨。真实浏览器：导出 90 帧 / 87,306 字节 MP4 重新解码出 3.008s / 48kHz / 双声道 / 峰值 0.2506 的有效音轨；删除片段后导出 60 帧 / 56,889 字节、音轨 2.005s。29.97fps 累积采样 1601/1602 与 core 一致。看板数据版本 bump 至 `2026-11-08-r16` | `PRIORITY.md` §2 / `apps/web/src/local/audio.ts` |
 
 ---
 

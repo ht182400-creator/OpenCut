@@ -770,6 +770,7 @@ git push origin main                                  # 绝不 --force
 | **W-07 第二批 / 真实导出** | `agent-browser` 真实浏览器 + `vitest run` + `vite build` | 上传自定义 v31 项目 → 删除片段（剩余 1、时长缩至 2s / 60 帧）→ 播放头推进到帧 7 → 导出 MP4：60 帧 / 2.00s / 6283 字节，Blob 容器头 `ftyp` + `isom`；导出单测 4 项、vitest 14/14；`tsc` 本次文件 0 错误；`vite build` 退出码 0 |
 | **W-08 第一批 / 真实素材闭环** | `agent-browser` 真实浏览器 + `cargo test -p ocx-render` + `vitest run` | 浏览器解码真实 mp4 → core `composite_frame_rgba` 合成 → 预览与导出共用帧源；预览角落像素由色块变为真实画面 `[31,39,125,255]`，播放头帧 41/90 画面 hash 变化；导出 90 帧 / 3.00s / 36,376 字节，重新解码得到 `ftyp/isom`、时长 2.97s、像素为真实渐变与白块；删除片段后导出 60 帧 / 2.00s / 24,530 字节；Node WASM 契约 46/46、vitest 22/22、`vite build` 退出码 0 |
 | **W-08 第二批 / 剪辑改变画面** | `agent-browser` 真实浏览器 + `vitest run` | 读取 `trimStart`/`trimEnd` 并按片段映射素材帧；未剪辑导出首帧 hash `2010631942`、删除首片段后导出首帧 hash `1357128289`（重新解码两个 MP4 得到，均为 `ftyp` 有效容器），证明剪辑真正改变画面；分割后 3 片段且 `trim=180000` 连续；Node WASM 契约 47/47、vitest 31/31、`vite build` 退出码 0 |
+| **W-08 第三批 / 音频调度** | `agent-browser` 真实浏览器 + `vitest run` | 演示素材带 AAC 音轨并可被 `decodeAudioData` 解出 PCM；导出 90 帧 / 3.00s / 87,306 字节含 AAC 音轨，重新解码得 3.008s、48kHz、双声道、峰值 `0.2506`（440Hz 正弦）；删除片段后导出 60 帧 / 2.00s / 56,889 字节、音轨 2.005s；29.97fps 累积采样 1601/1602 与 core `FramePlan` 一致；vitest 39/39、`vite build` 退出码 0 |
 | 导入测试 | `node dashboard.test.cjs` 用零依赖 DOM 桩按页面顺序加载三个脚本并触发 `init()` | 通过 |
 | 看板回归 | 数据完整性、依赖图、状态机全循环、完成度、持久化往返、渲染、导出/导入 JSON、重置两分支、**决策台账状态/结论与 DOM 渲染、数据版本** | **44 通过 / 0 失败** |
 | **兼容契约回归** | `node compat.test.cjs`：不变量、命名空间、判据权重、状态机、六能力台账、导出决策、三项用户决策、**契约↔看板交叉校验** | **45 通过 / 0 失败** |
