@@ -767,6 +767,7 @@ git push origin main                                  # 绝不 --force
 | **W-06 WASM 端到端** | `node apps/web/src/local/editor-wasm.contract.mjs` + `vitest run` + `vite build` | 真实 WASM 产物在 Node 加载：**16 通过 / 0 失败**（版本、能力发现、ripple / placement / animation / editorExecute、异常分支）；适配层纯函数 7/7；`vite build` 退出码 0；dev 端 `/editor` 与 `/wasm/*.wasm` 均 HTTP 200 |
 | **W-07 帧契约与预览帧** | `cargo test -p ocx-render` + `node apps/web/src/local/editor-wasm.contract.mjs` | 26 个 JSON 用例 + 5 个单测全绿；真实 WASM 端到端扩至 **28 通过 / 0 失败**（导出配置校验、帧计划/音画同步、RGBA 像素逐点校验）；前端 vitest 10/10；`vite build` 退出码 0；dev 端 `/editor` 与重建后的 wasm 均 HTTP 200（预览帧由 core 生成并绘制到 canvas） |
 | **W-05 第四批 / H11 前置** | `cargo test -p ocx-domain` + 四套 JS 对齐 + `node apps/web/src/local/editor-wasm.contract.mjs` | 25 个 JSON 用例对齐 **107/107**；累计四套对齐 107 / 88 / 100 / 64；真实 WASM 契约扩至 **40/40**（项目只读视图、关键帧查询、颜色格式化、未来版本拒绝）；`/editor` 加载经典版 v31 项目 fixture 并由 core 解析；`vite build` 退出码 0，构建产物含项目 fixture 与 WASM 静态资源 |
+| **W-07 第二批 / 真实导出** | `agent-browser` 真实浏览器 + `vitest run` + `vite build` | 上传自定义 v31 项目 → 删除片段（剩余 1、时长缩至 2s / 60 帧）→ 播放头推进到帧 7 → 导出 MP4：60 帧 / 2.00s / 6283 字节，Blob 容器头 `ftyp` + `isom`；导出单测 4 项、vitest 14/14；`tsc` 本次文件 0 错误；`vite build` 退出码 0 |
 | 导入测试 | `node dashboard.test.cjs` 用零依赖 DOM 桩按页面顺序加载三个脚本并触发 `init()` | 通过 |
 | 看板回归 | 数据完整性、依赖图、状态机全循环、完成度、持久化往返、渲染、导出/导入 JSON、重置两分支、**决策台账状态/结论与 DOM 渲染、数据版本** | **44 通过 / 0 失败** |
 | **兼容契约回归** | `node compat.test.cjs`：不变量、命名空间、判据权重、状态机、六能力台账、导出决策、三项用户决策、**契约↔看板交叉校验** | **45 通过 / 0 失败** |

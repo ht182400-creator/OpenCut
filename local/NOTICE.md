@@ -24,3 +24,5 @@
 **追加（W-07）**：`local/crates/ocx-render/` 与 `apps/web/src/local/webcodecs.ts` 为本地新写实现（非经典版代码迁移），沿用本仓库 MIT 声明。`RenderFrame` / `ExportProfile` 是按 `PRIORITY.md` §4 定义的新契约，未拷贝经典版 `services/renderer/*` 的渲染节点或导出实现。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-05 第四批）**：`ocx-domain/src/keyframe_query.rs` 与 `tests/legacy-reference.mjs` 是对经典版 `apps/web/src/animation/{keyframe-query,channel-data,path}.ts` 及 `params/index.ts` 中 `formatLinearRgba` 的逐函数翻译（MIT © 2025-2026 OpenCut），原版权声明同样保留。`project_compat.rs` 是按经典版 `project/types.ts`、`storage/types.ts` 与 `migrations/AGENTS.md` 的 additive-only 规则新写的**只读消费视图**，未拷贝经典版持久化实现。`apps/web/public/fixtures/classic-project-v31.json` 为按该 schema 构造的示例数据，不是用户真实项目。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-07 第二批）**：新增前端依赖 `mp4-muxer@5.2.2`（MIT，纯 TypeScript 的 MP4 封装库），仅用于把 `VideoEncoder` 输出的 H.264 chunk 封装为 MP4；`apps/web/src/local/export.ts` 与交互式编辑器逻辑为本地新写实现。经典版 `services/renderer/scene-exporter.ts` 使用 `mediabunny`，本实现未拷贝其代码。经典版 MIT © 2025-2026 声明仍由上文保留。

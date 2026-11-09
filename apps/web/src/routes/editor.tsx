@@ -4,22 +4,37 @@ import {
   createEditorAdapter,
   formatCoreError,
   type DiscoverResult,
+  type EditorAdapter,
   type ProjectView,
 } from '../local/editor-adapter'
+import { exportProjectToMp4, isExportSupported } from '../local/export'
 import { probeWebCodecsSupport, type WebCodecsSupport } from '../local/webcodecs'
 
 export const Route = createFileRoute('/editor')({ component: Editor })
 
-/** 经典版 v31 项目静态资源（只读兼容层的输入）。 */
 const PROJECT_FIXTURE_URL = '/fixtures/classic-project-v31.json'
+const TICKS_PER_SECOND = 120000
 const PREVIEW_WIDTH = 320
 const PREVIEW_HEIGHT = 180
+const TEXT_MAIN = '#e5e7eb'
+const TEXT_MUTED = '#94a3b8'
 const PANEL_STYLE: React.CSSProperties = {
   background: '#111827',
   border: '1px solid #334155',
   borderRadius: 8,
   padding: 16,
   marginBottom: 12,
+  color: TEXT_MAIN,
+}
+const BUTTON_STYLE: React.CSSProperties = {
+  background: '#334155',
+  color: TEXT_MAIN,
+  border: '1px solid #475569',
+  borderRadius: 6,
+  padding: '7px 12px',
+  fontSize: 13,
+  cursor: 'pointer',
+  display: 'inline-block',
 }
 const TRACK_STYLE: React.CSSProperties = {
   position: 'relative',
@@ -52,28 +67,29 @@ interface ApplyResponse {
 interface FramePlanView {
   frameCount: number
   ticksPerFrame: number
-  totalAudioSamples: number
-  durationSeconds: number
 }
 
-type ViewState =
-  | { status: 'loading' }
-  | {
-      status: 'ready'
-      info: DiscoverResult
-      project: ProjectView
-      projectTrackCount: number
-      beforeElements: CoreElement[]
-      afterElements: CoreElement[]
-      adjustments: RippleAdjustment[]
-      plan: FramePlanView
-      pixels: Uint8Array
-      codecs: WebCodecsSupport
-    }
-  | { status: 'error'; message: string }
+interface Session {
+  adapter: EditorAdapter
+  project: ProjectView
+  info: DiscoverResult
+  codecs: WebCodecsSupport
+  fps: number
+  ticksPerFrame: number
+  profile: Record<string, unknown>
+  projectTrackCount: number
+}
 
-/** 预览与导出共用的导出配置（W-07 契约），帧率由项目 settings 填入。 */
-const BASE_PROFILE = {
+interface ExportState {
+  status: 'idle' | 'running' | 'done' | 'error'
+  done: number
+  total: number
+  message: string
+  url: string | null
+  bytes: number
+}
+
+const BASE_PROFILE: Record<string, unknown> = {
   container: 'mp4',
   codec: 'avc',
   width: PREVIEW_WIDTH,
@@ -84,7 +100,6 @@ const BASE_PROFILE = {
   audioChannels: 2,
 }
 
-/** 合成帧参数：通常由 domain 的动画通道在时间 t 求值得到。 */
 const DEMO_PARAMS = {
   backgroundRgba: [17, 24, 39, 255],
   accentRgba: [249, 115, 22, 255],
@@ -94,20 +109,22 @@ const DEMO_PARAMS = {
 }
 
 /**
- * 最小时间轴：把 ticks 换算成百分比定位，直观显示 core 计算后的位置。
- * @param props 元素列表
+ * 可点击的时间轴：按 ticks 归一化定位，选中片段后可执行删除。
+ * @param props 元素、选中项与回调
  * @returns {React.ReactElement} 时间轴
  */
-function Timeline(props: { elements: CoreElement[] }) {
-  const total = Math.max(
-    ...props.elements.map((element) => element.startTime + element.duration),
-    1,
-  )
+function Timeline(props: {
+  elements: CoreElement[]
+  selectedId: string | null
+  onSelect?: (id: string) => void
+}) {
+  const total = Math.max(...props.elements.map((item) => item.startTime + item.duration), 1)
   return (
     <div style={TRACK_STYLE}>
       {props.elements.map((element) => (
         <div
           key={element.id}
+          onClick={() => props.onSelect?.(element.id)}
           title={`${element.id}: ${element.startTime} + ${element.duration} ticks`}
           style={{
             position: 'absolute',
@@ -117,11 +134,14 @@ function Timeline(props: { elements: CoreElement[] }) {
             background: element.id.includes('intro') || element.id.includes('title')
               ? '#6366f1'
               : '#22c55e',
-            color: '#fff',
+            color: '#ffffff',
             fontSize: 12,
             padding: '8px 6px',
             boxSizing: 'border-box',
             borderRight: '1px solid #111827',
+            outline: props.selectedId === element.id ? '2px solid #fbbf24' : 'none',
+            outlineOffset: -2,
+            cursor: props.onSelect ? 'pointer' : 'default',
           }}
         >
           {element.id}
@@ -131,202 +151,289 @@ function Timeline(props: { elements: CoreElement[] }) {
   )
 }
 
+/** 计算当前元素集合覆盖的总时长（ticks）。 */
+function effectiveDuration(elements: CoreElement[]): number {
+  return Math.max(...elements.map((item) => item.startTime + item.duration), 0)
+}
+
 /**
- * Web-first 最小编辑器页：加载经典版项目 JSON，由 Rust core（WASM）完成
- * 只读解析、ripple 计算、帧计划与预览帧生成。
- * 所有 core 调用都经 `editor-adapter`（不变量 I-01），错误统一友好提示。
+ * Web-first 编辑器：导入经典版项目 → 选中并删除片段（core ripple）→
+ * 拖动播放头逐帧预览 → 用 WebCodecs 导出 MP4。
+ * 所有 core 调用都经 `editor-adapter`（I-01），错误统一友好提示。
  * @returns {React.ReactElement} 页面
  */
 function Editor() {
-  const [view, setView] = useState<ViewState>({ status: 'loading' })
+  const [session, setSession] = useState<Session | null>(null)
+  const [errorText, setErrorText] = useState<string | null>(null)
+  const [originalElements, setOriginalElements] = useState<CoreElement[]>([])
+  const [elements, setElements] = useState<CoreElement[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [adjustments, setAdjustments] = useState<RippleAdjustment[]>([])
+  const [frameIndex, setFrameIndex] = useState(0)
+  const [frameCount, setFrameCount] = useState(1)
+  const [playing, setPlaying] = useState(false)
+  const [exportState, setExportState] = useState<ExportState>({
+    status: 'idle', done: 0, total: 0, message: '', url: null, bytes: 0,
+  })
+  const [sourceName, setSourceName] = useState('内置示例项目')
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  /** 载入项目 JSON 文本并初始化会话。 */
+  const loadProject = async (text: string, name: string) => {
+    setErrorText(null)
+    setPlaying(false)
+    try {
+      const adapter = await createEditorAdapter()
+      const project = adapter.readClassicProject(text)
+      if ('error' in project) throw new Error(`项目不兼容：${project.error}`)
+      const tracks = project.scenes.flatMap((scene) => scene.tracks)
+      const mainTrack = tracks.find((track) => track.trackType === 'video' && track.id === 'main')
+      const mainElements: CoreElement[] = mainTrack?.elements ?? []
+      if (mainElements.length === 0) throw new Error('项目中没有可编辑的主轨片段')
+
+      const fps = project.fps.numerator / project.fps.denominator
+      const profile = { ...BASE_PROFILE, frameRate: project.fps }
+      const duration = effectiveDuration(mainElements)
+      const plan = adapter.evaluate<FramePlanView>({
+        kind: 'buildFramePlan', durationTicks: duration, profile,
+      })
+      const codecs = await probeWebCodecsSupport()
+      setSession({
+        adapter, project, info: adapter.discover(), codecs, fps,
+        ticksPerFrame: plan.ticksPerFrame, profile, projectTrackCount: tracks.length,
+      })
+      setOriginalElements(mainElements)
+      setElements(mainElements)
+      setAdjustments([])
+      setSelectedId(null)
+      setFrameIndex(0)
+      setFrameCount(Math.max(plan.frameCount, 1))
+      setSourceName(name)
+    } catch (error) {
+      setErrorText(formatCoreError(error))
+      setSession(null)
+    }
+  }
 
   useEffect(() => {
-    let cancelled = false
     const load = async () => {
       try {
         const response = await fetch(PROJECT_FIXTURE_URL)
-        if (!response.ok) {
-          throw new Error(`项目文件加载失败（HTTP ${response.status}）`)
-        }
-        const projectText = await response.text()
-        const adapter = await createEditorAdapter()
-        const project = adapter.readClassicProject(projectText)
-        if ('error' in project) {
-          throw new Error(`项目不兼容：${project.error}`)
-        }
-
-        const tracks = project.scenes.flatMap((scene) => scene.tracks)
-        const mainTrack = tracks.find(
-          (track) => track.trackType === 'video' && track.id === 'main',
-        )
-        const beforeElements: CoreElement[] = mainTrack?.elements ?? []
-        if (beforeElements.length < 2) {
-          throw new Error('项目主轨至少需要两个片段才能演示 ripple')
-        }
-        // 删除首片段，其余片段由 core 计算 ripple 后前移
-        const before = {
-          overlay: [],
-          main: { id: 'main', elements: beforeElements },
-          audio: [],
-        }
-        const after = {
-          overlay: [],
-          main: { id: 'main', elements: beforeElements.slice(1) },
-          audio: [],
-        }
-        const info = adapter.discover()
-        const ripple = adapter.evaluate<RippleResponse>({
-          kind: 'rippleAdjustments',
-          before,
-          after,
-        })
-        const applied = adapter.evaluate<ApplyResponse>({
-          kind: 'rippleApply',
-          tracks: before,
-          adjustments: ripple.adjustments,
-        })
-        const profile = {
-          ...BASE_PROFILE,
-          frameRate: {
-            numerator: project.fps.numerator,
-            denominator: project.fps.denominator,
-          },
-        }
-        const plan = adapter.evaluate<FramePlanView>({
-          kind: 'buildFramePlan',
-          durationTicks: project.durationTicks,
-          profile,
-        })
-        const pixels = adapter.renderFrameRgba({
-          frameIndex: 0,
-          timeTicks: 0,
-          durationTicks: plan.ticksPerFrame,
-          profile,
-          params: DEMO_PARAMS,
-        })
-        const codecs = await probeWebCodecsSupport()
-        if (!cancelled) {
-          setView({
-            status: 'ready',
-            info,
-            project,
-            projectTrackCount: tracks.length,
-            beforeElements,
-            afterElements: applied.tracks.main.elements,
-            adjustments: ripple.adjustments,
-            plan,
-            pixels,
-            codecs,
-          })
-        }
+        if (!response.ok) throw new Error(`示例项目加载失败（HTTP ${response.status}）`)
+        await loadProject(await response.text(), '内置示例项目')
       } catch (error) {
-        if (!cancelled) {
-          setView({ status: 'error', message: formatCoreError(error) })
-        }
+        setErrorText(formatCoreError(error))
       }
     }
     void load()
-    return () => {
-      cancelled = true
-    }
   }, [])
 
+  /** 删除选中片段，由 core 计算并应用 ripple。 */
+  const deleteSelected = () => {
+    if (!session || !selectedId || elements.length < 2) return
+    try {
+      const after = elements.filter((item) => item.id !== selectedId)
+      const before = { overlay: [], main: { id: 'main', elements }, audio: [] }
+      const ripple = session.adapter.evaluate<RippleResponse>({
+        kind: 'rippleAdjustments', before,
+        after: { overlay: [], main: { id: 'main', elements: after }, audio: [] },
+      })
+      const applied = session.adapter.evaluate<ApplyResponse>({
+        kind: 'rippleApply', tracks: before, adjustments: ripple.adjustments,
+      })
+      // applyRippleAdjustments 只做位移、不删除元素；需按 after 的 id 集合移除被删片段
+      const remainingIds = new Set(after.map((item) => item.id))
+      const next = applied.tracks.main.elements.filter((item) => remainingIds.has(item.id))
+      const plan = session.adapter.evaluate<FramePlanView>({
+        kind: 'buildFramePlan', durationTicks: effectiveDuration(next), profile: session.profile,
+      })
+      setAdjustments(ripple.adjustments)
+      setElements(next)
+      setSelectedId(null)
+      setFrameCount(Math.max(plan.frameCount, 1))
+      setFrameIndex(0)
+      setPlaying(false)
+    } catch (error) {
+      setErrorText(formatCoreError(error))
+    }
+  }
+
+  /** 逐帧预览：frameIndex 或会话变化时重新向 core 取像素并绘制。 */
   useEffect(() => {
-    if (view.status !== 'ready') return
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const context = canvas.getContext('2d')
-    if (!context) return
-    const image = new ImageData(
-      new Uint8ClampedArray(view.pixels),
-      PREVIEW_WIDTH,
-      PREVIEW_HEIGHT,
-    )
-    context.putImageData(image, 0, 0)
-  }, [view])
+    if (!session) return
+    try {
+      const pixels = session.adapter.renderFrameRgba({
+        frameIndex, timeTicks: frameIndex * session.ticksPerFrame,
+        durationTicks: session.ticksPerFrame, profile: session.profile, params: DEMO_PARAMS,
+      })
+      const canvas = canvasRef.current
+      const context = canvas?.getContext('2d')
+      if (canvas && context) {
+        context.putImageData(
+          new ImageData(new Uint8ClampedArray(pixels), PREVIEW_WIDTH, PREVIEW_HEIGHT), 0, 0,
+        )
+      }
+    } catch (error) {
+      setErrorText(formatCoreError(error))
+    }
+  }, [session, frameIndex])
+
+  /** 播放：按帧率推进播放头，循环播放。 */
+  useEffect(() => {
+    if (!playing || frameCount <= 1 || !session) return
+    const timer = window.setInterval(() => {
+      setFrameIndex((previous) => (previous + 1) % frameCount)
+    }, Math.max(16, 1000 / session.fps))
+    return () => window.clearInterval(timer)
+  }, [playing, frameCount, session])
+
+  /** 真实导出：编码 core 帧并生成可下载的 MP4。 */
+  const handleExport = async () => {
+    if (!session) return
+    if (!isExportSupported()) {
+      setExportState({ status: 'error', done: 0, total: 0, message: '当前浏览器不支持 WebCodecs 导出', url: null, bytes: 0 })
+      return
+    }
+    if (exportState.url) URL.revokeObjectURL(exportState.url)
+    setExportState({ status: 'running', done: 0, total: frameCount, message: '', url: null, bytes: 0 })
+    try {
+      const result = await exportProjectToMp4({
+        adapter: session.adapter, width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT,
+        fps: session.fps, frameCount, ticksPerFrame: session.ticksPerFrame,
+        profile: session.profile, params: DEMO_PARAMS,
+        onProgress: (done, total) => setExportState((previous) => ({ ...previous, done, total })),
+      })
+      setExportState({
+        status: 'done', done: result.frameCount, total: frameCount,
+        message: `已导出 ${result.frameCount} 帧 · ${result.durationSeconds.toFixed(2)}s`,
+        url: URL.createObjectURL(result.blob), bytes: result.bytes,
+      })
+    } catch (error) {
+      setExportState({
+        status: 'error', done: 0, total: frameCount,
+        message: error instanceof Error ? error.message : String(error), url: null, bytes: 0,
+      })
+    }
+  }
+
+  /** 读取用户选择/拖入的项目文件。 */
+  const readFile = async (file: File | undefined) => {
+    if (!file) return
+    await loadProject(await file.text(), file.name)
+  }
 
   return (
-    <main style={{ maxWidth: 880, margin: '32px auto', padding: '0 16px', color: '#e5e7eb' }}>
-      <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 最小时间轴</h1>
-      <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 20 }}>
-        项目解析、时间轴位移与预览帧像素均由 Rust core（WASM）生成；业务代码只经 editor-adapter 访问 core。
+    <main style={{ maxWidth: 880, margin: '32px auto', padding: '0 16px', color: '#0f172a' }}>
+      <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 编辑器</h1>
+      <p style={{ color: '#475569', fontSize: 13, marginBottom: 18 }}>
+        导入经典版项目 JSON，点击片段选中并删除，拖动播放头预览，导出 MP4。全部计算由 Rust core（WASM）完成。
       </p>
 
-      {view.status === 'loading' && (
-        <div style={PANEL_STYLE}>正在加载项目与 Rust core WASM…</div>
-      )}
+      <div
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault()
+          void readFile(event.dataTransfer.files[0])
+        }}
+        style={{ ...PANEL_STYLE, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}
+      >
+        <label style={BUTTON_STYLE}>
+          导入项目 JSON
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            style={{ display: 'none' }}
+            onChange={(event) => void readFile(event.target.files?.[0])}
+          />
+        </label>
+        <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
+          当前：{sourceName}（也可把 .json 拖到此处）
+        </span>
+        <button type="button" style={BUTTON_STYLE} onClick={() => void handleExport()} disabled={!session || exportState.status === 'running'}>
+          导出 MP4
+        </button>
+        {exportState.status === 'running' && (
+          <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
+            编码中 {exportState.done}/{exportState.total}
+          </span>
+        )}
+        {exportState.status === 'done' && exportState.url && (
+          <a href={exportState.url} download="opencut-export.mp4" style={{ color: '#7dd3fc', fontSize: 13 }}>
+            下载 MP4（{exportState.message} · {exportState.bytes} 字节）
+          </a>
+        )}
+        {exportState.status === 'error' && (
+          <span style={{ color: '#fca5a5', fontSize: 13 }}>{exportState.message}</span>
+        )}
+      </div>
 
-      {view.status === 'error' && (
-        <div style={{ ...PANEL_STYLE, borderColor: '#ef4444', color: '#fecaca' }}>
-          {view.message}
-        </div>
-      )}
+      {!session && !errorText && <div style={{ ...PANEL_STYLE, color: TEXT_MAIN }}>正在加载项目与 Rust core WASM…</div>}
+      {errorText && <div style={{ ...PANEL_STYLE, color: '#fecaca' }}>{errorText}</div>}
 
-      {view.status === 'ready' && (
+      {session && (
         <>
           <section style={PANEL_STYLE}>
-            <h2 style={{ fontSize: 16, marginBottom: 8 }}>项目（经典版 v{view.project.version}，只读）</h2>
-            <p style={{ fontSize: 13, margin: '4px 0' }}>
-              {view.project.name} · id {view.project.projectId} · {view.project.sceneCount} 场景 /{' '}
-              {view.projectTrackCount} 轨道
+            <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>项目（经典版 v{session.project.version}）</h2>
+            <p style={{ fontSize: 13, margin: '4px 0', color: TEXT_MAIN }}>
+              {session.project.name} · {session.project.sceneCount} 场景 / {session.projectTrackCount} 轨道 ·
+              兼容提示 {session.project.warnings.length} 条
             </p>
-            <p style={{ fontSize: 13, color: '#94a3b8', margin: '4px 0' }}>
-              {view.project.fps.numerator}/{view.project.fps.denominator} fps ·{' '}
-              {view.project.canvas.width}×{view.project.canvas.height} · 时长{' '}
-              {(view.project.durationTicks / 120000).toFixed(2)}s · 兼容提示{' '}
-              {view.project.warnings.length} 条
-            </p>
-          </section>
-
-          <section style={PANEL_STYLE}>
-            <h2 style={{ fontSize: 16, marginBottom: 8 }}>core 能力发现</h2>
-            <p style={{ fontSize: 13, margin: '4px 0' }}>
-              API {view.info.apiVersion} · schema {view.info.schemaVersion} · 后端 {view.info.backendId}
-            </p>
-            <p style={{ fontSize: 13, color: '#94a3b8', margin: '4px 0' }}>
-              能力：{view.info.capabilities.join(' / ')}
+            <p style={{ fontSize: 13, color: TEXT_MUTED, margin: '4px 0' }}>
+              {session.project.fps.numerator}/{session.project.fps.denominator} fps ·{' '}
+              {session.project.canvas.width}×{session.project.canvas.height} ·
+              API {session.info.apiVersion} / {session.info.backendId} ·
+              WebCodecs {session.codecs.available ? '可用' : '不可用'}
             </p>
           </section>
 
           <section style={PANEL_STYLE}>
-            <h2 style={{ fontSize: 16, marginBottom: 8 }}>删除首片段前</h2>
-            <Timeline elements={view.beforeElements} />
+            <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>时间轴（点击片段选中）</h2>
+            <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 6px' }}>导入时</p>
+            <Timeline elements={originalElements} selectedId={null} />
+            <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '10px 0 6px' }}>当前</p>
+            <Timeline elements={elements} selectedId={selectedId} onSelect={setSelectedId} />
+            <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" style={BUTTON_STYLE} onClick={deleteSelected} disabled={!selectedId || elements.length < 2}>
+                删除选中片段
+              </button>
+              <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
+                {selectedId ? `已选中 ${selectedId}` : '未选中片段'} · 剩余 {elements.length} 个
+              </span>
+            </div>
+            {adjustments.length > 0 && (
+              <pre style={{ fontSize: 12, color: '#a5b4fc', marginTop: 12, marginBottom: 0 }}>
+                {JSON.stringify(adjustments, null, 2)}
+              </pre>
+            )}
           </section>
 
           <section style={PANEL_STYLE}>
-            <h2 style={{ fontSize: 16, marginBottom: 8 }}>core 应用 ripple 后</h2>
-            <Timeline elements={view.afterElements} />
-            <pre style={{ fontSize: 12, color: '#a5b4fc', marginTop: 12, marginBottom: 0 }}>
-              {JSON.stringify(view.adjustments, null, 2)}
-            </pre>
-          </section>
-
-          <section style={PANEL_STYLE}>
-            <h2 style={{ fontSize: 16, marginBottom: 8 }}>core 预览帧（RenderFrame）</h2>
+            <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>预览与播放头</h2>
             <canvas
               ref={canvasRef}
               width={PREVIEW_WIDTH}
               height={PREVIEW_HEIGHT}
               style={{ borderRadius: 6, border: '1px solid #334155', display: 'block' }}
             />
-            <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 10, marginBottom: 0 }}>
-              帧数 {view.plan.frameCount} · 每帧 {view.plan.ticksPerFrame} ticks ·
-              时长 {view.plan.durationSeconds.toFixed(2)}s ·
-              像素 {view.pixels.length} 字节（{PREVIEW_WIDTH}×{PREVIEW_HEIGHT} RGBA8）
-            </p>
-          </section>
-
-          <section style={PANEL_STYLE}>
-            <h2 style={{ fontSize: 16, marginBottom: 8 }}>WebCodecs 导出能力</h2>
-            <p style={{ fontSize: 13, margin: '4px 0' }}>
-              {view.codecs.available ? '可用' : '当前不可用'} · VideoEncoder{' '}
-              {String(view.codecs.videoEncoder)} · VideoFrame {String(view.codecs.videoFrame)} ·
-              codec {view.codecs.codec}
-            </p>
-            <p style={{ fontSize: 13, color: '#94a3b8', margin: '4px 0' }}>
-              {view.codecs.reason}
-            </p>
+            <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" style={BUTTON_STYLE} onClick={() => setPlaying((value) => !value)}>
+                {playing ? '暂停' : '播放'}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(frameCount - 1, 0)}
+                value={Math.min(frameIndex, frameCount - 1)}
+                onChange={(event) => { setPlaying(false); setFrameIndex(Number(event.target.value)) }}
+                style={{ flex: 1, minWidth: 200 }}
+                aria-label="播放头"
+              />
+              <span style={{ color: TEXT_MUTED, fontSize: 13, whiteSpace: 'nowrap' }}>
+                帧 {frameIndex + 1}/{frameCount} · {(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s
+              </span>
+            </div>
           </section>
         </>
       )}
