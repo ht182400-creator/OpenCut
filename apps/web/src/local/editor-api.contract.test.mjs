@@ -5,21 +5,32 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CONTRACT_PATH = path.join(HERE, "editor-api.contract.json");
-const RUST_LIB_PATH = path.resolve(
+const RUST_SRC_DIR = path.resolve(
   HERE,
-  "../../../../local/crates/ocx-editor-api/src/lib.rs",
+  "../../../../local/crates/ocx-editor-api/src",
 );
 const CASES_DOC_PATH = path.resolve(
   HERE,
   "../../../../local/crates/ocx-editor-api/tests/CASES.md",
 );
+
+/**
+ * 聚合读取 crate 全部 Rust 源文件（源码可能拆分为多个模块）。
+ * @returns {string} 拼接后的源码文本
+ */
+function readRustSources() {
+  return readdirSync(RUST_SRC_DIR)
+    .filter((file) => file.endsWith(".rs"))
+    .map((file) => readFileSync(path.join(RUST_SRC_DIR, file), "utf8"))
+    .join("\n");
+}
 
 /**
  * 从 Rust 源码提取字符串常量。
@@ -56,7 +67,7 @@ test("契约文件版本与字段完整", () => {
 
 test("契约常量与 Rust 实现一致", () => {
   const contract = readContract();
-  const source = readFileSync(RUST_LIB_PATH, "utf8");
+  const source = readRustSources();
   assert.equal(contract.apiVersion, rustStringConst(source, "API_VERSION"));
   assert.equal(contract.schemaVersion, rustStringConst(source, "SCHEMA_VERSION"));
   assert.equal(contract.backendId, rustStringConst(source, "BACKEND_IN_MEMORY"));
@@ -77,7 +88,7 @@ test("契约常量与 Rust 实现一致", () => {
 
 test("能力清单、命令与错误码在 Rust 源码中都有定义", () => {
   const contract = readContract();
-  const source = readFileSync(RUST_LIB_PATH, "utf8");
+  const source = readRustSources();
   for (const capability of contract.capabilities) {
     assert.ok(source.includes(`"${capability}"`), `Rust 缺少能力 ${capability}`);
   }
