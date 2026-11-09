@@ -9,7 +9,9 @@ import {
   type ProjectView,
 } from '../local/editor-adapter'
 import {
+  BASE_PROFILE,
   BUTTON_STYLE,
+  DEMO_PARAMS,
   PANEL_STYLE,
   PREVIEW_HEIGHT,
   PREVIEW_WIDTH,
@@ -23,8 +25,10 @@ import { exportProjectToMp4, isExportSupported } from '../local/export'
 import {
   clearFrameCache,
   createDemoVideoFile,
+  createProxyFile,
   decodeVideoFile,
   getFrameCacheStats,
+  getPersistedCacheStats,
   isVideoFile,
   mediaFrameAt,
   type DecodedMedia,
@@ -38,6 +42,8 @@ const PROJECT_FIXTURE_URL = '/fixtures/classic-project-v31.json'
 const TICKS_PER_SECOND = 120000
 /** 单次解码的最大帧数，避免长项目逐帧 seek 过慢。 */
 const MAX_DECODE_FRAMES = 90
+/** W-09 量化阈值：单帧预览合成耗时不超过 16ms（60fps）。 */
+const SCRUB_THRESHOLD_MS = 16
 
 interface RippleAdjustment {
   trackId: string
@@ -78,25 +84,6 @@ interface ExportState {
   bytes: number
 }
 
-const BASE_PROFILE: Record<string, unknown> = {
-  container: 'mp4',
-  codec: 'avc',
-  width: PREVIEW_WIDTH,
-  height: PREVIEW_HEIGHT,
-  videoBitrateBps: 1_000_000,
-  includeAudio: false,
-  audioSampleRateHz: 48000,
-  audioChannels: 2,
-}
-
-const DEMO_PARAMS = {
-  backgroundRgba: [17, 24, 39, 255],
-  accentRgba: [249, 115, 22, 255],
-  opacity: 0.65,
-  positionX: 0.5,
-  positionY: 0.5,
-}
-
 /** 计算当前元素集合覆盖的总时长（ticks）。 */
 function effectiveDuration(elements: CoreElement[]): number {
   return Math.max(...elements.map((item) => item.startTime + item.duration), 0)
@@ -104,7 +91,7 @@ function effectiveDuration(elements: CoreElement[]): number {
 
 /**
  * Web-first 编辑器：导入项目 JSON 与真实音视频素材 → 删除/分割片段 →
- * 逐帧预览（代理帧缓存 + 片段 trimStart 映射）→ 带 AAC 音轨导出 MP4。
+ * 逐帧预览（三级代理缓存 + 片段 trimStart 映射）→ 带 AAC 音轨导出 MP4。
  * 所有 core 调用都经 `editor-adapter`（I-01），错误统一友好提示。
  * @returns {React.ReactElement} 页面
  */
@@ -117,10 +104,12 @@ function Editor() {
   const [adjustments, setAdjustments] = useState<RippleAdjustment[]>([])
   const [frameIndex, setFrameIndex] = useState(0)
   const [frameCount, setFrameCount] = useState(1)
+  const [frameCost, setFrameCost] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [media, setMedia] = useState<DecodedMedia | null>(null)
   const [mediaStatus, setMediaStatus] = useState('未加载素材')
   const [cacheInfo, setCacheInfo] = useState('代理缓存 0 份')
+  const [proxyUrl, setProxyUrl] = useState<string | null>(null)
   const [exportState, setExportState] = useState<ExportState>({
     status: 'idle', done: 0, total: 0, message: '', url: null, bytes: 0,
   })
@@ -129,11 +118,12 @@ function Editor() {
   const projectFileRef = useRef<HTMLInputElement>(null)
   const videoFileRef = useRef<HTMLInputElement>(null)
 
-  /** 刷新缓存统计展示。 */
-  const refreshCacheInfo = () => {
+  /** 刷新内存与持久化缓存统计展示。 */
+  const refreshCacheInfo = async () => {
     const stats = getFrameCacheStats()
+    const persisted = await getPersistedCacheStats()
     setCacheInfo(
-      `代理缓存 ${stats.entries} 份 / ${stats.cachedFrames} 帧 / ${(stats.cachedBytes / 1048576).toFixed(1)}MB · 命中 ${stats.hits} / 未命中 ${stats.misses}`,
+      `代理缓存 ${stats.entries} 份 / ${stats.cachedFrames} 帧 / ${(stats.cachedBytes / 1048576).toFixed(1)}MB · 持久化 ${persisted.entries} 份 / ${(persisted.bytes / 1048576).toFixed(1)}MB · 命中 ${stats.hits} / 未命中 ${stats.misses}`,
     )
   }
 
@@ -190,7 +180,7 @@ function Editor() {
       }
     }
     void load()
-    refreshCacheInfo()
+    void refreshCacheInfo()
   }, [])
 
   /** 删除选中片段，由 core 计算并应用 ripple。 */
@@ -270,7 +260,9 @@ function Editor() {
   useEffect(() => {
     if (!session) return
     try {
+      const started = performance.now()
       const pixels = frameSource(frameIndex)
+      setFrameCost(performance.now() - started)
       const canvas = canvasRef.current
       const context = canvas?.getContext('2d')
       if (canvas && context) {
@@ -334,6 +326,26 @@ function Editor() {
     }
   }
 
+  /** 把当前代理帧编码成低分辨率 MP4 供下载或跨设备复用。 */
+  const handleProxyExport = async () => {
+    if (!media) return
+    try {
+      const file = await createProxyFile(media)
+      if (proxyUrl) URL.revokeObjectURL(proxyUrl)
+      setProxyUrl(URL.createObjectURL(file))
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  /** 清空内存与持久化代理缓存。 */
+  const handleClearCache = async () => {
+    if (proxyUrl) URL.revokeObjectURL(proxyUrl)
+    setProxyUrl(null)
+    await clearFrameCache()
+    await refreshCacheInfo()
+  }
+
   /** 读取用户选择/拖入的文件：视频走解码，其余按项目 JSON 处理。 */
   const readFile = async (file: File | undefined) => {
     if (!file) return
@@ -352,13 +364,15 @@ function Editor() {
           frameCount: Math.min(frameCount, MAX_DECODE_FRAMES),
           onProgress: (done, total) => setMediaStatus(`解码中 ${done}/${total}`),
         })
-        const cost = decoded.fromCache ? '代理缓存命中 · 0ms' : `解码 ${decoded.decodeMilliseconds}ms`
+        const cost = decoded.fromCache
+          ? `${decoded.cacheDetail}命中 · ${decoded.decodeMilliseconds}ms`
+          : `解码 ${decoded.decodeMilliseconds}ms${decoded.persisted ? ' · 已持久化' : ''}`
         setMedia(decoded)
         setMediaStatus(
           `已载入 ${decoded.name} · ${decoded.frames.length} 代理帧 · ${decoded.durationSeconds.toFixed(2)}s · ${decoded.audio ? '含音轨' : '无音轨'} · ${cost}`,
         )
         setFrameIndex(0)
-        refreshCacheInfo()
+        await refreshCacheInfo()
       } catch (error) {
         setErrorText(error instanceof Error ? error.message : String(error))
         setMediaStatus('素材解码失败')
@@ -389,7 +403,7 @@ function Editor() {
     <main style={{ maxWidth: 880, margin: '32px auto', padding: '0 16px', color: '#0f172a' }}>
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 编辑器</h1>
       <p style={{ color: '#475569', fontSize: 13, marginBottom: 18 }}>
-        导入项目 JSON 与真实音视频素材，删除或在播放头分割片段，逐帧预览，导出带 AAC 音轨的 MP4。代理帧缓存避免重复解码，Rust core（WASM）负责合成与出帧。
+        导入项目 JSON 与真实音视频素材，删除或在播放头分割片段，逐帧预览，导出带 AAC 音轨的 MP4。代理帧三级缓存与单帧耗时量化由 W-09 提供，Rust core（WASM）负责合成与出帧。
       </p>
 
       <div
@@ -413,13 +427,21 @@ function Editor() {
         <button type="button" style={BUTTON_STYLE} onClick={() => void handleDemoClip()}>
           生成演示素材
         </button>
-        <button type="button" style={BUTTON_STYLE} onClick={() => { clearFrameCache(); refreshCacheInfo() }}>
+        <button type="button" style={BUTTON_STYLE} onClick={() => void handleClearCache()}>
           清除帧缓存
+        </button>
+        <button type="button" style={BUTTON_STYLE} onClick={() => void handleProxyExport()} disabled={!media}>
+          导出代理文件
         </button>
         <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
           当前：{sourceName} · {mediaStatus}
         </span>
         <span style={{ color: TEXT_MUTED, fontSize: 13 }}>{cacheInfo}</span>
+        {proxyUrl && (
+          <a href={proxyUrl} download="opencut-proxy.mp4" style={{ color: '#7dd3fc', fontSize: 13 }}>
+            下载代理 MP4
+          </a>
+        )}
         <button type="button" style={BUTTON_STYLE} onClick={() => void handleExport()} disabled={!session || exportState.status === 'running'}>
           导出 MP4
         </button>
@@ -492,7 +514,7 @@ function Editor() {
                 onChange={(event) => { setPlaying(false); setFrameIndex(Number(event.target.value)) }}
                 style={{ flex: 1, minWidth: 200 }} aria-label="播放头" />
               <span style={{ color: TEXT_MUTED, fontSize: 13, whiteSpace: 'nowrap' }}>
-                帧 {frameIndex + 1}/{frameCount} · {(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s · 片段 {activeClip}
+                帧 {frameIndex + 1}/{frameCount} · {(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s · 片段 {activeClip} · 帧耗时 {frameCost.toFixed(2)}ms（阈值 {SCRUB_THRESHOLD_MS}ms {frameCost <= SCRUB_THRESHOLD_MS ? '达标' : '超标'}）
               </span>
             </div>
           </section>

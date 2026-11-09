@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CACHE_KEY_SCHEMA_VERSION,
   DEFAULT_MAX_CACHE_ENTRIES,
   FrameCache,
   buildCacheKey,
@@ -18,6 +19,12 @@ describe('缓存 key', () => {
 
   it('相同指纹生成相同 key', () => {
     expect(buildCacheKey(base)).toBe(buildCacheKey({ ...base }));
+  });
+
+  it('带 schema 版本前缀，升级时整体失效', () => {
+    const key = buildCacheKey(base);
+    expect(key.startsWith(`v${CACHE_KEY_SCHEMA_VERSION}|`)).toBe(true);
+    expect(CACHE_KEY_SCHEMA_VERSION).toBe(1);
   });
 
   it('素材内容、代理尺寸、帧率、帧数任一变化即失效', () => {
@@ -48,6 +55,13 @@ describe('FrameCache LRU 与统计', () => {
     cache.set('a', entry(2));
     expect(cache.get('a')?.frames).toHaveLength(2);
     expect(cache.stats()).toMatchObject({ hits: 1, misses: 1, entries: 1, cachedFrames: 2 });
+  });
+
+  it('hydrate 记一次命中并写入，不产生内存未命中', () => {
+    const cache = new FrameCache();
+    cache.hydrate('a', entry(3));
+    expect(cache.get('a')?.frames).toHaveLength(3);
+    expect(cache.stats()).toMatchObject({ hits: 2, misses: 0, entries: 1 });
   });
 
   it('容量满时淘汰最久未用项，命中会刷新顺序', () => {

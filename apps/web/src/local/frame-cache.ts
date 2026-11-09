@@ -10,6 +10,8 @@ import type { PcmAudio } from './audio';
 
 /** 默认最多缓存几份素材（避免 4K 长片占满内存）。 */
 export const DEFAULT_MAX_CACHE_ENTRIES = 3;
+/** 缓存 key 的 schema 版本；结构变更时旧 key 整体失效。 */
+export const CACHE_KEY_SCHEMA_VERSION = 1;
 
 /** 生成缓存 key 所需的素材与解码参数。 */
 export interface FrameCacheKeyInput {
@@ -29,6 +31,7 @@ export interface FrameCacheKeyInput {
  */
 export function buildCacheKey(input: FrameCacheKeyInput): string {
   return [
+    `v${CACHE_KEY_SCHEMA_VERSION}`,
     input.name,
     input.size,
     input.lastModified,
@@ -99,11 +102,17 @@ export class FrameCache {
   set(key: string, value: CachedMedia): void {
     this.entries.delete(key);
     this.entries.set(key, { value, createdAt: Date.now() });
-    while (this.entries.size > this.maxEntries) {
-      const oldest = this.entries.keys().next().value;
-      if (oldest === undefined) break;
-      this.entries.delete(oldest);
-    }
+    this.evictIfNeeded();
+  }
+
+  /**
+   * 从持久化层恢复到内存：整体算一次命中，但不改变「内存未命中」的事实。
+   * @param key 缓存 key
+   * @param value 持久化读回的条目
+   */
+  hydrate(key: string, value: CachedMedia): void {
+    this.hits += 1;
+    this.set(key, value);
   }
 
   /** 清空全部缓存（素材变更或用户手动失效）。 */
@@ -126,6 +135,15 @@ export class FrameCache {
       cachedFrames,
       cachedBytes,
     };
+  }
+
+  /** 淘汰最久未用项直到回到容量上限。 */
+  private evictIfNeeded(): void {
+    while (this.entries.size > this.maxEntries) {
+      const oldest = this.entries.keys().next().value;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
   }
 }
 

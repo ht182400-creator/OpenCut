@@ -1,12 +1,12 @@
 /**
- * 编辑器共享 UI 片段（W-08 第二批）：样式常量、时间轴组件与空档帧工具。
+ * 编辑器共享 UI 片段与配置（W-08 / W-09）：样式常量、时间轴组件与导出配置。
  * 从 `routes/editor.tsx` 抽离，保持单个代码文件不超过 500 行。
  */
 import type { CSSProperties } from 'react'
 
 import type { TimelineClip } from './timeline'
 
-/** 预览帧尺寸。 */
+/** 预览帧尺寸（同时是代理帧尺寸）。 */
 export const PREVIEW_WIDTH = 320
 export const PREVIEW_HEIGHT = 180
 
@@ -38,6 +38,27 @@ const TRACK_STYLE: CSSProperties = {
   background: '#1f2937',
   borderRadius: 6,
   overflow: 'hidden',
+}
+
+/** core 导出配置基线；帧率在载入项目后补齐。 */
+export const BASE_PROFILE: Record<string, unknown> = {
+  container: 'mp4',
+  codec: 'avc',
+  width: PREVIEW_WIDTH,
+  height: PREVIEW_HEIGHT,
+  videoBitrateBps: 1_000_000,
+  includeAudio: false,
+  audioSampleRateHz: 48000,
+  audioChannels: 2,
+}
+
+/** core 合成帧参数：深蓝底 + 半透明橙色前景矩形。 */
+export const DEMO_PARAMS = {
+  backgroundRgba: [17, 24, 39, 255],
+  accentRgba: [249, 115, 22, 255],
+  opacity: 0.65,
+  positionX: 0.5,
+  positionY: 0.5,
 }
 
 /** 时间轴片段：在 core 的 TimedElement 之外额外携带素材裁剪起点。 */

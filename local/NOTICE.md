@@ -34,3 +34,5 @@
 **追加（W-08 第三批）**：`apps/web/src/local/audio.ts` 的音频解码/编码辅助与时间轴重排为本地新写实现；AAC codec 字符串 `mp4a.40.2` 与「导出前 `AudioEncoder.isConfigSupported` 探测」遵循 `PRIORITY.md` §4.5 的既有约定，未拷贝经典版导出器代码。演示音源为程序生成的 440Hz 正弦波，不含第三方音频素材。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-09 第一批）**：`apps/web/src/local/frame-cache.ts` 与缓存接入逻辑为本地新写实现，未引入第三方缓存库，也未拷贝 Olive / Kdenlive / OpenShot 的代理剪辑实现（仅参考 `HOTSPOTS.md` 记录的调研结论）。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-09 第二批）**：`apps/web/src/local/frame-store.ts` 与三级缓存接入逻辑为本地新写实现，使用浏览器原生 IndexedDB，未引入第三方持久化/缓存库；代理 MP4 复用本仓库已有的 `mp4-muxer` 与 `export.ts` 编码链路，未拷贝 Olive / Kdenlive / OpenShot 的代理剪辑实现。经典版 MIT © 2025-2026 声明仍由上文保留。

@@ -4,7 +4,8 @@
  * 用原生 `<video>` + canvas 逐帧抽取**代理尺寸**的 RGBA 帧（W-09：即使 4K 素材
  * 也只解到 320×180，预览与合成的像素量恒定），零第三方解码依赖；
  * 音频用 Web Audio `decodeAudioData` 解成 planar PCM（无音轨时静默降级）。
- * 抽出的帧与音轨按素材指纹进入 `frameCache`，重复导入直接命中，不再逐帧 seek。
+ * 缓存分三级：内存 LRU → IndexedDB 持久化 → 逐帧 seek 解码；
+ * 后两级命中都会跳过重新解码，刷新页面后仍能复用代理帧。
  */
 
 import { createToneAudio, decodeAudioFromFile, type PcmAudio } from './audio';
@@ -15,6 +16,7 @@ import {
   type FrameCacheStats,
   type CachedMedia,
 } from './frame-cache';
+import { frameStore, type FrameStoreStats } from './frame-store';
 
 /** 解码结果：按帧索引缓存的代理 RGBA8 像素与可选音轨。 */
 export interface DecodedMedia {
@@ -25,10 +27,14 @@ export interface DecodedMedia {
   height: number;
   durationSeconds: number;
   fps: number;
-  /** 本次是否命中代理帧缓存。 */
+  /** 本次是否命中任一级代理缓存。 */
   fromCache: boolean;
-  /** 未命中时实际解码耗时（毫秒）。 */
+  /** 缓存未命中时实际解码耗时（毫秒），命中时为读取耗时。 */
   decodeMilliseconds: number;
+  /** 命中来源，仅用于界面展示。 */
+  cacheDetail?: string;
+  /** 本次解码结果是否成功写入持久化层。 */
+  persisted?: boolean;
 }
 
 /** 抽帧选项（宽高即代理尺寸）。 */
@@ -92,18 +98,25 @@ function seekTo(video: HTMLVideoElement, seconds: number): Promise<void> {
   });
 }
 
-/** 清空代理帧缓存（素材变更或用户手动失效）。 */
-export function clearFrameCache(): void {
+/** 清空内存与持久化代理缓存（素材变更或用户手动失效）。 */
+export async function clearFrameCache(): Promise<void> {
   frameCache.clear();
+  await frameStore.clear();
 }
 
-/** 读取代理帧缓存统计，用于量化命中率与内存占用。 */
+/** 读取内存代理帧缓存统计，用于量化命中率与内存占用。 */
 export function getFrameCacheStats(): FrameCacheStats {
   return frameCache.stats();
 }
 
+/** 读取 IndexedDB 持久化统计。 */
+export function getPersistedCacheStats(): Promise<FrameStoreStats> {
+  return frameStore.stats();
+}
+
 /**
- * 解码本地视频文件并抽取指定数量的代理 RGBA 帧与可选音轨；命中缓存时跳过 seek。
+ * 解码本地视频文件并抽取指定数量的代理 RGBA 帧与可选音轨。
+ * 依次查内存 LRU、IndexedDB，都未命中才逐帧 seek；结果写回两级缓存。
  * @param file 用户选择的视频文件
  * @param options 代理尺寸、帧率与数量
  * @returns {Promise<DecodedMedia>} 缓存的帧像素与 PCM
@@ -124,9 +137,25 @@ export async function decodeVideoFile(
     fps: options.fps,
     frameCount: options.frameCount,
   });
-  const cached = frameCache.get(cacheKey);
-  if (cached) {
-    return { name: file.name, ...cached, fromCache: true, decodeMilliseconds: 0 };
+
+  const fromMemory = frameCache.get(cacheKey);
+  if (fromMemory) {
+    return {
+      name: file.name, ...fromMemory,
+      fromCache: true, decodeMilliseconds: 0, cacheDetail: '内存缓存',
+    };
+  }
+
+  const persistedStart = performance.now();
+  const fromStore = await frameStore.load(cacheKey);
+  if (fromStore) {
+    frameCache.hydrate(cacheKey, fromStore);
+    return {
+      name: file.name, ...fromStore,
+      fromCache: true,
+      decodeMilliseconds: Math.round(performance.now() - persistedStart),
+      cacheDetail: '持久化缓存',
+    };
   }
 
   const started = performance.now();
@@ -169,11 +198,13 @@ export async function decodeVideoFile(
       height: options.height,
     };
     frameCache.set(cacheKey, cachedValue);
+    const persisted = await frameStore.save(cacheKey, cachedValue);
     return {
       name: file.name,
       ...cachedValue,
       fromCache: false,
       decodeMilliseconds: Math.round(performance.now() - started),
+      persisted,
     };
   } finally {
     URL.revokeObjectURL(url);
@@ -188,6 +219,31 @@ export function mediaFrameAt(media: DecodedMedia, frameIndex: number): Uint8Arra
     throw new Error('素材没有可用帧');
   }
   return media.frames[frameIndex % media.frames.length];
+}
+
+/**
+ * 把代理帧编码成低分辨率 MP4「代理文件」，可下载、跨设备复用或重新导入。
+ * 只包含视频轨（不含音轨），因为它是预览用的轻量副本。
+ * @param media 已解码的代理媒体
+ * @returns {Promise<File>} 代理 MP4 文件
+ */
+export async function createProxyFile(media: DecodedMedia): Promise<File> {
+  const fps = media.fps > 0 ? media.fps : 30;
+  const result = await exportProjectToMp4({
+    width: media.width,
+    height: media.height,
+    fps,
+    frameCount: media.frames.length,
+    ticksPerFrame: 120000 / fps,
+    profile: {},
+    params: {},
+    frameSource: (index) => media.frames[index],
+  });
+  const baseName = media.name.replace(/\.[^.]+$/, '');
+  return new File([result.blob], `proxy-${baseName}.mp4`, {
+    type: 'video/mp4',
+    lastModified: 0,
+  });
 }
 
 /**
