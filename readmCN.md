@@ -327,7 +327,7 @@ R2_BUCKET=opencut-assets
 
 | 资源 | 地址 |
 | --- | --- |
-| 中文路线图与动态看板（本地文档） | [roadmap/README.md](roadmap/README.md)、[roadmap/HOTSPOTS.md](roadmap/HOTSPOTS.md)、[roadmap/dashboard.html](roadmap/dashboard.html) |
+| 中文路线图与交互式看板（本地文档） | [roadmap/README.md](roadmap/README.md)、[roadmap/HOTSPOTS.md](roadmap/HOTSPOTS.md)、[roadmap/dashboard.html](roadmap/dashboard.html) |
 | 正式站点（经典版） | <https://opencut.app> |
 | 重写版预览 | <https://new.opencut.app> |
 | 经典版仓库 | <https://github.com/opencut-app/opencut-classic> |

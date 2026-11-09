@@ -122,19 +122,8 @@ function nextStatus(current) {
 }
 
 /**
- * 计算某里程碑的完成度（0~1）。
- * @param {string} milestoneId 里程碑 ID
- * @returns {number} 完成度
+ * 进度口径的纯计算函数已拆分到 dashboard-metrics.js（在 dashboard.js 之前加载）。
  */
-function milestoneProgress(milestoneId) {
-  const related = HOTSPOTS.filter((h) => h.milestone === milestoneId);
-  if (related.length === 0) {
-    const status = statusOf("milestones", milestoneId);
-    return status === "已完成" ? 1 : status === "进行中" ? 0.5 : 0;
-  }
-  const done = related.filter((h) => statusOf("hotspots", h.id) === "已完成").length;
-  return done / related.length;
-}
 
 /**
  * 创建 SVG 元素。
@@ -198,11 +187,13 @@ function renderFlow() {
 
     for (const item of MILESTONES) {
       const pos = nodePos(item);
-      const status = statusOf("milestones", item.id);
+      const summary = milestoneSummary(item.id);
+      const status = summary.manual;
       const color = cssVar(STATUS_VAR[status]);
       const related = HOTSPOTS.filter((h) => h.milestone === item.id);
       const blocked = related.filter((h) => statusOf("hotspots", h.id) === "阻塞").length;
-      const group = svgEl("g", { class: "flow-node", tabindex: "0", role: "button" });
+      const active = status === "进行中" || status === "阻塞" ? " is-active" : "";
+      const group = svgEl("g", { class: `flow-node${active}`, tabindex: "0", role: "button" });
 
       const rect = svgEl("rect", { x: pos.x, y: pos.y, width: LAYOUT.NODE_W, height: LAYOUT.NODE_H, rx: 9 });
       rect.style.stroke = color;
@@ -212,9 +203,20 @@ function renderFlow() {
       title.textContent = `${item.id} ${item.title}`;
       group.appendChild(title);
 
-      const meta = svgEl("text", { x: pos.x + 12, y: pos.y + 46, class: "node-meta" });
-      meta.textContent = `${item.period} · ${status}`;
+      // 节点内直接给出客观进度，不再依赖点击右侧详情
+      const meta = svgEl("text", { x: pos.x + 12, y: pos.y + 44, class: "node-meta" });
+      meta.textContent = `${item.period} · ${summary.percent}% · ${status}`;
       group.appendChild(meta);
+
+      const barWidth = LAYOUT.NODE_W - 24;
+      const barY = pos.y + LAYOUT.NODE_H - 9;
+      group.appendChild(svgEl("rect", {
+        x: pos.x + 12, y: barY, width: barWidth, height: 3, rx: 2, class: "node-progress-track",
+      }));
+      group.appendChild(svgEl("rect", {
+        x: pos.x + 12, y: barY, width: Math.round((barWidth * summary.percent) / 100),
+        height: 3, rx: 2, class: "node-progress-fill",
+      }));
 
       // 右上角角标：关联热点数；有阻塞时改用红色
       const badge = svgEl("circle", { cx: pos.x + LAYOUT.NODE_W - LAYOUT.BADGE_R - 4, cy: pos.y + LAYOUT.BADGE_R + 4, r: LAYOUT.BADGE_R });
@@ -225,7 +227,7 @@ function renderFlow() {
       group.appendChild(badgeText);
 
       const tip = svgEl("title", {});
-      tip.textContent = `${item.id} ${item.title}\n周期：${item.period}\n状态：${status}\n关联热点：${related.length}，其中阻塞 ${blocked}\n点击切换状态`;
+      tip.textContent = `${item.id} ${item.title}\n周期：${item.period}\n人工标记：${status}\n客观状态（由热点推导）：${summary.derived}\n热点进度：${summary.done}/${summary.total}（${summary.percent}%），阻塞 ${blocked}\n点击切换人工标记`;
       group.appendChild(tip);
 
       const activate = () => {
@@ -275,8 +277,8 @@ function renderCards() {
     const box = byId("milestone-cards");
     box.replaceChildren();
     for (const item of MILESTONES) {
-      const status = statusOf("milestones", item.id);
-      const progress = Math.round(milestoneProgress(item.id) * 100);
+      const summary = milestoneSummary(item.id);
+      const status = summary.manual;
       const card = document.createElement("div");
       card.className = "card";
       card.style.borderLeftColor = cssVar(STATUS_VAR[status]);
@@ -287,14 +289,20 @@ function renderCards() {
       h3.textContent = item.title;
       const meta = document.createElement("div");
       meta.className = "card-meta";
-      meta.textContent = `${status} · 热点完成度 ${progress}%`;
+      meta.textContent = `人工标记：${status} · 热点进度 ${summary.done}/${summary.total}（${summary.percent}%）`;
       const track = document.createElement("div");
       track.className = "progress-track";
       const fill = document.createElement("div");
       fill.className = "progress-fill";
-      fill.style.width = `${progress}%`;
+      fill.style.width = `${summary.percent}%`;
       track.appendChild(fill);
       card.append(head, h3, meta, track);
+      if (summary.conflict) {
+        const warn = document.createElement("div");
+        warn.className = "card-warn";
+        warn.textContent = `⚠ 人工标记「已完成」，但关联热点仅 ${summary.percent}%（客观状态：${summary.derived}）`;
+        card.appendChild(warn);
+      }
       card.addEventListener("click", () => { state.selectedId = item.id; saveState(); renderDetail(); });
       box.appendChild(card);
     }
@@ -423,8 +431,7 @@ function renderDetail() {
     const item = MILESTONES.find((m) => m.id === state.selectedId) || MILESTONES[0];
     const box = byId("detail-content");
     box.replaceChildren();
-    const status = statusOf("milestones", item.id);
-    const progress = Math.round(milestoneProgress(item.id) * 100);
+    const summary = milestoneSummary(item.id);
     const related = HOTSPOTS.filter((h) => h.milestone === item.id);
     const deps = item.deps.length > 0 ? item.deps.join("、") : "无";
     const list = related.length > 0
@@ -433,7 +440,10 @@ function renderDetail() {
     box.innerHTML = `
       <div class="detail-item"><strong>节点</strong>${item.id} · ${item.title}</div>
       <div class="detail-item"><strong>周期</strong>${item.period}</div>
-      <div class="detail-item"><strong>状态 / 热点完成度</strong>${status} · ${progress}%</div>
+      <div class="detail-item"><strong>人工标记（点击节点切换）</strong>${summary.manual}</div>
+      <div class="detail-item"><strong>客观状态（热点推导）</strong>${summary.derived}</div>
+      <div class="detail-item"><strong>热点进度</strong>${summary.done}/${summary.total} · ${summary.percent}%</div>
+      ${summary.conflict ? '<div class="detail-warn">⚠ 人工标记与热点进度不一致；标记只用于规划，不代表 DoD 已满足</div>' : ""}
       <div class="detail-item"><strong>前置依赖</strong>${deps}</div>
       <div class="detail-item"><strong>验收 DoD</strong>${item.dod}</div>
       <div class="detail-item"><strong>关联热点</strong>${list}</div>
@@ -455,7 +465,7 @@ function renderOverview() {
     byId("overall-bar").style.width = `${percent}%`;
     const counts = STATUS_LIST.map((s) => `${s} ${HOTSPOTS.filter((h) => statusOf("hotspots", h.id) === s).length}`);
     const blocked = HOTSPOTS.filter((h) => statusOf("hotspots", h.id) === "阻塞").length;
-    byId("overall-stats").textContent = `热点：${counts.join(" / ")} · 当前阻塞 ${blocked} 项`;
+    byId("overall-stats").textContent = `热点：${counts.join(" / ")} · 当前阻塞 ${blocked} 项 · 总体完成度按热点统计（非人工标记）`;
   } catch (error) {
     reportError("渲染总体进度", error);
   }

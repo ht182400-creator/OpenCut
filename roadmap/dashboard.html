@@ -3,17 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OpenCut Rust 重写版 · 动态路线图看板</title>
-  <link rel="stylesheet" href="dashboard.css?v=20261108-r18" />
+  <title>OpenCut Rust 重写版 · 交互式路线图看板</title>
+  <link rel="stylesheet" href="dashboard.css?v=20261108-r19" />
   <!-- 查询参数用于绕过浏览器对旧脚本的缓存；数据版本同时显示在页面上 -->
-  <script src="dashboard-data.js?v=20261108-r18" defer></script>
-  <script src="dashboard-io.js?v=20261108-r18" defer></script>
-  <script src="dashboard.js?v=20261108-r18" defer></script>
+  <script src="dashboard-data.js?v=20261108-r19" defer></script>
+  <script src="dashboard-metrics.js?v=20261108-r19" defer></script>
+  <script src="dashboard-io.js?v=20261108-r19" defer></script>
+  <script src="dashboard.js?v=20261108-r19" defer></script>
 </head>
 <body>
   <header class="topbar">
     <div class="title-block">
-      <h1>OpenCut Rust 重写版 · 动态路线图</h1>
+      <h1>OpenCut Rust 重写版 · 交互式路线图</h1>
       <p class="subtitle">里程碑流程图 / 热点进程 / 决策台账 · 离线可用 · 数据版本 <span id="data-version">加载中…</span></p>
     </div>
     <div class="overall">
@@ -44,7 +45,7 @@
     <button type="button" id="btn-reset" class="danger">重置</button>
     <button type="button" id="btn-reload">重新加载数据</button>
     <input type="file" id="file-input" accept=".json,application/json" hidden />
-    <span class="hint">点击流程图节点可切换状态；详情见右侧面板</span>
+    <span class="hint">点击节点切换「人工标记」；百分比与进度条 = 关联热点的客观进度</span>
   </nav>
 
   <div id="message" class="message" role="status" aria-live="polite"></div>
@@ -52,13 +53,14 @@
   <main class="layout">
     <section class="board-panel">
       <div class="section-head">
-        <h2>里程碑流程图（动态）</h2>
+        <h2>里程碑依赖图（可交互）</h2>
         <div class="legend" id="legend"></div>
       </div>
       <div class="svg-wrap">
         <svg id="flow-svg" role="img" aria-label="里程碑依赖流程图"></svg>
       </div>
-      <p class="caption">实线 = 关键路径依赖；节点颜色 = 当前状态；角标 = 关联热点数 / 阻塞数。</p>
+      <p class="caption">流动蓝线 = 关键路径依赖；描边颜色与「标记」= 人工标记（点击切换）；底部细条与百分比 = 关联热点客观进度；角标 = 关联热点数 / 阻塞数。</p>
+      <p class="caption">「可交互」指数据驱动重绘、点击切换状态、进度生长动画与 localStorage 持久化，<b>不是视频或自动播放的动图</b>。人工标记只用于规划；若标记「已完成」而热点未全部完成，卡片会显示告警。</p>
 
       <div class="section-head spaced">
         <h2>里程碑进度</h2>
@@ -95,7 +97,7 @@
 
     <aside class="detail-panel" id="detail-panel">
       <h2>节点详情</h2>
-      <p class="caption">点击左侧流程图中的里程碑节点查看</p>
+      <p class="caption">默认显示当前选中里程碑；点击流程图节点或进度卡片可切换</p>
       <div id="detail-content"></div>
       <hr />
       <h2>状态说明</h2>
@@ -106,7 +108,7 @@
         <li><span class="dot st-done"></span>已完成：DoD 全部满足</li>
       </ul>
       <p class="caption">数据来自 <code>README.md</code> §6、<code>HOTSPOTS.md</code> §4 与 <code>compat-contract.json</code>；本看板只改浏览器本地状态，不修改仓库文件。</p>
-      <p class="caption">若决策内容仍是旧的，请先按 <b>Ctrl+F5</b> 强制刷新，或点上方「重新加载数据」，并核对页首数据版本是否为 <code>2026-11-08-r18</code>。</p>
+      <p class="caption">若决策内容仍是旧的，请先按 <b>Ctrl+F5</b> 强制刷新，或点上方「重新加载数据」，并核对页首数据版本是否为 <code>2026-11-08-r19</code>。</p>
     </aside>
   </main>
 

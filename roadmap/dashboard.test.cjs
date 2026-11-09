@@ -11,7 +11,7 @@ const vm = require("node:vm");
 const os = require("node:os");
 const path = require("node:path");
 
-const SCRIPT_FILES = ["dashboard-data.js", "dashboard-io.js", "dashboard.js"];
+const SCRIPT_FILES = ["dashboard-data.js", "dashboard-metrics.js", "dashboard-io.js", "dashboard.js"];
 const ANSI_RED = "\u001b[31m";
 const ANSI_GREEN = "\u001b[32m";
 const ANSI_RESET = "\u001b[0m";
@@ -135,7 +135,7 @@ function createHarness(options) {
   context.globalThis = context;
   vm.createContext(context);
   const source = SCRIPT_FILES.map((file) => fs.readFileSync(path.join(__dirname, file), "utf8")).join("\n")
-    + "\n;globalThis.__t={statusOf,nextStatus,milestoneProgress,renderAll,readState,saveState,exportJson,importJson,resetAll,MILESTONES,HOTSPOTS,QUESTIONS,STATE_VERSION,getState:()=>state};";
+    + "\n;globalThis.__t={statusOf,nextStatus,milestoneProgress,derivedMilestoneStatus,milestoneSummary,renderAll,readState,saveState,exportJson,importJson,resetAll,MILESTONES,HOTSPOTS,QUESTIONS,STATE_VERSION,getState:()=>state};";
   vm.runInContext(source, context, { filename: "dashboard-bundle.cjs" });
   if (typeof documentStub.onInit === "function") documentStub.onInit();
   return { context, api: context.__t, blobs, elements, store };
@@ -181,13 +181,41 @@ function main() {
     assertNear("M1 完成度", api.milestoneProgress("M1"), 0);
     assertNear("未知里程碑完成度", api.milestoneProgress("M999"), 0);
 
+    // 3b. 双口径：人工标记与客观热点进度分离，冲突可检测
+    const m0 = api.milestoneSummary("M0");
+    assertEqual("M0 关联热点数", m0.total, 4);
+    assertEqual("M0 已完成热点数", m0.done, 2);
+    assertEqual("M0 热点百分比", m0.percent, 50);
+    assertEqual("M0 客观状态", m0.derived, "进行中");
+    assertEqual("M0 默认人工标记", m0.manual, "未开始");
+    assertEqual("M0 默认无冲突", m0.conflict, false);
+    assertEqual("M1 客观状态", api.derivedMilestoneStatus("M1"), "阻塞");
+    assertEqual("M6 客观状态", api.derivedMilestoneStatus("M6"), "进行中");
+    env.context.__t.getState().milestones.M0 = "已完成";
+    assertEqual("标记已完成但热点未完成时告警", api.milestoneSummary("M0").conflict, true);
+    env.context.__t.getState().milestones.M0 = "未开始";
+
     // 4. 渲染与重复渲染不抛错
     assertNoThrow("首次全量渲染", () => api.renderAll());
     assertNoThrow("重复全量渲染", () => api.renderAll());
     // 直接验证决策台账 DOM 已更新，避免「数据改了但页面没渲染」的回归
     assertEqual("决策台账渲染卡片数", env.elements["question-list"].children.length, EXPECTED_QUESTIONS);
     assertEqual("统计显示已决 2 项", env.elements["question-stats"].textContent.includes("已决 2"), true);
-    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r18"), true);
+    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r19"), true);
+    const svgTexts = [];
+    const collectText = (node) => {
+      if (node && typeof node.textContent === "string" && node.textContent) svgTexts.push(node.textContent);
+      for (const child of (node && node.children) || []) collectText(child);
+    };
+    collectText(env.elements["flow-svg"]);
+    assertEqual("流程图节点直接显示百分比", svgTexts.some((text) => text.includes("50%")), true);
+    assertEqual("流程图 tooltip 区分人工标记", svgTexts.some((text) => text.includes("人工标记")), true);
+    const cssText = fs.readFileSync(path.join(__dirname, "dashboard.css"), "utf8");
+    const htmlText = fs.readFileSync(path.join(__dirname, "dashboard.html"), "utf8");
+    assertEqual("样式含关键帧动画", cssText.includes("@keyframes bar-grow") && cssText.includes("@keyframes node-pulse"), true);
+    assertEqual("样式尊重减弱动画", cssText.includes("prefers-reduced-motion"), true);
+    assertEqual("页面不再宣称动态流程图", htmlText.includes("流程图（动态）") || htmlText.includes("动态路线图"), false);
+    assertEqual("页面说明可交互含义", htmlText.includes("不是视频或自动播放的动图"), true);
 
     // 5. 持久化往返：改状态 → 保存 → 新环境读取
     env.context.__t.getState().hotspots.H03 = "已完成";

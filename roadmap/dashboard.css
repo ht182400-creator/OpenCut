@@ -1,4 +1,4 @@
-/* 动态路线图看板样式：深色主题、状态色统一由 CSS 变量管理 */
+/* 交互式路线图看板样式：深色主题、状态色统一由 CSS 变量管理；含进度与依赖线动画 */
 :root {
   --bg: #0e1117;
   --panel: #161b24;
@@ -66,7 +66,9 @@ code {
   height: 100%;
   width: 0;
   background: linear-gradient(90deg, #3b82f6, #22c55e);
+  transform-origin: left center;
   transition: width .3s ease;
+  animation: bar-grow .65s ease-out both;
 }
 .overall-stats { color: var(--muted); font-size: 12px; }
 
@@ -154,12 +156,20 @@ button.danger:hover { border-color: var(--st-blocked); color: #fca5a5; }
   transition: fill .2s, stroke .2s;
 }
 .flow-node:hover rect { fill: #222c3c; }
+.flow-node.is-active > rect:first-child { animation: node-pulse 2.4s ease-in-out infinite; }
 .flow-node text { pointer-events: none; }
 .flow-node .node-title { fill: var(--text); font-size: 13px; font-weight: 600; }
 .flow-node .node-meta { fill: var(--muted); font-size: 11px; }
 .flow-node .badge-text { fill: #fff; font-size: 10px; font-weight: 700; }
+.node-progress-track { fill: var(--bg); opacity: .75; }
+.node-progress-fill {
+  fill: var(--st-done);
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: bar-grow .65s ease-out both;
+}
 .flow-edge { fill: none; stroke: #4b5b73; stroke-width: 1.8; marker-end: url(#arrow); }
-.flow-edge.critical { stroke: var(--accent); stroke-width: 2.4; }
+.flow-edge.critical { stroke: var(--accent); stroke-width: 2.4; animation: edge-pulse 2.8s ease-in-out infinite; }
 
 .st-todo { background: var(--st-todo); }
 .st-doing { background: var(--st-doing); }
@@ -227,6 +237,37 @@ td select { padding: 3px 6px; font-size: 12px; }
 .q-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .q-controls label { color: var(--muted); font-size: 12px; }
 .subtitle #data-version { color: var(--accent); font-weight: 600; }
+
+/* 双口径提示：人工标记与热点客观进度不一致时显式告警 */
+.card-warn, .detail-warn {
+  margin-top: 8px;
+  padding: 6px 9px;
+  border-left: 3px solid var(--p1);
+  border-radius: 4px;
+  background: rgba(234, 179, 8, .09);
+  color: #fde68a;
+  font-size: 12px;
+}
+
+/* 「动态」= 数据驱动重绘 + 进度生长 + 状态呼吸；尊重系统减弱动画设置 */
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes node-pulse {
+  0%, 100% { stroke-opacity: 1; }
+  50% { stroke-opacity: .45; }
+}
+@keyframes edge-pulse {
+  0%, 100% { stroke-opacity: 1; }
+  50% { stroke-opacity: .5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill, .node-progress-fill, .flow-node.is-active > rect:first-child, .flow-edge.critical {
+    animation: none !important;
+    transition: none !important;
+  }
+}
 
 .status-help { list-style: none; padding: 0; font-size: 12px; color: var(--muted); }
 .status-help li { margin: 6px 0; }
