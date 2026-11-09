@@ -16,6 +16,7 @@ import init, {
   discover,
   domain_eval,
   param_kind,
+  read_classic_project,
   render_frame_rgba,
   schema_version,
 } from "./wasm/ocx_bindings_wasm.js";
@@ -249,6 +250,96 @@ try {
           }),
         ),
       /INVALID_PROFILE|生成预览帧/,
+    ),
+  );
+
+  const projectJson = JSON.stringify({
+    version: 31,
+    metadata: {
+      id: "prj-wasm",
+      name: "WASM project",
+      duration: 240000,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-02T00:00:00Z",
+    },
+    scenes: [{
+      id: "s1",
+      name: "Main",
+      isMain: true,
+      tracks: {
+        overlay: [],
+        main: {
+          id: "main",
+          type: "video",
+          elements: [
+            { id: "e1", type: "video", startTime: 0, duration: 120000 },
+            { id: "e2", type: "video", startTime: 120000, duration: 120000 },
+          ],
+        },
+        audio: [],
+      },
+    }],
+    currentSceneId: "s1",
+    settings: {
+      fps: { numerator: 30, denominator: 1 },
+      canvasSize: { width: 1920, height: 1080 },
+    },
+  });
+  const projectView = JSON.parse(read_classic_project(projectJson));
+  check("项目只读视图版本", () => assert.equal(projectView.version, 31));
+  check("项目只读视图名称", () => assert.equal(projectView.name, "WASM project"));
+  check("项目只读视图 fps", () =>
+    assert.deepEqual(projectView.fps, { numerator: 30, denominator: 1 }),
+  );
+  check("项目只读视图轨道数", () =>
+    assert.equal(projectView.scenes[0].tracks.length, 1),
+  );
+  check("项目只读视图元素数", () =>
+    assert.equal(projectView.scenes[0].tracks[0].elements.length, 2),
+  );
+  check("未来项目版本被拒绝", () =>
+    assert.equal(
+      JSON.parse(read_classic_project(
+        JSON.stringify({ ...JSON.parse(projectJson), version: 32 }),
+      )).error,
+      "UNSUPPORTED_VERSION",
+    ),
+  );
+  check("非法项目 JSON 被拒绝", () =>
+    assert.equal(JSON.parse(read_classic_project("{ 非法")).error, "INVALID_JSON"),
+  );
+
+  const kfAnimations = {
+    opacity: {
+      keys: [
+        { id: "k1", time: 0, value: 0, segmentToNext: "linear" },
+        { id: "k2", time: 120000, value: 1 },
+      ],
+    },
+  };
+  const kfResult = JSON.parse(domain_eval(JSON.stringify({
+    kind: "keyframeQuery",
+    op: "getElementKeyframes",
+    animations: kfAnimations,
+  })));
+  check("关键帧查询返回 2 帧", () => assert.equal(kfResult.result.length, 2));
+  check("关键帧查询首帧插值", () =>
+    assert.equal(kfResult.result[0].interpolation, "linear"),
+  );
+  check("关键帧路径判定", () =>
+    assert.equal(JSON.parse(domain_eval(JSON.stringify({
+      kind: "keyframeQuery", op: "isAnimationPath", path: "params.size",
+    }))).result, true),
+  );
+  check("线性颜色格式化", () =>
+    assert.equal(JSON.parse(domain_eval(JSON.stringify({
+      kind: "keyframeQuery", op: "formatLinearRgba", color: [0, 0, 0, 0.5],
+    }))).result, "#00000080"),
+  );
+  check("未知 op 被明确拒绝", () =>
+    assert.throws(
+      () => domain_eval(JSON.stringify({ kind: "keyframeQuery", op: "nope" })),
+      /不支持的 op/,
     ),
   );
 

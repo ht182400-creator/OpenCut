@@ -1,0 +1,106 @@
+{
+  "version": 31,
+  "metadata": {
+    "id": "classic-demo-31",
+    "name": "Classic demo project (v31)",
+    "duration": 360000,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-02T00:00:00.000Z"
+  },
+  "scenes": [
+    {
+      "id": "scene-1",
+      "name": "Main scene",
+      "isMain": true,
+      "tracks": {
+        "overlay": [
+          {
+            "id": "overlay-text",
+            "name": "Titles",
+            "type": "text",
+            "hidden": false,
+            "elements": [
+              {
+                "id": "title-a",
+                "name": "Opening title",
+                "type": "text",
+                "startTime": 0,
+                "duration": 120000,
+                "trimStart": 0,
+                "trimEnd": 120000,
+                "params": {}
+              }
+            ]
+          }
+        ],
+        "main": {
+          "id": "main",
+          "name": "Main Track",
+          "type": "video",
+          "muted": false,
+          "hidden": false,
+          "elements": [
+            {
+              "id": "clip-intro",
+              "name": "Intro",
+              "type": "video",
+              "mediaId": "media-intro",
+              "startTime": 0,
+              "duration": 120000,
+              "trimStart": 0,
+              "trimEnd": 120000,
+              "params": {}
+            },
+            {
+              "id": "clip-body",
+              "name": "Body",
+              "type": "video",
+              "mediaId": "media-body",
+              "startTime": 120000,
+              "duration": 240000,
+              "trimStart": 0,
+              "trimEnd": 240000,
+              "params": {}
+            }
+          ]
+        },
+        "audio": [
+          {
+            "id": "audio-1",
+            "name": "Music",
+            "type": "audio",
+            "muted": false,
+            "elements": [
+              {
+                "id": "audio-bed",
+                "name": "Background music",
+                "type": "audio",
+                "mediaId": "media-music",
+                "startTime": 0,
+                "duration": 360000,
+                "trimStart": 0,
+                "trimEnd": 360000,
+                "params": {}
+              }
+            ]
+          }
+        ]
+      },
+      "bookmarks": [],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-02T00:00:00.000Z"
+    }
+  ],
+  "currentSceneId": "scene-1",
+  "settings": {
+    "fps": { "numerator": 30, "denominator": 1 },
+    "canvasSize": { "width": 1920, "height": 1080 },
+    "canvasSizeMode": "preset",
+    "background": { "type": "color", "color": "#0f172a" }
+  },
+  "timelineViewState": {
+    "zoomLevel": 1,
+    "scrollLeft": 0,
+    "playheadTime": 0
+  }
+}

@@ -70,7 +70,8 @@ export function discover() {
  * 统一领域求值入口：前端只传 `kind` + 各字段，避免暴露多个内部函数。
  *
  * 支持的 kind：`rippleAdjustments` / `rippleApply` / `placementResolve` /
- * `animationScalar` / `editorExecute` / `validateExportProfile` / `buildFramePlan`。
+ * `animationScalar` / `editorExecute` / `validateExportProfile` / `buildFramePlan` /
+ * `keyframeQuery`。
  * @param {string} request_json
  * @returns {string}
  */
@@ -107,6 +108,34 @@ export function param_kind(value_json) {
         const ptr0 = passStringToWasm0(value_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.param_kind(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * 读取经典版项目 JSON（原始文本），返回只读归一化视图或稳定错误码。
+ *
+ * 不修改输入、不写回；高于 v31 明确拒绝。字段缺失时补默认值并附 `warnings`。
+ * @param {string} project_json
+ * @returns {string}
+ */
+export function read_classic_project(project_json) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(project_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.read_classic_project(ptr0, len0);
         var ptr2 = ret[0];
         var len2 = ret[1];
         if (ret[3]) {

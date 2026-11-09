@@ -22,3 +22,5 @@
 **追加（W-06）**：`local/crates/ocx-bindings-wasm/`、`apps/web/src/local/editor-adapter.ts`、`editor-wasm.contract.mjs` 及 `apps/web/src/routes/editor.tsx` 的本地新增内容为新写实现（非经典版代码迁移），沿用本仓库 MIT 声明；`apps/web/src/local/wasm/` 下的 JS 与 `.d.ts` 由 `wasm-bindgen` 从本地 crate 生成，不是第三方拷贝。经典版 MIT © 2025-2026 声明仍由上文保留。`/editor` 原为上游 "Coming soon." 占位路由（TanStack Start 要求路由文件位于该目录），本次就地扩展；上游同步时需人工复核这一处改动。
 
 **追加（W-07）**：`local/crates/ocx-render/` 与 `apps/web/src/local/webcodecs.ts` 为本地新写实现（非经典版代码迁移），沿用本仓库 MIT 声明。`RenderFrame` / `ExportProfile` 是按 `PRIORITY.md` §4 定义的新契约，未拷贝经典版 `services/renderer/*` 的渲染节点或导出实现。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-05 第四批）**：`ocx-domain/src/keyframe_query.rs` 与 `tests/legacy-reference.mjs` 是对经典版 `apps/web/src/animation/{keyframe-query,channel-data,path}.ts` 及 `params/index.ts` 中 `formatLinearRgba` 的逐函数翻译（MIT © 2025-2026 OpenCut），原版权声明同样保留。`project_compat.rs` 是按经典版 `project/types.ts`、`storage/types.ts` 与 `migrations/AGENTS.md` 的 additive-only 规则新写的**只读消费视图**，未拷贝经典版持久化实现。`apps/web/public/fixtures/classic-project-v31.json` 为按该 schema 构造的示例数据，不是用户真实项目。经典版 MIT © 2025-2026 声明仍由上文保留。

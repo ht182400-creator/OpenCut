@@ -20,7 +20,8 @@ export function discover(): string;
  * 统一领域求值入口：前端只传 `kind` + 各字段，避免暴露多个内部函数。
  *
  * 支持的 kind：`rippleAdjustments` / `rippleApply` / `placementResolve` /
- * `animationScalar` / `editorExecute` / `validateExportProfile` / `buildFramePlan`。
+ * `animationScalar` / `editorExecute` / `validateExportProfile` / `buildFramePlan` /
+ * `keyframeQuery`。
  */
 export function domain_eval(request_json: string): string;
 
@@ -28,6 +29,13 @@ export function domain_eval(request_json: string): string;
  * 参数值类型探测（number / boolean / string）。
  */
 export function param_kind(value_json: string): string;
+
+/**
+ * 读取经典版项目 JSON（原始文本），返回只读归一化视图或稳定错误码。
+ *
+ * 不修改输入、不写回；高于 v31 明确拒绝。字段缺失时补默认值并附 `warnings`。
+ */
+export function read_classic_project(project_json: string): string;
 
 /**
  * 生成确定性预览帧的 RGBA8 像素（行优先，长度为 `width * height * 4`）。
@@ -51,6 +59,7 @@ export interface InitOutput {
     readonly discover: () => [number, number, number, number];
     readonly domain_eval: (a: number, b: number) => [number, number, number, number];
     readonly param_kind: (a: number, b: number) => [number, number, number, number];
+    readonly read_classic_project: (a: number, b: number) => [number, number, number, number];
     readonly render_frame_rgba: (a: number, b: number) => [number, number, number, number];
     readonly schema_version: () => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;

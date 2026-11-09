@@ -4,16 +4,16 @@ import {
   createEditorAdapter,
   formatCoreError,
   type DiscoverResult,
+  type ProjectView,
 } from '../local/editor-adapter'
 import { probeWebCodecsSupport, type WebCodecsSupport } from '../local/webcodecs'
 
 export const Route = createFileRoute('/editor')({ component: Editor })
 
-/** 与 Rust core 一致的时间单位。 */
-const TICKS_PER_SECOND = 120000
+/** 经典版 v31 项目静态资源（只读兼容层的输入）。 */
+const PROJECT_FIXTURE_URL = '/fixtures/classic-project-v31.json'
 const PREVIEW_WIDTH = 320
 const PREVIEW_HEIGHT = 180
-const PREVIEW_DURATION_TICKS = TICKS_PER_SECOND
 const PANEL_STYLE: React.CSSProperties = {
   background: '#111827',
   border: '1px solid #334155',
@@ -61,44 +61,23 @@ type ViewState =
   | {
       status: 'ready'
       info: DiscoverResult
+      project: ProjectView
+      projectTrackCount: number
+      beforeElements: CoreElement[]
+      afterElements: CoreElement[]
       adjustments: RippleAdjustment[]
-      elements: CoreElement[]
       plan: FramePlanView
       pixels: Uint8Array
       codecs: WebCodecsSupport
     }
   | { status: 'error'; message: string }
 
-/** 演示用的两片段场景：删除 intro 后由 core 计算并应用 ripple。 */
-const DEMO_BEFORE = {
-  overlay: [],
-  main: {
-    id: 'main',
-    elements: [
-      { id: 'intro', startTime: 0, duration: TICKS_PER_SECOND * 2 },
-      { id: 'clip', startTime: TICKS_PER_SECOND * 2, duration: TICKS_PER_SECOND },
-    ],
-  },
-  audio: [],
-}
-const DEMO_AFTER = {
-  overlay: [],
-  main: {
-    id: 'main',
-    elements: [
-      { id: 'clip', startTime: TICKS_PER_SECOND * 2, duration: TICKS_PER_SECOND },
-    ],
-  },
-  audio: [],
-}
-
-/** 预览与导出共用的导出配置（W-07 契约）。 */
-const DEMO_PROFILE = {
+/** 预览与导出共用的导出配置（W-07 契约），帧率由项目 settings 填入。 */
+const BASE_PROFILE = {
   container: 'mp4',
   codec: 'avc',
   width: PREVIEW_WIDTH,
   height: PREVIEW_HEIGHT,
-  frameRate: { numerator: 30, denominator: 1 },
   videoBitrateBps: 1_000_000,
   includeAudio: false,
   audioSampleRateHz: 48000,
@@ -135,7 +114,9 @@ function Timeline(props: { elements: CoreElement[] }) {
             left: `${(element.startTime / total) * 100}%`,
             width: `${(element.duration / total) * 100}%`,
             height: '100%',
-            background: element.id === 'intro' ? '#6366f1' : '#22c55e',
+            background: element.id.includes('intro') || element.id.includes('title')
+              ? '#6366f1'
+              : '#22c55e',
             color: '#fff',
             fontSize: 12,
             padding: '8px 6px',
@@ -151,7 +132,8 @@ function Timeline(props: { elements: CoreElement[] }) {
 }
 
 /**
- * Web-first 最小编辑器页：首次让 Rust core 在浏览器里真实执行。
+ * Web-first 最小编辑器页：加载经典版项目 JSON，由 Rust core（WASM）完成
+ * 只读解析、ripple 计算、帧计划与预览帧生成。
  * 所有 core 调用都经 `editor-adapter`（不变量 I-01），错误统一友好提示。
  * @returns {React.ReactElement} 页面
  */
@@ -163,28 +145,64 @@ function Editor() {
     let cancelled = false
     const load = async () => {
       try {
+        const response = await fetch(PROJECT_FIXTURE_URL)
+        if (!response.ok) {
+          throw new Error(`项目文件加载失败（HTTP ${response.status}）`)
+        }
+        const projectText = await response.text()
         const adapter = await createEditorAdapter()
+        const project = adapter.readClassicProject(projectText)
+        if ('error' in project) {
+          throw new Error(`项目不兼容：${project.error}`)
+        }
+
+        const tracks = project.scenes.flatMap((scene) => scene.tracks)
+        const mainTrack = tracks.find(
+          (track) => track.trackType === 'video' && track.id === 'main',
+        )
+        const beforeElements: CoreElement[] = mainTrack?.elements ?? []
+        if (beforeElements.length < 2) {
+          throw new Error('项目主轨至少需要两个片段才能演示 ripple')
+        }
+        // 删除首片段，其余片段由 core 计算 ripple 后前移
+        const before = {
+          overlay: [],
+          main: { id: 'main', elements: beforeElements },
+          audio: [],
+        }
+        const after = {
+          overlay: [],
+          main: { id: 'main', elements: beforeElements.slice(1) },
+          audio: [],
+        }
         const info = adapter.discover()
         const ripple = adapter.evaluate<RippleResponse>({
           kind: 'rippleAdjustments',
-          before: DEMO_BEFORE,
-          after: DEMO_AFTER,
+          before,
+          after,
         })
         const applied = adapter.evaluate<ApplyResponse>({
           kind: 'rippleApply',
-          tracks: DEMO_BEFORE,
+          tracks: before,
           adjustments: ripple.adjustments,
         })
+        const profile = {
+          ...BASE_PROFILE,
+          frameRate: {
+            numerator: project.fps.numerator,
+            denominator: project.fps.denominator,
+          },
+        }
         const plan = adapter.evaluate<FramePlanView>({
           kind: 'buildFramePlan',
-          durationTicks: PREVIEW_DURATION_TICKS,
-          profile: DEMO_PROFILE,
+          durationTicks: project.durationTicks,
+          profile,
         })
         const pixels = adapter.renderFrameRgba({
           frameIndex: 0,
           timeTicks: 0,
           durationTicks: plan.ticksPerFrame,
-          profile: DEMO_PROFILE,
+          profile,
           params: DEMO_PARAMS,
         })
         const codecs = await probeWebCodecsSupport()
@@ -192,8 +210,11 @@ function Editor() {
           setView({
             status: 'ready',
             info,
+            project,
+            projectTrackCount: tracks.length,
+            beforeElements,
+            afterElements: applied.tracks.main.elements,
             adjustments: ripple.adjustments,
-            elements: applied.tracks.main.elements,
             plan,
             pixels,
             codecs,
@@ -229,11 +250,11 @@ function Editor() {
     <main style={{ maxWidth: 880, margin: '32px auto', padding: '0 16px', color: '#e5e7eb' }}>
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 最小时间轴</h1>
       <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 20 }}>
-        时间轴位移与预览帧像素均由 Rust core（WASM）生成；业务代码只经 editor-adapter 访问 core。
+        项目解析、时间轴位移与预览帧像素均由 Rust core（WASM）生成；业务代码只经 editor-adapter 访问 core。
       </p>
 
       {view.status === 'loading' && (
-        <div style={PANEL_STYLE}>正在加载 Rust core WASM…</div>
+        <div style={PANEL_STYLE}>正在加载项目与 Rust core WASM…</div>
       )}
 
       {view.status === 'error' && (
@@ -245,6 +266,20 @@ function Editor() {
       {view.status === 'ready' && (
         <>
           <section style={PANEL_STYLE}>
+            <h2 style={{ fontSize: 16, marginBottom: 8 }}>项目（经典版 v{view.project.version}，只读）</h2>
+            <p style={{ fontSize: 13, margin: '4px 0' }}>
+              {view.project.name} · id {view.project.projectId} · {view.project.sceneCount} 场景 /{' '}
+              {view.projectTrackCount} 轨道
+            </p>
+            <p style={{ fontSize: 13, color: '#94a3b8', margin: '4px 0' }}>
+              {view.project.fps.numerator}/{view.project.fps.denominator} fps ·{' '}
+              {view.project.canvas.width}×{view.project.canvas.height} · 时长{' '}
+              {(view.project.durationTicks / 120000).toFixed(2)}s · 兼容提示{' '}
+              {view.project.warnings.length} 条
+            </p>
+          </section>
+
+          <section style={PANEL_STYLE}>
             <h2 style={{ fontSize: 16, marginBottom: 8 }}>core 能力发现</h2>
             <p style={{ fontSize: 13, margin: '4px 0' }}>
               API {view.info.apiVersion} · schema {view.info.schemaVersion} · 后端 {view.info.backendId}
@@ -255,13 +290,13 @@ function Editor() {
           </section>
 
           <section style={PANEL_STYLE}>
-            <h2 style={{ fontSize: 16, marginBottom: 8 }}>删除片段前</h2>
-            <Timeline elements={DEMO_BEFORE.main.elements} />
+            <h2 style={{ fontSize: 16, marginBottom: 8 }}>删除首片段前</h2>
+            <Timeline elements={view.beforeElements} />
           </section>
 
           <section style={PANEL_STYLE}>
             <h2 style={{ fontSize: 16, marginBottom: 8 }}>core 应用 ripple 后</h2>
-            <Timeline elements={view.elements} />
+            <Timeline elements={view.afterElements} />
             <pre style={{ fontSize: 12, color: '#a5b4fc', marginTop: 12, marginBottom: 0 }}>
               {JSON.stringify(view.adjustments, null, 2)}
             </pre>

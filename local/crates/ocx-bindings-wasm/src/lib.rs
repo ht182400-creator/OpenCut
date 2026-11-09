@@ -1,4 +1,4 @@
-//! OpenCut Web 端的 WASM 绑定薄层（W-06 / W-07）。
+//! OpenCut Web 端的 WASM 绑定薄层（W-06 / W-07 / W-05 第四批）。
 //!
 //! 设计约束（见 `roadmap/COMPAT.md`）：
 //! - **I-01**：前端所有调用只能经 `apps/web/src/local/editor-adapter.ts` 适配层访问 core，
@@ -8,6 +8,8 @@
 //! - 错误统一转成 `JsValue` 并带中文友好提示，由适配层 catch 后展示。
 //!
 //! `wasm-bindgen` CLI 版本必须与本 crate 依赖严格一致（见 `H03-toolchain-bootstrap.md`）。
+
+mod legacy;
 
 use ocx_domain::{
     AnimationChannel, ParamValue, PlacementResult, PlacementStrategy, PlacementSubject,
@@ -29,6 +31,7 @@ const KIND_ANIMATION_SCALAR: &str = "animationScalar";
 const KIND_EDITOR_EXECUTE: &str = "editorExecute";
 const KIND_VALIDATE_EXPORT_PROFILE: &str = "validateExportProfile";
 const KIND_BUILD_FRAME_PLAN: &str = "buildFramePlan";
+const KIND_KEYFRAME_QUERY: &str = "keyframeQuery";
 
 /// 把内部错误转为带上下文与友好提示的 JS 异常值。
 fn js_error(context: &str, error: impl std::fmt::Display) -> JsValue {
@@ -70,7 +73,8 @@ pub fn discover() -> Result<String, JsValue> {
 /// 统一领域求值入口：前端只传 `kind` + 各字段，避免暴露多个内部函数。
 ///
 /// 支持的 kind：`rippleAdjustments` / `rippleApply` / `placementResolve` /
-/// `animationScalar` / `editorExecute` / `validateExportProfile` / `buildFramePlan`。
+/// `animationScalar` / `editorExecute` / `validateExportProfile` / `buildFramePlan` /
+/// `keyframeQuery`。
 #[wasm_bindgen]
 pub fn domain_eval(request_json: &str) -> Result<String, JsValue> {
     let request: Value =
@@ -136,11 +140,20 @@ pub fn domain_eval(request_json: &str) -> Result<String, JsValue> {
                 Err(error) => to_json(&json!({ "error": error.code() })),
             }
         }
+        KIND_KEYFRAME_QUERY => to_json(&legacy::keyframe_query_eval(&request)?),
         other => {
             // 显式拒绝未知 kind，避免静默返回错误结果
             Err(js_error("分派请求", format!("不支持的 kind：{other}")))
         }
     }
+}
+
+/// 读取经典版项目 JSON（原始文本），返回只读归一化视图或稳定错误码。
+///
+/// 不修改输入、不写回；高于 v31 明确拒绝。字段缺失时补默认值并附 `warnings`。
+#[wasm_bindgen]
+pub fn read_classic_project(project_json: &str) -> Result<String, JsValue> {
+    legacy::read_classic_project_wasm(project_json)
 }
 
 /// 生成确定性预览帧的 RGBA8 像素（行优先，长度为 `width * height * 4`）。

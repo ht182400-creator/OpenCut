@@ -18,11 +18,12 @@ describe('editor-adapter 纯函数', () => {
     expect(CORE_WASM_URL).toBe('/wasm/ocx_bindings_wasm_bg.wasm');
   });
 
-  it('支持 7 种请求类型且无重复', () => {
-    expect(SUPPORTED_KINDS).toHaveLength(7);
+  it('支持 8 种请求类型且无重复', () => {
+    expect(SUPPORTED_KINDS).toHaveLength(8);
     expect(new Set(SUPPORTED_KINDS).size).toBe(SUPPORTED_KINDS.length);
     expect(SUPPORTED_KINDS).toContain('validateExportProfile');
     expect(SUPPORTED_KINDS).toContain('buildFramePlan');
+    expect(SUPPORTED_KINDS).toContain('keyframeQuery');
   });
 
   it('每种合法请求带上必填字段时通过', () => {
@@ -34,6 +35,7 @@ describe('editor-adapter 纯函数', () => {
       editorExecute: { command: {} },
       validateExportProfile: { profile: {} },
       buildFramePlan: { durationTicks: 120000, profile: {} },
+      keyframeQuery: { op: 'isAnimationPath' },
     };
     for (const kind of SUPPORTED_KINDS) {
       expect(() => validateRequest({ kind, ...valid[kind] })).not.toThrow();

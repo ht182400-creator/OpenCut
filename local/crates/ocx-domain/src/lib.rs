@@ -9,7 +9,9 @@
 //! 三者对同一份期望值比对；用例与文档见 `tests/CASES.md`。
 
 pub mod animation;
+pub mod keyframe_query;
 pub mod placement;
+pub mod project_compat;
 pub mod ripple;
 pub mod types;
 
@@ -22,6 +24,12 @@ pub use animation::{
     get_scalar_segment_interpolation, normalize_discrete_channel, normalize_scalar_channel,
     solve_bezier_progress_for_time,
 };
+pub use keyframe_query::{
+    ANIMATION_PROPERTY_PATHS, ChannelData, EFFECT_PARAM_PATH_PREFIX, EFFECT_PARAM_PATH_SUFFIX,
+    ElementAnimations, ElementKeyframe, GRAPHIC_PARAM_PATH_PREFIX, LEGACY_ANIMATION_STORAGE_KEYS,
+    format_linear_rgba, get_channel_entries_from_data, get_element_keyframes, get_keyframe_at_time,
+    get_keyframe_by_id, has_keyframes_for_path, is_animation_path, is_animation_storage_key,
+};
 pub use ocx_time::TICKS_PER_SECOND;
 pub use placement::{
     can_element_go_on_track, can_place_time_spans_on_track, enforce_main_track_start,
@@ -29,6 +37,11 @@ pub use placement::{
     get_highest_insert_index_for_track, get_track_type_for_element_type,
     resolve_preferred_new_track_placement, resolve_track_placement,
     validate_element_track_compatibility,
+};
+pub use project_compat::{
+    CLASSIC_PROJECT_VERSION, CanvasView, CompatError, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH,
+    DEFAULT_FPS_DENOMINATOR, DEFAULT_FPS_NUMERATOR, ElementView, FpsView, ProjectView, SceneView,
+    TrackView, read_classic_project,
 };
 pub use ripple::{apply_ripple_adjustments, compute_ripple_adjustments, ripple_shift_elements};
 pub use types::{

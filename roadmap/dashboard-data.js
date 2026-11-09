@@ -44,7 +44,7 @@ const MILESTONES = [
 /** 热点：与 HOTSPOTS.md §1 的 H 编号一致；milestone 为「全程」时不计入单里程碑完成度。 */
 const HOTSPOTS = [
   { id: "H01", title: "GPUI(blade) 与 wgpu 纹理不互通", priority: "P0", milestone: "M1", status: "阻塞", action: "M1 做离屏 readback spike，记录 1080p 单帧耗时并定 ADR-04" },
-  { id: "H02", title: "领域逻辑翻译缺回归网", priority: "P0", milestone: "M2", status: "进行中", action: "W-05 三批：ripple + placement + animation，共 72 个跨语言 golden 用例（64/64、100/100、88/88）；剩余 keyframe-query/命令层" },
+  { id: "H02", title: "领域逻辑翻译缺回归网", priority: "P0", milestone: "M2", status: "进行中", action: "W-05 四批：ripple + placement + animation + keyframe-query/项目兼容，共 97 个跨语言用例（64/64、100/100、88/88、107/107）；剩余命令层" },
   { id: "H03", title: "本机工具链缺失且版本不符", priority: "P0", milestone: "M0", status: "已完成", action: "proto 0.63.2 已纳管 bun/moon/rust；moon 官方包校验通过；无需 FORCE_GLOBALS 旁路" },
   { id: "H04", title: "上游架构未定，长期分叉风险", priority: "P1", milestone: "全程", status: "进行中", action: "落地新增优先 + 差异台账 + git rerere，每 2~4 周小步同步" },
   { id: "H05", title: "原生 Rust 渲染路径从未验证", priority: "P0", milestone: "M1", status: "未开始", action: "补 render_frame_to_texture → Vec<u8> 用例与原生 CI" },
@@ -53,15 +53,15 @@ const HOTSPOTS = [
   { id: "H08", title: "MCP 规范版本与长任务模型", priority: "P2", milestone: "M5", status: "未开始", action: "按 2026-07-28 规范实现，Tasks extension 承载长导出" },
   { id: "H09", title: "许可证合规（MIT/LGPL/OFL）", priority: "P1", milestone: "全程", status: "未开始", action: "MIT 声明已由 NOTICE.md 保留；剩余 LGPL 随附与字体归属" },
   { id: "H10", title: "docs/ 被 .gitignore 忽略", priority: "P2", milestone: "M0", status: "已完成", action: "已改用 roadmap/，文档可随 fork 正常提交" },
-  { id: "H11", title: "经典版 31 版项目迁移兼容", priority: "P1", milestone: "M4", status: "未开始", action: "M4 写 additive-only 只读兼容层并补迁移测试" },
+  { id: "H11", title: "经典版 31 版项目迁移兼容", priority: "P1", milestone: "M4", status: "进行中", action: "只读兼容层已落地（additive-only、25 用例 / 107/107、/editor 加载真实项目）；剩余写回与迁移测试" },
   { id: "H12", title: "4K 预览性能（代理/缓存/快照）", priority: "P2", milestone: "M6", status: "未开始", action: "引入代理文件与预览帧缓存，量化 scrub 指标后再验收" },
   { id: "H13", title: "上游落地六项能力导致双实现收敛（L3）", priority: "P1", milestone: "全程", status: "进行中", action: "按 README.md §7.9 做命名空间隔离、upstream-mirror、能力台账与 merge-tree 预演" },
-  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "W-07 第一批：RenderFrame/ExportProfile 契约 + core 预览帧，端到端 28/28；剩余真实 MP4/WebM 编码与 WIT" },
+  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "W-05 第四批 + W-07：项目只读兼容、预览帧，端到端 40/40；剩余真实 MP4/WebM 编码与 WIT" },
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r11";
-const DATA_UPDATED_AT = "2026-11-09 01:25";
+const DATA_VERSION = "2026-11-08-r12";
+const DATA_UPDATED_AT = "2026-11-09 02:00";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**

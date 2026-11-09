@@ -1,5 +1,5 @@
 /**
- * OpenCut Web 端 `editor-api` 适配层（W-06 / W-07）。
+ * OpenCut Web 端 `editor-api` 适配层（W-06 / W-07 / W-05 第四批）。
  *
  * 不变量 I-01：业务代码只能经本模块访问 Rust core，
  * 禁止在其它文件直接 import `./wasm/ocx_bindings_wasm.js`。
@@ -18,6 +18,7 @@ export const SUPPORTED_KINDS = [
   'editorExecute',
   'validateExportProfile',
   'buildFramePlan',
+  'keyframeQuery',
 ] as const;
 
 export type CoreRequestKind = (typeof SUPPORTED_KINDS)[number];
@@ -45,6 +46,44 @@ export interface CoreFrameRequest {
   params: unknown;
 }
 
+/** 经典版项目只读视图的元素。 */
+export interface ProjectElementView {
+  id: string;
+  elementType: string;
+  startTime: number;
+  duration: number;
+}
+
+/** 经典版项目只读视图的轨道。 */
+export interface ProjectTrackView {
+  id: string;
+  trackType: string;
+  elementCount: number;
+  elements: ProjectElementView[];
+}
+
+/** 经典版项目只读视图。 */
+export interface ProjectView {
+  version: number;
+  projectId: string;
+  name: string;
+  durationTicks: number;
+  fps: { numerator: number; denominator: number };
+  canvas: { width: number; height: number };
+  currentSceneId: string;
+  sceneCount: number;
+  scenes: Array<{
+    id: string;
+    name: string;
+    isMain: boolean;
+    tracks: ProjectTrackView[];
+  }>;
+  warnings: string[];
+}
+
+/** 项目读取结果：成功为视图，失败为稳定错误码。 */
+export type ProjectResult = ProjectView | { error: string };
+
 /** 每种请求的必填字段，用于在进入 WASM 前拦截明显错误。 */
 const REQUIRED_FIELDS: Record<CoreRequestKind, readonly string[]> = {
   rippleAdjustments: ['before', 'after'],
@@ -54,6 +93,7 @@ const REQUIRED_FIELDS: Record<CoreRequestKind, readonly string[]> = {
   editorExecute: ['command'],
   validateExportProfile: ['profile'],
   buildFramePlan: ['durationTicks', 'profile'],
+  keyframeQuery: ['op'],
 };
 
 /**
@@ -125,6 +165,8 @@ export interface EditorAdapter {
   evaluate<T = unknown>(request: CoreRequest): T;
   /** 生成预览帧的 RGBA8 像素。 */
   renderFrameRgba(request: CoreFrameRequest): Uint8Array;
+  /** 读取经典版项目 JSON（只读）。 */
+  readClassicProject(projectJson: string): ProjectResult;
 }
 
 let adapterPromise: Promise<EditorAdapter> | null = null;
@@ -153,6 +195,8 @@ export async function createEditorAdapter(): Promise<EditorAdapter> {
           validateFrameRequest(request);
           return glue.render_frame_rgba(JSON.stringify(request));
         },
+        readClassicProject: (projectJson: string): ProjectResult =>
+          JSON.parse(glue.read_classic_project(projectJson)) as ProjectResult,
       };
     } catch (error) {
       adapterPromise = null;
