@@ -16,6 +16,7 @@ import init, {
   discover,
   domain_eval,
   param_kind,
+  render_frame_rgba,
   schema_version,
 } from "./wasm/ocx_bindings_wasm.js";
 
@@ -168,6 +169,88 @@ try {
     assert.equal(channel_kind(JSON.stringify({ keys: [{ id: "a", time: 0, value: 1 }] })), "scalar"),
   );
   check("param_kind 数值", () => assert.equal(param_kind("3.5"), "number"));
+
+  const EXPORT_PROFILE = {
+    container: "mp4",
+    codec: "avc",
+    width: 8,
+    height: 4,
+    frameRate: { numerator: 30, denominator: 1 },
+    videoBitrateBps: 1000000,
+    includeAudio: true,
+    audioSampleRateHz: 48000,
+    audioChannels: 2,
+  };
+  const FRAME_PARAMS = {
+    backgroundRgba: [10, 20, 30, 255],
+    accentRgba: [100, 150, 200, 255],
+    opacity: 1,
+    positionX: 0.5,
+    positionY: 0.5,
+  };
+
+  check("导出配置校验通过", () =>
+    assert.equal(evaluate({ kind: "validateExportProfile", profile: EXPORT_PROFILE }).ok, true),
+  );
+  check("编码容器组合被拒绝", () =>
+    assert.deepEqual(
+      evaluate({ kind: "validateExportProfile", profile: { ...EXPORT_PROFILE, codec: "vp9" } }),
+      { ok: false, code: "INCOMPATIBLE_CODEC" },
+    ),
+  );
+
+  const framePlan = evaluate({
+    kind: "buildFramePlan",
+    durationTicks: 120000,
+    profile: EXPORT_PROFILE,
+  });
+  check("帧计划 30 帧", () => assert.equal(framePlan.frameCount, 30));
+  check("帧计划每帧 4000 ticks", () => assert.equal(framePlan.ticksPerFrame, 4000));
+  check("帧计划音画同步累计采样", () =>
+    assert.equal(framePlan.totalAudioSamples, 48000),
+  );
+  check("帧计划非法时长被拒绝", () =>
+    assert.equal(
+      evaluate({ kind: "buildFramePlan", durationTicks: -1, profile: EXPORT_PROFILE }).error,
+      "INVALID_DURATION",
+    ),
+  );
+
+  const frameRequest = {
+    frameIndex: 0,
+    timeTicks: 0,
+    durationTicks: 4000,
+    profile: EXPORT_PROFILE,
+    params: FRAME_PARAMS,
+  };
+  const pixels = render_frame_rgba(JSON.stringify(frameRequest));
+  check("预览帧返回 Uint8Array", () =>
+    assert.equal(pixels instanceof Uint8Array, true),
+  );
+  check("预览帧字节数", () => assert.equal(pixels.length, 8 * 4 * 4));
+  check("预览帧背景像素", () =>
+    assert.deepEqual(Array.from(pixels.slice(0, 4)), [10, 20, 30, 255]),
+  );
+  // 坐标 (3,2) 的行优先偏移：((2 * 8) + 3) * 4 = 76
+  check("预览帧前景像素", () =>
+    assert.deepEqual(Array.from(pixels.slice(76, 80)), [100, 150, 200, 255]),
+  );
+  const nextPixels = render_frame_rgba(
+    JSON.stringify({ ...frameRequest, frameIndex: 5, timeTicks: 20000 }),
+  );
+  check("预览帧随时间变化", () => assert.equal(nextPixels[76], 105));
+  check("非法帧请求被拒绝", () =>
+    assert.throws(
+      () =>
+        render_frame_rgba(
+          JSON.stringify({
+            ...frameRequest,
+            profile: { ...EXPORT_PROFILE, codec: "vp9" },
+          }),
+        ),
+      /INVALID_PROFILE|生成预览帧/,
+    ),
+  );
 
   check("未知 kind 被明确拒绝", () => {
     assert.throws(() => domain_eval(JSON.stringify({ kind: "nope" })), /不支持的 kind/);

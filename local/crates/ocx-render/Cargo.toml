@@ -1,0 +1,17 @@
+[package]
+name = "ocx-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenCut 本地 core：RenderFrame / ExportProfile 契约与确定性帧计划、合成帧源"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+ocx-time = { path = "../ocx-time" }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"

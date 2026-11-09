@@ -70,7 +70,7 @@ export function discover() {
  * 统一领域求值入口：前端只传 `kind` + 各字段，避免暴露多个内部函数。
  *
  * 支持的 kind：`rippleAdjustments` / `rippleApply` / `placementResolve` /
- * `animationScalar` / `editorExecute`。
+ * `animationScalar` / `editorExecute` / `validateExportProfile` / `buildFramePlan`。
  * @param {string} request_json
  * @returns {string}
  */
@@ -122,6 +122,26 @@ export function param_kind(value_json) {
 }
 
 /**
+ * 生成确定性预览帧的 RGBA8 像素（行优先，长度为 `width * height * 4`）。
+ *
+ * 请求字段：`frameIndex` / `timeTicks` / `durationTicks` / `profile` / `params`。
+ * 预览与导出共用同一份像素，因此后续接入真实合成器时前端无需改动。
+ * @param {string} request_json
+ * @returns {Uint8Array}
+ */
+export function render_frame_rgba(request_json) {
+    const ptr0 = passStringToWasm0(request_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.render_frame_rgba(ptr0, len0);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
+/**
  * core 的 schema 版本。
  * @returns {string}
  */
@@ -158,6 +178,11 @@ function __wbg_get_imports() {
         __proto__: null,
         "./ocx_bindings_wasm_bg.js": import0,
     };
+}
+
+function getArrayU8FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
 }
 
 function getStringFromWasm0(ptr, len) {

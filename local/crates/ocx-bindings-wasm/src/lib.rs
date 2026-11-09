@@ -1,9 +1,10 @@
-//! OpenCut Web 端的 WASM 绑定薄层（W-06）。
+//! OpenCut Web 端的 WASM 绑定薄层（W-06 / W-07）。
 //!
 //! 设计约束（见 `roadmap/COMPAT.md`）：
 //! - **I-01**：前端所有调用只能经 `apps/web/src/local/editor-adapter.ts` 适配层访问 core，
 //!   本 crate 只暴露少量稳定入口，不把内部类型泄漏到 JS。
-//! - 跨边界数据一律 JSON 字符串（camelCase，版本化信封），便于上游 API 落地时替换实现。
+//! - 跨边界数据一律 JSON 字符串（camelCase，版本化信封），便于上游 API 落地时替换实现；
+//!   帧像素是唯一例外，用 `Vec<u8>` 直接传 RGBA8，避免 base64 膨胀。
 //! - 错误统一转成 `JsValue` 并带中文友好提示，由适配层 catch 后展示。
 //!
 //! `wasm-bindgen` CLI 版本必须与本 crate 依赖严格一致（见 `H03-toolchain-bootstrap.md`）。
@@ -14,6 +15,9 @@ use ocx_domain::{
     compute_ripple_adjustments, get_scalar_channel_value_at_time, resolve_track_placement,
 };
 use ocx_editor_api::{API_VERSION, CommandEnvelope, EditorApi, InMemoryBackend, SCHEMA_VERSION};
+use ocx_render::{
+    ExportProfile, FrameParams, build_frame_plan, render_frame, validate_export_profile,
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
@@ -23,6 +27,8 @@ const KIND_RIPPLE_APPLY: &str = "rippleApply";
 const KIND_PLACEMENT_RESOLVE: &str = "placementResolve";
 const KIND_ANIMATION_SCALAR: &str = "animationScalar";
 const KIND_EDITOR_EXECUTE: &str = "editorExecute";
+const KIND_VALIDATE_EXPORT_PROFILE: &str = "validateExportProfile";
+const KIND_BUILD_FRAME_PLAN: &str = "buildFramePlan";
 
 /// 把内部错误转为带上下文与友好提示的 JS 异常值。
 fn js_error(context: &str, error: impl std::fmt::Display) -> JsValue {
@@ -64,7 +70,7 @@ pub fn discover() -> Result<String, JsValue> {
 /// 统一领域求值入口：前端只传 `kind` + 各字段，避免暴露多个内部函数。
 ///
 /// 支持的 kind：`rippleAdjustments` / `rippleApply` / `placementResolve` /
-/// `animationScalar` / `editorExecute`。
+/// `animationScalar` / `editorExecute` / `validateExportProfile` / `buildFramePlan`。
 #[wasm_bindgen]
 pub fn domain_eval(request_json: &str) -> Result<String, JsValue> {
     let request: Value =
@@ -113,11 +119,48 @@ pub fn domain_eval(request_json: &str) -> Result<String, JsValue> {
                 .map_err(|error| js_error("执行命令", error))?;
             to_json(&outcome)
         }
+        KIND_VALIDATE_EXPORT_PROFILE => {
+            let profile: ExportProfile = parse_field(&request, "profile")?;
+            match validate_export_profile(&profile) {
+                Ok(()) => to_json(&json!({ "ok": true })),
+                Err(error) => to_json(&json!({ "ok": false, "code": error.code() })),
+            }
+        }
+        KIND_BUILD_FRAME_PLAN => {
+            let duration_ticks = request["durationTicks"]
+                .as_i64()
+                .ok_or_else(|| js_error("解析字段 durationTicks", "必须是整数 ticks"))?;
+            let profile: ExportProfile = parse_field(&request, "profile")?;
+            match build_frame_plan(duration_ticks, &profile) {
+                Ok(plan) => to_json(&plan),
+                Err(error) => to_json(&json!({ "error": error.code() })),
+            }
+        }
         other => {
             // 显式拒绝未知 kind，避免静默返回错误结果
             Err(js_error("分派请求", format!("不支持的 kind：{other}")))
         }
     }
+}
+
+/// 生成确定性预览帧的 RGBA8 像素（行优先，长度为 `width * height * 4`）。
+///
+/// 请求字段：`frameIndex` / `timeTicks` / `durationTicks` / `profile` / `params`。
+/// 预览与导出共用同一份像素，因此后续接入真实合成器时前端无需改动。
+#[wasm_bindgen]
+pub fn render_frame_rgba(request_json: &str) -> Result<Vec<u8>, JsValue> {
+    let request: Value =
+        serde_json::from_str(request_json).map_err(|error| js_error("解析帧请求 JSON", error))?;
+    let frame_index = request["frameIndex"]
+        .as_u64()
+        .ok_or_else(|| js_error("解析字段 frameIndex", "必须是非负整数"))?;
+    let time_ticks = request["timeTicks"].as_i64().unwrap_or(0);
+    let duration_ticks = request["durationTicks"].as_i64().unwrap_or(0);
+    let profile: ExportProfile = parse_field(&request, "profile")?;
+    let params: FrameParams = parse_field(&request, "params")?;
+    let frame = render_frame(frame_index, time_ticks, duration_ticks, &profile, &params)
+        .map_err(|error| js_error("生成预览帧", error))?;
+    Ok(frame.pixels_rgba)
 }
 
 /// 通道类型探测（供前端在提交请求前校验 fallback 类型，避免无谓的 WASM 调用）。

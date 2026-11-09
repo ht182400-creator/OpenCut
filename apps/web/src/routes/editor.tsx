@@ -1,15 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   createEditorAdapter,
   formatCoreError,
   type DiscoverResult,
 } from '../local/editor-adapter'
+import { probeWebCodecsSupport, type WebCodecsSupport } from '../local/webcodecs'
 
 export const Route = createFileRoute('/editor')({ component: Editor })
 
 /** 与 Rust core 一致的时间单位。 */
 const TICKS_PER_SECOND = 120000
+const PREVIEW_WIDTH = 320
+const PREVIEW_HEIGHT = 180
+const PREVIEW_DURATION_TICKS = TICKS_PER_SECOND
 const PANEL_STYLE: React.CSSProperties = {
   background: '#111827',
   border: '1px solid #334155',
@@ -45,6 +49,13 @@ interface ApplyResponse {
   tracks: { main: { elements: CoreElement[] } }
 }
 
+interface FramePlanView {
+  frameCount: number
+  ticksPerFrame: number
+  totalAudioSamples: number
+  durationSeconds: number
+}
+
 type ViewState =
   | { status: 'loading' }
   | {
@@ -52,6 +63,9 @@ type ViewState =
       info: DiscoverResult
       adjustments: RippleAdjustment[]
       elements: CoreElement[]
+      plan: FramePlanView
+      pixels: Uint8Array
+      codecs: WebCodecsSupport
     }
   | { status: 'error'; message: string }
 
@@ -76,6 +90,28 @@ const DEMO_AFTER = {
     ],
   },
   audio: [],
+}
+
+/** 预览与导出共用的导出配置（W-07 契约）。 */
+const DEMO_PROFILE = {
+  container: 'mp4',
+  codec: 'avc',
+  width: PREVIEW_WIDTH,
+  height: PREVIEW_HEIGHT,
+  frameRate: { numerator: 30, denominator: 1 },
+  videoBitrateBps: 1_000_000,
+  includeAudio: false,
+  audioSampleRateHz: 48000,
+  audioChannels: 2,
+}
+
+/** 合成帧参数：通常由 domain 的动画通道在时间 t 求值得到。 */
+const DEMO_PARAMS = {
+  backgroundRgba: [17, 24, 39, 255],
+  accentRgba: [249, 115, 22, 255],
+  opacity: 1,
+  positionX: 0.5,
+  positionY: 0.5,
 }
 
 /**
@@ -121,6 +157,7 @@ function Timeline(props: { elements: CoreElement[] }) {
  */
 function Editor() {
   const [view, setView] = useState<ViewState>({ status: 'loading' })
+  const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -138,12 +175,28 @@ function Editor() {
           tracks: DEMO_BEFORE,
           adjustments: ripple.adjustments,
         })
+        const plan = adapter.evaluate<FramePlanView>({
+          kind: 'buildFramePlan',
+          durationTicks: PREVIEW_DURATION_TICKS,
+          profile: DEMO_PROFILE,
+        })
+        const pixels = adapter.renderFrameRgba({
+          frameIndex: 0,
+          timeTicks: 0,
+          durationTicks: plan.ticksPerFrame,
+          profile: DEMO_PROFILE,
+          params: DEMO_PARAMS,
+        })
+        const codecs = await probeWebCodecsSupport()
         if (!cancelled) {
           setView({
             status: 'ready',
             info,
             adjustments: ripple.adjustments,
             elements: applied.tracks.main.elements,
+            plan,
+            pixels,
+            codecs,
           })
         }
       } catch (error) {
@@ -158,11 +211,25 @@ function Editor() {
     }
   }, [])
 
+  useEffect(() => {
+    if (view.status !== 'ready') return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const context = canvas.getContext('2d')
+    if (!context) return
+    const image = new ImageData(
+      new Uint8ClampedArray(view.pixels),
+      PREVIEW_WIDTH,
+      PREVIEW_HEIGHT,
+    )
+    context.putImageData(image, 0, 0)
+  }, [view])
+
   return (
     <main style={{ maxWidth: 880, margin: '32px auto', padding: '0 16px', color: '#e5e7eb' }}>
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 最小时间轴</h1>
       <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 20 }}>
-        本页的 ripple 计算与位移由 Rust core（WASM）执行；业务代码只经 editor-adapter 访问 core。
+        时间轴位移与预览帧像素均由 Rust core（WASM）生成；业务代码只经 editor-adapter 访问 core。
       </p>
 
       {view.status === 'loading' && (
@@ -198,6 +265,33 @@ function Editor() {
             <pre style={{ fontSize: 12, color: '#a5b4fc', marginTop: 12, marginBottom: 0 }}>
               {JSON.stringify(view.adjustments, null, 2)}
             </pre>
+          </section>
+
+          <section style={PANEL_STYLE}>
+            <h2 style={{ fontSize: 16, marginBottom: 8 }}>core 预览帧（RenderFrame）</h2>
+            <canvas
+              ref={canvasRef}
+              width={PREVIEW_WIDTH}
+              height={PREVIEW_HEIGHT}
+              style={{ borderRadius: 6, border: '1px solid #334155', display: 'block' }}
+            />
+            <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 10, marginBottom: 0 }}>
+              帧数 {view.plan.frameCount} · 每帧 {view.plan.ticksPerFrame} ticks ·
+              时长 {view.plan.durationSeconds.toFixed(2)}s ·
+              像素 {view.pixels.length} 字节（{PREVIEW_WIDTH}×{PREVIEW_HEIGHT} RGBA8）
+            </p>
+          </section>
+
+          <section style={PANEL_STYLE}>
+            <h2 style={{ fontSize: 16, marginBottom: 8 }}>WebCodecs 导出能力</h2>
+            <p style={{ fontSize: 13, margin: '4px 0' }}>
+              {view.codecs.available ? '可用' : '当前不可用'} · VideoEncoder{' '}
+              {String(view.codecs.videoEncoder)} · VideoFrame {String(view.codecs.videoFrame)} ·
+              codec {view.codecs.codec}
+            </p>
+            <p style={{ fontSize: 13, color: '#94a3b8', margin: '4px 0' }}>
+              {view.codecs.reason}
+            </p>
           </section>
         </>
       )}

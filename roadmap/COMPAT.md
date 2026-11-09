@@ -206,11 +206,13 @@ local/crates/                    # W-02 建立目录 ✅
 ├── ocx-bridge/                  # ✅ W-04：经典版 bridge 迁入（关 wasm）
 ├── ocx-time/                    # ✅ W-04：经典版 time 迁入 + golden master
 ├── ocx-domain/                  # ✅ W-05 三批：ripple + placement + animation（bezier/interpolation）+ 72 个跨语言 golden 用例；⏳ keyframe-query / serde schema 待续
+├── ocx-render/                  # ✅ W-07 第一批：RenderFrame / ExportProfile 契约、帧计划（音画同步）、合成帧源 + 26 个 golden 用例
+├── ocx-bindings-wasm/           # ✅ W-06/W-07：WASM 薄绑定，domain 与 render 的统一入口
 └── ocx-plugin-host/             # ⏳ W-12
-apps/web/src/local/              # ✅ W-06：editor-adapter.ts 适配层 + WASM glue + 契约测试；业务调用只经适配层（I-01）
+apps/web/src/local/              # ✅ W-06/W-07：editor-adapter.ts 唯一入口 + WASM glue + webcodecs 能力探测 + 契约测试（I-01）
 ```
 
-**当前状态说明（诚实边界）**：`ocx-time` / `ocx-bridge` / `ocx-editor-api` / `ocx-domain` / `ocx-bindings-wasm` 五个 crate 已真实落地，用 `cargo 1.97.0` 完成 `fmt --check` / `clippy -D warnings` / `cargo test` 全绿验证；`ocx-domain` 共 72 个 JSON golden 用例由 Rust 与经典版 TS 的 JS 参考实现共用同一期望值（ripple 64/64、placement 100/100、animation 88/88，浮点按 1e-5 容差），`TimelineTrack.trackType` 为 additive-only 字段；`editor-api.contract.json` 与 5 项 Node 契约测试保证 Rust 常量、命令清单、错误码与 Web 契约不漂移。**W-06 已落地**：`ocx-bindings-wasm` 编译到 `wasm32-unknown-unknown` 并生成 Web glue，`apps/web/src/local/editor-adapter.ts` 是业务侧访问 core 的唯一入口（I-01），Node 侧真实 WASM 端到端 16/16、前端 vitest 7/7、`vite build` 退出码 0、dev 端 `/editor` 与 wasm 资源 HTTP 200；`moon ci` 与三端 dev/check 冒烟已实跑通过（H03 已关闭）。**仍未完成**：WIT 插件契约、domain 的 keyframe-query / serde 版本化 schema、经典版项目 JSON 兼容层。
+**当前状态说明（诚实边界）**：`ocx-time` / `ocx-bridge` / `ocx-editor-api` / `ocx-domain` / `ocx-bindings-wasm` / `ocx-render` 六个 crate 已真实落地，用 `cargo 1.97.0` 完成 `fmt --check` / `clippy -D warnings` / `cargo test` 全绿验证；`ocx-domain` 共 72 个 JSON golden 用例由 Rust 与经典版 TS 的 JS 参考实现共用同一期望值（ripple 64/64、placement 100/100、animation 88/88，浮点按 1e-5 容差）；`ocx-render` 的 26 个 golden 用例是本地新契约，无经典版对应物，故由 Rust golden master + Node 真实 WASM 契约双层验证。`editor-api.contract.json` 与 5 项 Node 契约测试保证 Rust 常量、命令清单、错误码与 Web 契约不漂移。**W-06/W-07 第一批已落地**：`ocx-bindings-wasm` 编译到 `wasm32-unknown-unknown` 并生成 Web glue，`editor-adapter.ts` 是业务侧访问 core 的唯一入口（I-01）；`/editor` 显示由 core 生成的预览帧与 WebCodecs 能力探测；Node 侧真实 WASM 端到端 **28/28**、前端 vitest 10/10、`vite build` 退出码 0、dev 端 `/editor` 与 wasm 资源 HTTP 200；`moon ci` 与三端 dev/check 冒烟已实跑通过（H03 已关闭）。**仍未完成**：真实 MP4/WebM 编码与 muxer（需浏览器自动化与 H01/H05 渲染路径）、WIT 插件契约、domain 的 keyframe-query / serde 版本化 schema、经典版项目 JSON 兼容层。
 
 > **上游冲突提示**：`apps/web/src/routes/editor.tsx` 原为上游 "Coming soon." 占位页（TanStack Start 要求路由文件位于 `src/routes/`），W-06 就地扩展为最小时间轴，这是本仓**唯一一处上游文件改动**；其余本地资产全部在 `local/crates/*` 与 `apps/web/src/local/` 隔离路径。上游同步时须按 `README.md` §7.9 能力台账人工复核。
 

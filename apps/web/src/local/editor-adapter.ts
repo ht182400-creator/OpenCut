@@ -1,5 +1,5 @@
 /**
- * OpenCut Web 端 `editor-api` 适配层（W-06）。
+ * OpenCut Web 端 `editor-api` 适配层（W-06 / W-07）。
  *
  * 不变量 I-01：业务代码只能经本模块访问 Rust core，
  * 禁止在其它文件直接 import `./wasm/ocx_bindings_wasm.js`。
@@ -16,6 +16,8 @@ export const SUPPORTED_KINDS = [
   'placementResolve',
   'animationScalar',
   'editorExecute',
+  'validateExportProfile',
+  'buildFramePlan',
 ] as const;
 
 export type CoreRequestKind = (typeof SUPPORTED_KINDS)[number];
@@ -34,6 +36,15 @@ export interface DiscoverResult {
   capabilities: string[];
 }
 
+/** 预览帧请求：像素走独立入口，不经 JSON 序列化。 */
+export interface CoreFrameRequest {
+  frameIndex: number;
+  timeTicks: number;
+  durationTicks: number;
+  profile: unknown;
+  params: unknown;
+}
+
 /** 每种请求的必填字段，用于在进入 WASM 前拦截明显错误。 */
 const REQUIRED_FIELDS: Record<CoreRequestKind, readonly string[]> = {
   rippleAdjustments: ['before', 'after'],
@@ -41,6 +52,8 @@ const REQUIRED_FIELDS: Record<CoreRequestKind, readonly string[]> = {
   placementResolve: ['tracks', 'subject', 'timeSpans', 'strategy'],
   animationScalar: ['channel', 'time', 'fallbackValue'],
   editorExecute: ['command'],
+  validateExportProfile: ['profile'],
+  buildFramePlan: ['durationTicks', 'profile'],
 };
 
 /**
@@ -67,6 +80,30 @@ export function validateRequest(request: unknown): asserts request is CoreReques
 }
 
 /**
+ * 校验预览帧请求，避免把非法尺寸/参数送进 WASM。
+ * @param request 待校验的未知输入
+ * @returns {void}
+ */
+export function validateFrameRequest(request: unknown): asserts request is CoreFrameRequest {
+  if (!request || typeof request !== 'object') {
+    throw new Error('帧请求必须是对象；请检查调用参数后重试。');
+  }
+  const candidate = request as Record<string, unknown>;
+  for (const field of ['frameIndex', 'timeTicks', 'durationTicks', 'profile', 'params']) {
+    if (!(field in candidate)) {
+      throw new Error(`帧请求缺少必填字段 ${field}；请补齐后重试。`);
+    }
+  }
+  if (
+    typeof candidate.frameIndex !== 'number' ||
+    !Number.isInteger(candidate.frameIndex) ||
+    candidate.frameIndex < 0
+  ) {
+    throw new Error('frameIndex 必须是非负整数；请检查后重试。');
+  }
+}
+
+/**
  * 把 core 抛出的异常整理成用户可理解的中文提示。
  * @param error 未知异常
  * @returns {string} 友好错误文案
@@ -86,6 +123,8 @@ export interface EditorAdapter {
   discover(): DiscoverResult;
   /** 统一领域求值入口。 */
   evaluate<T = unknown>(request: CoreRequest): T;
+  /** 生成预览帧的 RGBA8 像素。 */
+  renderFrameRgba(request: CoreFrameRequest): Uint8Array;
 }
 
 let adapterPromise: Promise<EditorAdapter> | null = null;
@@ -109,6 +148,10 @@ export async function createEditorAdapter(): Promise<EditorAdapter> {
         evaluate: <T = unknown>(request: CoreRequest): T => {
           validateRequest(request);
           return JSON.parse(glue.domain_eval(JSON.stringify(request))) as T;
+        },
+        renderFrameRgba: (request: CoreFrameRequest): Uint8Array => {
+          validateFrameRequest(request);
+          return glue.render_frame_rgba(JSON.stringify(request));
         },
       };
     } catch (error) {
