@@ -88,3 +88,21 @@ moon run desktop:check
 ## 8. 结论
 
 H03 **无遗留项**：四件套版本与 `.prototools` 完全对齐，`moon ci` 与三端冒烟均不依赖任何旁路变量；上游同步与日常开发按 `README.md` §7 正常进行。
+
+## 9. 追加：W-06 的 WASM 工具链（2026-11-09）
+
+Web 绑定薄层需要把 Rust core 编译到 `wasm32-unknown-unknown`，再用 `wasm-bindgen` 生成 Web glue。本机原先只有 `x86_64-pc-windows-msvc` target，也没有 CLI。
+
+| 步骤 | 做法 |
+| --- | --- |
+| target | `rustup target add wasm32-unknown-unknown`（rust-std 组件，本机一次装好） |
+| CLI | 版本必须与 crate 依赖**严格一致**；`local/crates/ocx-bindings-wasm/Cargo.toml` 固定 `wasm-bindgen = "=0.2.130"`，CLI 用同版本官方 Windows 预编译包。经 §2 已验证的 `api.github.com` release asset 端点下载，校验 SHA-256 与官方 digest 一致后解压到 `~/.cargo/bin`；未从源码编译、未用第三方同名包 |
+| 构建 | `cargo build -p ocx-bindings-wasm --target wasm32-unknown-unknown --release` |
+| 生成 glue | `wasm-bindgen --target web --out-dir apps/web/src/local/wasm target/wasm32-unknown-unknown/release/ocx_bindings_wasm.wasm` |
+| 静态资源 | 把 `ocx_bindings_wasm_bg.wasm` 复制到 `apps/web/public/wasm/`；适配层用 `init({ module_or_path })` 显式指定该 URL |
+
+**产物与更新约定**：`apps/web/src/local/wasm/` 存放 glue JS、`.d.ts` 与 wasm（供类型检查和 Node 契约测试），`apps/web/public/wasm/` 存放浏览器实际加载的 wasm；两份内容相同，Git 按内容去重。改动 `ocx-bindings-wasm` 的 Rust 源码后必须重跑上述两条命令并重新提交产物，否则前端仍加载旧 core。
+
+**CI 边界**：`ocx-bindings-wasm/moon.yml` 只定义 native 的 `check` / `test` 任务，不把 wasm 构建放进 `moon ci`，避免 CI 机器缺少 wasm target 与 CLI 而失败；wasm 构建是显式命令，由 `editor-wasm.contract.mjs` 对产物做端到端校验。
+
+**前端验证环境的两个上游既存问题**（非本次引入）：`vite.config.ts` 的 Cloudflare 插件在 vitest 环境下会校验 Workers 配置并报错，因此新增独立的 `apps/web/vitest.config.ts`（`bun run test` 会优先读取，不影响 `vite build`）；`tsc --noEmit` 全量检查另有 3 个错误位于 `apps/web/src/components/ui/*`，本次新增文件 0 错误。

@@ -56,12 +56,12 @@ const HOTSPOTS = [
   { id: "H11", title: "经典版 31 版项目迁移兼容", priority: "P1", milestone: "M4", status: "未开始", action: "M4 写 additive-only 只读兼容层并补迁移测试" },
   { id: "H12", title: "4K 预览性能（代理/缓存/快照）", priority: "P2", milestone: "M6", status: "未开始", action: "引入代理文件与预览帧缓存，量化 scrub 指标后再验收" },
   { id: "H13", title: "上游落地六项能力导致双实现收敛（L3）", priority: "P1", milestone: "全程", status: "进行中", action: "按 README.md §7.9 做命名空间隔离、upstream-mirror、能力台账与 merge-tree 预演" },
-  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "隔离目录与契约已落地；剩余 EditorApi/Command trait、WIT 与 TS 适配层" },
+  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "W-06 已落地：WASM 薄绑定 + editor-adapter 唯一入口，端到端 16/16；剩余 WIT 插件契约与版本化 schema" },
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r9";
-const DATA_UPDATED_AT = "2026-11-09 00:40";
+const DATA_VERSION = "2026-11-08-r10";
+const DATA_UPDATED_AT = "2026-11-09 01:10";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**

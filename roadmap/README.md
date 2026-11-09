@@ -764,6 +764,7 @@ git push origin main                                  # 绝不 --force
 | **W-05 ripple 翻译** | `cargo test -p ocx-domain` + `node local/crates/ocx-domain/tests/ripple-alignment.test.mjs` | Rust golden master（18 用例逐字段比对）+ 5 个单测全绿；经典版 TS 的 JS 参考实现 **64 通过 / 0 失败**；`moon run ocx-domain:test` 退出码 0 |
 | **W-05 placement 翻译** | `node local/crates/ocx-domain/tests/placement-alignment.test.mjs` + `cargo test -p ocx-domain` | 五组纯函数（compatibility / overlap / main-track / insert-index / resolve）；29 个 JSON 用例由 Rust 与 JS 参考实现共用期望值，**100 通过 / 0 失败**；4 个补充单测全绿 |
 | **W-05 animation 翻译** | `node local/crates/ocx-domain/tests/animation-alignment.test.mjs` + `cargo test -p ocx-domain` | 贝塞尔求解、通道归一化、边界外推、step/linear/bezier 求值与统一分派；25 个 JSON 用例 **88 通过 / 0 失败**；浮点按 1e-5 递归容差（20 次二分固有精度）；4 个补充单测全绿 |
+| **W-06 WASM 端到端** | `node apps/web/src/local/editor-wasm.contract.mjs` + `vitest run` + `vite build` | 真实 WASM 产物在 Node 加载：**16 通过 / 0 失败**（版本、能力发现、ripple / placement / animation / editorExecute、异常分支）；适配层纯函数 7/7；`vite build` 退出码 0；dev 端 `/editor` 与 `/wasm/*.wasm` 均 HTTP 200 |
 | 导入测试 | `node dashboard.test.cjs` 用零依赖 DOM 桩按页面顺序加载三个脚本并触发 `init()` | 通过 |
 | 看板回归 | 数据完整性、依赖图、状态机全循环、完成度、持久化往返、渲染、导出/导入 JSON、重置两分支、**决策台账状态/结论与 DOM 渲染、数据版本** | **44 通过 / 0 失败** |
 | **兼容契约回归** | `node compat.test.cjs`：不变量、命名空间、判据权重、状态机、六能力台账、导出决策、三项用户决策、**契约↔看板交叉校验** | **45 通过 / 0 失败** |

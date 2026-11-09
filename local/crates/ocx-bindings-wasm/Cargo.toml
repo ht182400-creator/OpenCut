@@ -1,0 +1,18 @@
+[package]
+name = "ocx-bindings-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenCut Web 端 WASM 绑定薄层：只暴露 editor-api 与 domain 的少量入口"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ocx-time = { path = "../ocx-time" }
+ocx-domain = { path = "../ocx-domain" }
+ocx-editor-api = { path = "../ocx-editor-api" }
+# 版本必须与 wasm-bindgen CLI 严格一致（H03-toolchain-bootstrap.md 记录安装的是 0.2.130）
+wasm-bindgen = "=0.2.130"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
