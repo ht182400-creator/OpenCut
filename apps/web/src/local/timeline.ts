@@ -7,6 +7,8 @@
  * core 负责 ripple 位移，本模块负责只读的映射计算，二者职责分离。
  */
 
+import type { EditorAdapter } from './editor-adapter';
+
 /** 与 Rust core 一致的时间单位。 */
 export const TICKS_PER_SECOND = 120000;
 
@@ -90,4 +92,137 @@ export function splitClipAt(
     trimStart: target.trimStart + elapsed,
   };
   return clips.flatMap((clip) => (clip.id === clipId ? [first, second] : [clip]));
+}
+
+/** 计算片段集合覆盖的总时长（ticks）。 */
+export function timelineDuration(clips: TimelineClip[]): number {
+  return clips.reduce((max, clip) => Math.max(max, clip.startTime + clip.duration), 0);
+}
+
+/** 按片段覆盖时长换算需要的帧数（至少 1 帧）。 */
+export function framesForDuration(clips: TimelineClip[], ticksPerFrame: number): number {
+  return Math.max(1, Math.ceil(timelineDuration(clips) / ticksPerFrame));
+}
+
+/**
+ * OTIO 交换格式在编辑器侧的桥接（W-10 第二批）。
+ * 视图形状与 `ocx-io::EditTimeline` 的 serde camelCase 输出一一对应；
+ * 仅取视频轨的剪辑决策（起点/时长/素材入点），Gap 与音频轨不进入本地时间轴。
+ */
+export interface EditTimelineView {
+  name: string;
+  schemaVersion: number;
+  rate: number;
+  tracks: Array<{
+    id: string;
+    name: string;
+    kind: string;
+    clips: Array<{
+      id: string;
+      name: string;
+      isGap: boolean;
+      startTicks: number;
+      durationTicks: number;
+      sourceStartTicks: number;
+      mediaUrl: string | null;
+    }>;
+  }>;
+  warnings: string[];
+}
+
+/**
+ * 把本地片段转成内部时间轴视图，供 `otioExport` 导出。
+ * @param name 时间轴名称（用当前素材/项目名）
+ * @param fps 帧率
+ * @param clips 当前片段
+ * @param mediaUrl 素材引用（当前已导入媒体名；无素材时为 null）
+ * @returns {EditTimelineView} 内部时间轴视图
+ */
+export function clipsToEditTimeline(
+  name: string,
+  fps: number,
+  clips: TimelineClip[],
+  mediaUrl: string | null,
+): EditTimelineView {
+  return {
+    name,
+    schemaVersion: 1,
+    rate: fps,
+    tracks: [
+      {
+        id: 'main',
+        name: 'main',
+        kind: 'Video',
+        clips: clips.map((clip) => ({
+          id: clip.id,
+          name: clip.id,
+          isGap: false,
+          startTicks: clip.startTime,
+          durationTicks: clip.duration,
+          sourceStartTicks: clip.trimStart,
+          mediaUrl,
+        })),
+      },
+    ],
+    warnings: [],
+  };
+}
+
+/**
+ * 从内部时间轴视图提取本地片段：只取视频轨、跳过 Gap。
+ * @param timeline 导入得到的视图
+ * @returns {TimelineClip[]} 本地片段
+ */
+export function editTimelineToClips(timeline: EditTimelineView): TimelineClip[] {
+  const video = timeline.tracks.find((track) => track.kind === 'Video') ?? timeline.tracks[0];
+  if (!video) return [];
+  return video.clips
+    .filter((clip) => !clip.isGap)
+    .map((clip) => ({
+      id: clip.id,
+      startTime: clip.startTicks,
+      duration: clip.durationTicks,
+      trimStart: clip.sourceStartTicks,
+    }));
+}
+
+/**
+ * 导入 OTIO 文本并转成本地片段；失败时抛出带稳定错误码的消息。
+ * @param text OTIO JSON 文本
+ * @param adapter core 适配层（I-01 唯一入口）
+ * @returns {TimelineClip[]} 本地片段
+ */
+export function otioImportToClips(
+  text: string,
+  adapter: Pick<EditorAdapter, 'otioImport'>,
+): TimelineClip[] {
+  const result = adapter.otioImport(text);
+  if (!result.ok || !result.timeline) {
+    throw new Error(`OTIO 导入被拒绝（${result.error ?? '未知错误'}）；请检查文件格式`);
+  }
+  return editTimelineToClips(result.timeline as EditTimelineView);
+}
+
+/**
+ * 把当前片段导出为 OTIO JSON 文本。
+ * @param clips 当前片段
+ * @param name 时间轴名称
+ * @param fps 帧率
+ * @param mediaUrl 素材引用
+ * @param adapter core 适配层
+ * @returns {string} OTIO JSON 文本
+ */
+export function clipsToOtioText(
+  clips: TimelineClip[],
+  name: string,
+  fps: number,
+  mediaUrl: string | null,
+  adapter: Pick<EditorAdapter, 'otioExport'>,
+): string {
+  const timeline = clipsToEditTimeline(name, fps, clips, mediaUrl);
+  const result = adapter.otioExport(JSON.stringify(timeline));
+  if (!result.ok || typeof result.otio !== 'string') {
+    throw new Error(`OTIO 导出失败（${result.error ?? '未知错误'}）`);
+  }
+  return result.otio;
 }

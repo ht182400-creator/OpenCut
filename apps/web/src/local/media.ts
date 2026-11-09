@@ -37,6 +37,9 @@ export interface DecodedMedia {
   persisted?: boolean;
 }
 
+/** 单次解码的最大帧数，避免长项目逐帧 seek 过慢。 */
+export const MAX_DECODE_FRAMES = 90;
+
 /** 抽帧选项（宽高即代理尺寸）。 */
 export interface DecodeOptions {
   width: number;

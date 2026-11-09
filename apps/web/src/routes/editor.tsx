@@ -1,13 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { buildTimelineAudio, isAacEncodingSupported, type PcmAudio } from '../local/audio'
-import {
-  createEditorAdapter,
-  formatCoreError,
-  type DiscoverResult,
-  type EditorAdapter,
-  type ProjectView,
-} from '../local/editor-adapter'
+import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
 import {
   BASE_PROFILE,
   BUTTON_STYLE,
@@ -15,14 +9,24 @@ import {
   PANEL_STYLE,
   PREVIEW_HEIGHT,
   PREVIEW_WIDTH,
+  SCRUB_THRESHOLD_MS,
   TEXT_MAIN,
   TEXT_MUTED,
   Timeline,
+  PreviewSection,
+  ProjectSummary,
   blankFrame,
+  type ApplyResponse,
   type CoreElement,
+  type ExportState,
+  type FramePlanView,
+  type RippleAdjustment,
+  type RippleResponse,
+  type Session,
 } from '../local/editor-ui'
 import { exportProjectToMp4, isExportSupported } from '../local/export'
 import {
+  MAX_DECODE_FRAMES,
   clearFrameCache,
   createDemoVideoFile,
   createProxyFile,
@@ -33,65 +37,25 @@ import {
   mediaFrameAt,
   type DecodedMedia,
 } from '../local/media'
-import { clipAtTime, mapProjectFrame, splitClipAt } from '../local/timeline'
-import { probeWebCodecsSupport, type WebCodecsSupport } from '../local/webcodecs'
+import {
+  TICKS_PER_SECOND,
+  clipAtTime,
+  clipsToOtioText,
+  mapProjectFrame,
+  otioImportToClips,
+  splitClipAt,
+  timelineDuration,
+} from '../local/timeline'
+import { probeWebCodecsSupport } from '../local/webcodecs'
 
 export const Route = createFileRoute('/editor')({ component: Editor })
 
 const PROJECT_FIXTURE_URL = '/fixtures/classic-project-v31.json'
-const TICKS_PER_SECOND = 120000
-/** 单次解码的最大帧数，避免长项目逐帧 seek 过慢。 */
-const MAX_DECODE_FRAMES = 90
-/** W-09 量化阈值：单帧预览合成耗时不超过 16ms（60fps）。 */
-const SCRUB_THRESHOLD_MS = 16
-
-interface RippleAdjustment {
-  trackId: string
-  afterTime: number
-  shiftAmount: number
-}
-
-interface RippleResponse {
-  adjustments: RippleAdjustment[]
-}
-
-interface ApplyResponse {
-  tracks: { main: { elements: CoreElement[] } }
-}
-
-interface FramePlanView {
-  frameCount: number
-  ticksPerFrame: number
-}
-
-interface Session {
-  adapter: EditorAdapter
-  project: ProjectView
-  info: DiscoverResult
-  codecs: WebCodecsSupport
-  fps: number
-  ticksPerFrame: number
-  profile: Record<string, unknown>
-  projectTrackCount: number
-}
-
-interface ExportState {
-  status: 'idle' | 'running' | 'done' | 'error'
-  done: number
-  total: number
-  message: string
-  url: string | null
-  bytes: number
-}
-
-/** 计算当前元素集合覆盖的总时长（ticks）。 */
-function effectiveDuration(elements: CoreElement[]): number {
-  return Math.max(...elements.map((item) => item.startTime + item.duration), 0)
-}
 
 /**
  * Web-first 编辑器：导入项目 JSON 与真实音视频素材 → 删除/分割片段 →
- * 逐帧预览（三级代理缓存 + 片段 trimStart 映射）→ 带 AAC 音轨导出 MP4。
+ * 逐帧预览（三级代理缓存 + 片段 trimStart 映射）→ 带 AAC 音轨导出 MP4，
+ * 并支持 OTIO 交换格式双向导入导出（W-10）。
  * 所有 core 调用都经 `editor-adapter`（I-01），错误统一友好提示。
  * @returns {React.ReactElement} 页面
  */
@@ -110,6 +74,7 @@ function Editor() {
   const [mediaStatus, setMediaStatus] = useState('未加载素材')
   const [cacheInfo, setCacheInfo] = useState('代理缓存 0 份')
   const [proxyUrl, setProxyUrl] = useState<string | null>(null)
+  const [otioUrl, setOtioUrl] = useState<string | null>(null)
   const [exportState, setExportState] = useState<ExportState>({
     status: 'idle', done: 0, total: 0, message: '', url: null, bytes: 0,
   })
@@ -117,6 +82,7 @@ function Editor() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const projectFileRef = useRef<HTMLInputElement>(null)
   const videoFileRef = useRef<HTMLInputElement>(null)
+  const otioFileRef = useRef<HTMLInputElement>(null)
 
   /** 刷新内存与持久化缓存统计展示。 */
   const refreshCacheInfo = async () => {
@@ -147,7 +113,7 @@ function Editor() {
 
       const fps = project.fps.numerator / project.fps.denominator
       const profile = { ...BASE_PROFILE, frameRate: project.fps }
-      const duration = effectiveDuration(mainElements)
+      const duration = timelineDuration(mainElements)
       const plan = adapter.evaluate<FramePlanView>({
         kind: 'buildFramePlan', durationTicks: duration, profile,
       })
@@ -202,7 +168,7 @@ function Editor() {
         .filter((item) => remainingIds.has(item.id))
         .map((item) => ({ ...item, trimStart: trimById.get(item.id) ?? 0 }))
       const plan = session.adapter.evaluate<FramePlanView>({
-        kind: 'buildFramePlan', durationTicks: effectiveDuration(next), profile: session.profile,
+        kind: 'buildFramePlan', durationTicks: timelineDuration(next), profile: session.profile,
       })
       setAdjustments(ripple.adjustments)
       setElements(next)
@@ -346,6 +312,44 @@ function Editor() {
     await refreshCacheInfo()
   }
 
+  /** 导入 OTIO 交换文件，按其视频轨重建时间轴（素材仍用当前已导入媒体）。 */
+  const handleOtioImport = async (file: File | undefined) => {
+    if (!session || !file) return
+    setErrorText(null)
+    try {
+      const clips = otioImportToClips(await file.text(), session.adapter)
+      if (clips.length === 0) {
+        setErrorText('OTIO 文件没有可用的视频轨片段（Gap 或空轨道不会导入）')
+        return
+      }
+      setElements(clips)
+      setOriginalElements(clips)
+      setSelectedId(null)
+      setAdjustments([])
+      setFrameIndex(0)
+      setPlaying(false)
+      setSourceName(file.name)
+      const plan = session.adapter.evaluate<FramePlanView>({
+        kind: 'buildFramePlan', durationTicks: timelineDuration(clips), profile: session.profile,
+      })
+      setFrameCount(Math.max(plan.frameCount, 1))
+    } catch (error) {
+      setErrorText(formatCoreError(error))
+    }
+  }
+
+  /** 把当前剪辑导出为 OTIO 交换文件（仅视频轨的剪辑决策）。 */
+  const handleOtioExport = async () => {
+    if (!session) return
+    try {
+      const text = clipsToOtioText(elements, sourceName, session.fps, media?.name ?? null, session.adapter)
+      if (otioUrl) URL.revokeObjectURL(otioUrl)
+      setOtioUrl(URL.createObjectURL(new Blob([text], { type: 'application/json' })))
+    } catch (error) {
+      setErrorText(formatCoreError(error))
+    }
+  }
+
   /** 读取用户选择/拖入的文件：视频走解码，其余按项目 JSON 处理。 */
   const readFile = async (file: File | undefined) => {
     if (!file) return
@@ -433,6 +437,19 @@ function Editor() {
         <button type="button" style={BUTTON_STYLE} onClick={() => void handleProxyExport()} disabled={!media}>
           导出代理文件
         </button>
+        <button type="button" style={BUTTON_STYLE} onClick={() => void handleOtioExport()} disabled={!session}>
+          导出 OTIO
+        </button>
+        <label style={BUTTON_STYLE}>
+          导入 OTIO
+          <input ref={otioFileRef} type="file" accept=".otio,application/json" style={{ display: 'none' }}
+            onChange={(event) => void handleOtioImport(event.target.files?.[0])} />
+        </label>
+        {otioUrl && (
+          <a href={otioUrl} download="opencut-timeline.otio" style={{ color: '#7dd3fc', fontSize: 13 }}>
+            下载 OTIO
+          </a>
+        )}
         <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
           当前：{sourceName} · {mediaStatus}
         </span>
@@ -463,19 +480,7 @@ function Editor() {
 
       {session && (
         <>
-          <section style={PANEL_STYLE}>
-            <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>项目（经典版 v{session.project.version}）</h2>
-            <p style={{ fontSize: 13, margin: '4px 0', color: TEXT_MAIN }}>
-              {session.project.name} · {session.project.sceneCount} 场景 / {session.projectTrackCount} 轨道 ·
-              兼容提示 {session.project.warnings.length} 条
-            </p>
-            <p style={{ fontSize: 13, color: TEXT_MUTED, margin: '4px 0' }}>
-              {session.project.fps.numerator}/{session.project.fps.denominator} fps ·{' '}
-              {session.project.canvas.width}×{session.project.canvas.height} ·
-              API {session.info.apiVersion} / {session.info.backendId} ·
-              WebCodecs {session.codecs.available ? '可用' : '不可用'}
-            </p>
-          </section>
+          <ProjectSummary session={session} trackCount={session.projectTrackCount} />
 
           <section style={PANEL_STYLE}>
             <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>时间轴（点击片段选中）</h2>
@@ -501,23 +506,15 @@ function Editor() {
             )}
           </section>
 
-          <section style={PANEL_STYLE}>
-            <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>预览与播放头</h2>
-            <canvas ref={canvasRef} width={PREVIEW_WIDTH} height={PREVIEW_HEIGHT}
-              style={{ borderRadius: 6, border: '1px solid #334155', display: 'block' }} />
-            <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button type="button" style={BUTTON_STYLE} onClick={() => setPlaying((value) => !value)}>
-                {playing ? '暂停' : '播放'}
-              </button>
-              <input type="range" min={0} max={Math.max(frameCount - 1, 0)}
-                value={Math.min(frameIndex, frameCount - 1)}
-                onChange={(event) => { setPlaying(false); setFrameIndex(Number(event.target.value)) }}
-                style={{ flex: 1, minWidth: 200 }} aria-label="播放头" />
-              <span style={{ color: TEXT_MUTED, fontSize: 13, whiteSpace: 'nowrap' }}>
-                帧 {frameIndex + 1}/{frameCount} · {(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s · 片段 {activeClip} · 帧耗时 {frameCost.toFixed(2)}ms（阈值 {SCRUB_THRESHOLD_MS}ms {frameCost <= SCRUB_THRESHOLD_MS ? '达标' : '超标'}）
-              </span>
-            </div>
-          </section>
+          <PreviewSection
+            canvasRef={canvasRef}
+            playing={playing}
+            onTogglePlay={() => setPlaying((value) => !value)}
+            frameIndex={frameIndex}
+            frameCount={frameCount}
+            onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
+            footer={`帧 ${frameIndex + 1}/${frameCount} · ${(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s · 片段 ${activeClip} · 帧耗时 ${frameCost.toFixed(2)}ms（阈值 ${SCRUB_THRESHOLD_MS}ms ${frameCost <= SCRUB_THRESHOLD_MS ? '达标' : '超标'}）`}
+          />
         </>
       )}
     </main>

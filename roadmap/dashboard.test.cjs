@@ -212,7 +212,7 @@ function main() {
     // 直接验证决策台账 DOM 已更新，避免「数据改了但页面没渲染」的回归
     assertEqual("决策台账渲染卡片数", env.elements["question-list"].children.length, EXPECTED_QUESTIONS);
     assertEqual("统计显示已决 2 项", env.elements["question-stats"].textContent.includes("已决 2"), true);
-    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r21"), true);
+    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r22"), true);
     const svgTexts = [];
     const collectText = (node, target) => {
       if (node && typeof node.textContent === "string" && node.textContent) target.push(node.textContent);
