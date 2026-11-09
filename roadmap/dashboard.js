@@ -1,9 +1,12 @@
 "use strict";
 
 /**
- * OpenCut Rust 重写版 · 动态路线图看板
+ * OpenCut Rust 重写版 · 交互式路线图看板
  * 数据来自 roadmap/README.md §6 与 roadmap/HOTSPOTS.md，ID 一一对应。
  * 本文件只操作浏览器本地状态，不修改仓库文件；离线双击 dashboard.html 即可使用。
+ *
+ * 单一数据源：里程碑状态完全由关联热点自动推导（见 dashboard-metrics.js），
+ * 不可手动覆盖；点击流程图节点只切换选中详情。
  */
 
 /**
@@ -11,8 +14,8 @@
  * 本文件只负责渲染、事件与本地状态，保持「数据与 UI 组装分离」。
  */
 
-/** 运行时状态：只保存用户可改的状态与选中节点，数据定义仍以常量为准。 */
-let state = { version: STATE_VERSION, milestones: {}, hotspots: {}, selectedId: "M0" };
+/** 运行时状态：只保存热点状态与选中节点；里程碑状态是只读派生值。 */
+let state = { version: STATE_VERSION, hotspots: {}, selectedId: "M0" };
 
 /**
  * 按 ID 获取 DOM 元素。
@@ -73,10 +76,7 @@ function readState() {
     const parsed = JSON.parse(raw);
     // 只接受已知 ID 与合法状态值，避免导入脏数据污染渲染
     if (!parsed || parsed.version !== STATE_VERSION) return;
-    for (const item of MILESTONES) {
-      const value = parsed.milestones?.[item.id];
-      if (STATUS_LIST.includes(value)) state.milestones[item.id] = value;
-    }
+    // 旧版本可能带 milestones 覆盖值，一律忽略：里程碑状态只读派生
     for (const item of HOTSPOTS) {
       const value = parsed.hotspots?.[item.id];
       if (STATUS_LIST.includes(value)) state.hotspots[item.id] = value;
@@ -106,19 +106,10 @@ function saveState() {
  * @returns {string} 状态
  */
 function statusOf(kind, id) {
-  const list = kind === "milestones" ? MILESTONES : HOTSPOTS;
-  const item = list.find((entry) => entry.id === id);
-  return state[kind][id] || item?.status || STATUS_LIST[0];
-}
-
-/**
- * 循环切换到下一个状态。
- * @param {string} current 当前状态
- * @returns {string} 下一个状态
- */
-function nextStatus(current) {
-  const index = STATUS_LIST.indexOf(current);
-  return STATUS_LIST[(index + 1) % STATUS_LIST.length];
+  // 里程碑状态没有任何写入路径，永远从热点实时推导
+  if (kind === "milestones") return derivedMilestoneStatus(id);
+  const item = HOTSPOTS.find((entry) => entry.id === id);
+  return state.hotspots[id] || item?.status || STATUS_LIST[0];
 }
 
 /**
@@ -188,7 +179,7 @@ function renderFlow() {
     for (const item of MILESTONES) {
       const pos = nodePos(item);
       const summary = milestoneSummary(item.id);
-      const status = summary.manual;
+      const status = summary.status;
       const color = cssVar(STATUS_VAR[status]);
       const related = HOTSPOTS.filter((h) => h.milestone === item.id);
       const blocked = related.filter((h) => statusOf("hotspots", h.id) === "阻塞").length;
@@ -227,14 +218,14 @@ function renderFlow() {
       group.appendChild(badgeText);
 
       const tip = svgEl("title", {});
-      tip.textContent = `${item.id} ${item.title}\n周期：${item.period}\n人工标记：${status}\n客观状态（由热点推导）：${summary.derived}\n热点进度：${summary.done}/${summary.total}（${summary.percent}%），阻塞 ${blocked}\n点击切换人工标记`;
+      tip.textContent = `${item.id} ${item.title}\n周期：${item.period}\n状态（由 ${summary.total} 个热点自动推导）：${status}\n热点进度：${summary.done}/${summary.total}（${summary.percent}%），阻塞 ${blocked}\n点击查看节点详情；里程碑状态不可手动覆盖`;
       group.appendChild(tip);
 
+      // 点击只切换选中详情，不修改任何状态
       const activate = () => {
-        state.milestones[item.id] = nextStatus(statusOf("milestones", item.id));
         state.selectedId = item.id;
         saveState();
-        renderAll();
+        renderDetail();
       };
       group.addEventListener("click", activate);
       group.addEventListener("keydown", (event) => {
@@ -278,7 +269,7 @@ function renderCards() {
     box.replaceChildren();
     for (const item of MILESTONES) {
       const summary = milestoneSummary(item.id);
-      const status = summary.manual;
+      const status = summary.status;
       const card = document.createElement("div");
       card.className = "card";
       card.style.borderLeftColor = cssVar(STATUS_VAR[status]);
@@ -289,7 +280,7 @@ function renderCards() {
       h3.textContent = item.title;
       const meta = document.createElement("div");
       meta.className = "card-meta";
-      meta.textContent = `人工标记：${status} · 热点进度 ${summary.done}/${summary.total}（${summary.percent}%）`;
+      meta.textContent = `状态：${status}（由热点自动推导） · 热点进度 ${summary.done}/${summary.total}（${summary.percent}%）`;
       const track = document.createElement("div");
       track.className = "progress-track";
       const fill = document.createElement("div");
@@ -297,12 +288,6 @@ function renderCards() {
       fill.style.width = `${summary.percent}%`;
       track.appendChild(fill);
       card.append(head, h3, meta, track);
-      if (summary.conflict) {
-        const warn = document.createElement("div");
-        warn.className = "card-warn";
-        warn.textContent = `⚠ 人工标记「已完成」，但关联热点仅 ${summary.percent}%（客观状态：${summary.derived}）`;
-        card.appendChild(warn);
-      }
       card.addEventListener("click", () => { state.selectedId = item.id; saveState(); renderDetail(); });
       box.appendChild(card);
     }
@@ -440,10 +425,8 @@ function renderDetail() {
     box.innerHTML = `
       <div class="detail-item"><strong>节点</strong>${item.id} · ${item.title}</div>
       <div class="detail-item"><strong>周期</strong>${item.period}</div>
-      <div class="detail-item"><strong>人工标记（点击节点切换）</strong>${summary.manual}</div>
-      <div class="detail-item"><strong>客观状态（热点推导）</strong>${summary.derived}</div>
+      <div class="detail-item"><strong>状态（由热点自动推导）</strong>${summary.status} · 不可手动覆盖</div>
       <div class="detail-item"><strong>热点进度</strong>${summary.done}/${summary.total} · ${summary.percent}%</div>
-      ${summary.conflict ? '<div class="detail-warn">⚠ 人工标记与热点进度不一致；标记只用于规划，不代表 DoD 已满足</div>' : ""}
       <div class="detail-item"><strong>前置依赖</strong>${deps}</div>
       <div class="detail-item"><strong>验收 DoD</strong>${item.dod}</div>
       <div class="detail-item"><strong>关联热点</strong>${list}</div>
@@ -465,7 +448,7 @@ function renderOverview() {
     byId("overall-bar").style.width = `${percent}%`;
     const counts = STATUS_LIST.map((s) => `${s} ${HOTSPOTS.filter((h) => statusOf("hotspots", h.id) === s).length}`);
     const blocked = HOTSPOTS.filter((h) => statusOf("hotspots", h.id) === "阻塞").length;
-    byId("overall-stats").textContent = `热点：${counts.join(" / ")} · 当前阻塞 ${blocked} 项 · 总体完成度按热点统计（非人工标记）`;
+    byId("overall-stats").textContent = `热点：${counts.join(" / ")} · 当前阻塞 ${blocked} 项 · 总体完成度按热点统计；里程碑状态自动推导`;
   } catch (error) {
     reportError("渲染总体进度", error);
   }

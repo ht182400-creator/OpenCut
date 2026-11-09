@@ -7,7 +7,8 @@
  */
 
 const STORAGE_KEY = "opencut-roadmap-dashboard-v1";
-const STATE_VERSION = 1;
+// v2：里程碑状态改为只读派生，不再持久化人工标记；旧版 localStorage 自动失效
+const STATE_VERSION = 2;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const MESSAGE_TIMEOUT_MS = 4000;
 const STATUS_LIST = ["未开始", "进行中", "阻塞", "已完成"];
@@ -60,8 +61,8 @@ const HOTSPOTS = [
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r20";
-const DATA_UPDATED_AT = "2026-11-09 21:15";
+const DATA_VERSION = "2026-11-08-r21";
+const DATA_UPDATED_AT = "2026-11-09 21:30";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**

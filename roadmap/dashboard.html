@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenCut Rust 重写版 · 交互式路线图看板</title>
-  <link rel="stylesheet" href="dashboard.css?v=20261108-r20" />
+  <link rel="stylesheet" href="dashboard.css?v=20261108-r21" />
   <!-- 查询参数用于绕过浏览器对旧脚本的缓存；数据版本同时显示在页面上 -->
-  <script src="dashboard-data.js?v=20261108-r20" defer></script>
-  <script src="dashboard-metrics.js?v=20261108-r20" defer></script>
-  <script src="dashboard-io.js?v=20261108-r20" defer></script>
-  <script src="dashboard.js?v=20261108-r20" defer></script>
+  <script src="dashboard-data.js?v=20261108-r21" defer></script>
+  <script src="dashboard-metrics.js?v=20261108-r21" defer></script>
+  <script src="dashboard-io.js?v=20261108-r21" defer></script>
+  <script src="dashboard.js?v=20261108-r21" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -45,7 +45,7 @@
     <button type="button" id="btn-reset" class="danger">重置</button>
     <button type="button" id="btn-reload">重新加载数据</button>
     <input type="file" id="file-input" accept=".json,application/json" hidden />
-    <span class="hint">点击节点切换「人工标记」；百分比与进度条 = 关联热点的客观进度</span>
+    <span class="hint">在「热点进程」表格修改状态 → 里程碑自动重算；点击节点仅查看详情</span>
   </nav>
 
   <div id="message" class="message" role="status" aria-live="polite"></div>
@@ -59,8 +59,8 @@
       <div class="svg-wrap">
         <svg id="flow-svg" role="img" aria-label="里程碑依赖流程图"></svg>
       </div>
-      <p class="caption">流动蓝线 = 关键路径依赖；描边颜色与「标记」= 人工标记（点击切换）；底部细条与百分比 = 关联热点客观进度；角标 = 关联热点数 / 阻塞数。</p>
-      <p class="caption">「可交互」指数据驱动重绘、点击切换状态、进度生长动画与 localStorage 持久化，<b>不是视频或自动播放的动图</b>。人工标记只用于规划；若标记「已完成」而热点未全部完成，卡片会显示告警。</p>
+      <p class="caption">流动蓝线 = 关键路径依赖；描边颜色与状态文字 = 由关联热点自动推导的里程碑状态（<b>不可手动覆盖</b>）；底部细条与百分比 = 热点完成度；角标 = 关联热点数 / 阻塞数。</p>
+      <p class="caption">「可交互」指数据驱动重绘、热点状态可编辑、进度生长动画与 localStorage 持久化，<b>不是视频或自动播放的动图</b>。里程碑状态是只读派生值，唯一可写数据是热点状态；改动会即时重算颜色、文字与进度。</p>
 
       <div class="section-head spaced">
         <h2>里程碑进度</h2>
@@ -102,13 +102,14 @@
       <hr />
       <h2>状态说明</h2>
       <ul class="status-help">
-        <li><span class="dot st-todo"></span>未开始：尚未投入</li>
-        <li><span class="dot st-doing"></span>进行中：有实际产出</li>
-        <li><span class="dot st-blocked"></span>阻塞：需先解除依赖</li>
-        <li><span class="dot st-done"></span>已完成：DoD 全部满足</li>
+        <li><span class="dot st-todo"></span>未开始：关联热点全部未开始</li>
+        <li><span class="dot st-doing"></span>进行中：有热点进行中或已完成，但未全部完成</li>
+        <li><span class="dot st-blocked"></span>阻塞：存在阻塞热点（优先于进行中）</li>
+        <li><span class="dot st-done"></span>已完成：关联热点全部已完成</li>
       </ul>
+      <p class="caption">以上状态均由 <code>HOTSPOTS.md</code> 的热点状态自动推导，不单独保存。</p>
       <p class="caption">数据来自 <code>README.md</code> §6、<code>HOTSPOTS.md</code> §4 与 <code>compat-contract.json</code>；本看板只改浏览器本地状态，不修改仓库文件。</p>
-      <p class="caption">若决策内容仍是旧的，请先按 <b>Ctrl+F5</b> 强制刷新，或点上方「重新加载数据」，并核对页首数据版本是否为 <code>2026-11-08-r20</code>。</p>
+      <p class="caption">若决策内容仍是旧的，请先按 <b>Ctrl+F5</b> 强制刷新，或点上方「重新加载数据」，并核对页首数据版本是否为 <code>2026-11-08-r21</code>。</p>
     </aside>
   </main>
 

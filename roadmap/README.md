@@ -18,7 +18,7 @@
 | [`COMPAT.md`](COMPAT.md) | **C→B 兼容层基石**：不变量、接口契约、判据、状态机、迁移 Runbook、实现清单 | 契约变更时 |
 | [`compat-contract.json`](compat-contract.json) | 兼容层机器可读真相源（命名空间 / 判据 / 六项能力 / 状态机 / 导出决策） | 每次新增能力或上游同步 |
 | [`compat.test.cjs`](compat.test.cjs) | 兼容契约回归测试（`node compat.test.cjs`，含正常/边界/异常用例） | 每次契约改动后 |
-| [`dashboard.html`](dashboard.html) | **交互式路线图看板**：离线单页，节点直接显示热点进度百分比与进度条；区分「人工标记」与「热点客观进度」并在冲突时告警；点选里程碑/热点状态、自动汇总进度、**决策台账（待决/已决 + 结论 + 筛选）**、数据版本徽章与缓存版本号、localStorage、导入导出 JSON、进度/依赖线动画（尊重系统减弱动画设置） | 随看板勾选实时 |
+| [`dashboard.html`](dashboard.html) | **交互式路线图看板**：离线单页，节点直接显示热点进度百分比与进度条；**里程碑状态完全由关联热点自动推导、不可手动覆盖**（唯一可写数据是热点状态，改表格即重算）；点击节点仅查看详情；**决策台账（待决/已决 + 结论 + 筛选）**、数据版本徽章与缓存版本号、localStorage、导入导出 JSON（只含热点状态）、进度/依赖线动画（尊重系统减弱动画设置） | 随热点状态实时 |
 | [`dashboard-data.js`](dashboard-data.js) | 看板数据层：里程碑 / 热点 / 开放问题与配置常量 | 文档数据变化时 |
 | [`dashboard-io.js`](dashboard-io.js) | 看板导入导出层：进度 JSON 导出 / 导入 / 重置 | 随功能迭代 |
 | [`dashboard.css`](dashboard.css) / [`dashboard.js`](dashboard.js) | 看板样式与渲染交互逻辑（拆文件便于 `node --check`，单文件均 ≤500 行） | 随功能迭代 |

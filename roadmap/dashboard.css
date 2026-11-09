@@ -238,17 +238,6 @@ td select { padding: 3px 6px; font-size: 12px; }
 .q-controls label { color: var(--muted); font-size: 12px; }
 .subtitle #data-version { color: var(--accent); font-weight: 600; }
 
-/* 双口径提示：人工标记与热点客观进度不一致时显式告警 */
-.card-warn, .detail-warn {
-  margin-top: 8px;
-  padding: 6px 9px;
-  border-left: 3px solid var(--p1);
-  border-radius: 4px;
-  background: rgba(234, 179, 8, .09);
-  color: #fde68a;
-  font-size: 12px;
-}
-
 /* 「动态」= 数据驱动重绘 + 进度生长 + 状态呼吸；尊重系统减弱动画设置 */
 @keyframes bar-grow {
   from { transform: scaleX(0); }
