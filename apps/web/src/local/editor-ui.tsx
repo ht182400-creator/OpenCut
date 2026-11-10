@@ -2,6 +2,7 @@
  * 编辑器共享 UI 片段与配置（W-08 / W-09）：样式常量、时间轴组件与导出配置。
  * 从 `routes/editor.tsx` 抽离，保持单个代码文件不超过 500 行。
  */
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, RefObject } from 'react'
 
 import type { DiscoverResult, EditorAdapter, ProjectView } from './editor-adapter'
@@ -124,6 +125,7 @@ export function TimelineSection(props: {
   actions: Array<{ label: string; onClick: () => void; disabled?: boolean }>
   statusText: string
   adjustments: RippleAdjustment[]
+  onMoveClip?: (clipId: string, proposedStart: number) => void
 }) {
   return (
     <section style={PANEL_STYLE}>
@@ -131,7 +133,8 @@ export function TimelineSection(props: {
       <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 6px' }}>导入时</p>
       <Timeline elements={props.originalElements} selectedId={null} />
       <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '10px 0 6px' }}>当前</p>
-      <Timeline elements={props.elements} selectedId={props.selectedId} onSelect={props.onSelect} />
+      <Timeline elements={props.elements} selectedId={props.selectedId}
+        onSelect={props.onSelect} onMoveClip={props.onMoveClip} />
       <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         {props.actions.map((action) => (
           <button key={action.label} type="button" style={BUTTON_STYLE}
@@ -215,40 +218,96 @@ export function blankFrame(): Uint8Array {
  * @param props 元素、选中项与回调
  * @returns {React.ReactElement} 时间轴
  */
+/** 拖拽中的鼠标位移记录（像素 → ticks 换算所需的上下文）。 */
+interface ClipDrag {
+  id: string
+  startX: number
+  startTicks: number
+  total: number
+  width: number
+  proposed: number
+}
+
 export function Timeline(props: {
   elements: CoreElement[]
   selectedId: string | null
   onSelect?: (id: string) => void
+  /** 提供时启用拖拽；松开鼠标提交目标起点，重叠约束由调用方处理。 */
+  onMoveClip?: (clipId: string, proposedStart: number) => void
 }) {
   const total = Math.max(...props.elements.map((item) => item.startTime + item.duration), 1)
+  const trackRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<ClipDrag | null>(null)
+  const moveRef = useRef(props.onMoveClip)
+  const [preview, setPreview] = useState<{ id: string; start: number } | null>(null)
+  moveRef.current = props.onMoveClip
+
+  useEffect(() => {
+    const onMove = (event: MouseEvent) => {
+      const drag = dragRef.current
+      if (!drag) return
+      const delta = Math.round(((event.clientX - drag.startX) / drag.width) * drag.total)
+      drag.proposed = Math.max(0, drag.startTicks + delta)
+      setPreview({ id: drag.id, start: drag.proposed })
+    }
+    const onUp = () => {
+      const drag = dragRef.current
+      if (!drag) return
+      dragRef.current = null
+      setPreview(null)
+      if (drag.proposed !== drag.startTicks) moveRef.current?.(drag.id, drag.proposed)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
   return (
-    <div style={TRACK_STYLE}>
-      {props.elements.map((element) => (
-        <div
-          key={element.id}
-          onClick={() => props.onSelect?.(element.id)}
-          title={`${element.id}: ${element.startTime} + ${element.duration} ticks, trim=${element.trimStart}`}
-          style={{
-            position: 'absolute',
-            left: `${(element.startTime / total) * 100}%`,
-            width: `${(element.duration / total) * 100}%`,
-            height: '100%',
-            background: element.id.includes('intro') || element.id.includes('title')
-              ? '#6366f1'
-              : '#22c55e',
-            color: '#ffffff',
-            fontSize: 12,
-            padding: '8px 6px',
-            boxSizing: 'border-box',
-            borderRight: '1px solid #111827',
-            outline: props.selectedId === element.id ? '2px solid #fbbf24' : 'none',
-            outlineOffset: -2,
-            cursor: props.onSelect ? 'pointer' : 'default',
-          }}
-        >
-          {element.id}
-        </div>
-      ))}
+    <div ref={trackRef} style={TRACK_STYLE}>
+      {props.elements.map((element) => {
+        const shownStart = preview?.id === element.id ? preview.start : element.startTime
+        return (
+          <div
+            key={element.id}
+            onClick={() => props.onSelect?.(element.id)}
+            onMouseDown={(event) => {
+              if (!props.onMoveClip) return
+              event.preventDefault()
+              dragRef.current = {
+                id: element.id,
+                startX: event.clientX,
+                startTicks: element.startTime,
+                total,
+                width: trackRef.current?.getBoundingClientRect().width ?? 1,
+                proposed: element.startTime,
+              }
+            }}
+            title={`${element.id}: ${element.startTime} + ${element.duration} ticks, trim=${element.trimStart}`}
+            style={{
+              position: 'absolute',
+              left: `${(shownStart / total) * 100}%`,
+              width: `${(element.duration / total) * 100}%`,
+              height: '100%',
+              background: element.id.includes('intro') || element.id.includes('title')
+                ? '#6366f1'
+                : '#22c55e',
+              color: '#ffffff',
+              fontSize: 12,
+              padding: '8px 6px',
+              boxSizing: 'border-box',
+              borderRight: '1px solid #111827',
+              outline: props.selectedId === element.id ? '2px solid #fbbf24' : 'none',
+              outlineOffset: -2,
+              cursor: props.onMoveClip ? (preview ? 'grabbing' : 'grab') : (props.onSelect ? 'pointer' : 'default'),
+            }}
+          >
+            {element.id}
+          </div>
+        )
+      })}
     </div>
   )
 }

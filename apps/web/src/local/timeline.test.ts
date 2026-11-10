@@ -8,6 +8,7 @@ import {
   framesForDuration,
   mapProjectFrame,
   moveClipBy,
+  moveClipClamped,
   otioImportToClips,
   plannedFrameCount,
   splitClipAt,
@@ -235,6 +236,45 @@ describe('裁剪与平移', () => {
     expect(clamped[0]).toMatchObject({ startTime: 0 });
     expect(moveClipBy(clips, 'intro', 0)).toBe(clips);
     expect(moveClipBy(clips, 'missing', TICKS_PER_SECOND)).toBe(clips);
+  });
+
+  it('拖拽夹取：目标保持在前后邻居之间且不重叠', () => {
+    const moved = moveClipClamped(clips, 'body', 2 * TICKS_PER_SECOND);
+    expect(moved[1].startTime).toBe(2 * TICKS_PER_SECOND);
+    expect(moved[1].duration).toBe(2 * TICKS_PER_SECOND);
+    expect(moved[1].trimStart).toBe(TICKS_PER_SECOND);
+  });
+
+  it('拖拽越过后邻居时被夹到「邻居起点 − 自身时长」', () => {
+    const moved = moveClipClamped(clips, 'intro', 99 * TICKS_PER_SECOND);
+    // body 起点 1s，intro 时长 1s → 上限 0，保持原位
+    expect(moved[0].startTime).toBe(0);
+    expect(moved).toBe(clips);
+  });
+
+  it('拖拽越过前邻居时被夹到前邻居结束处', () => {
+    const spread: TimelineClip[] = [
+      { id: 'a', startTime: 0, duration: TICKS_PER_SECOND, trimStart: 0 },
+      { id: 'b', startTime: 5 * TICKS_PER_SECOND, duration: TICKS_PER_SECOND, trimStart: 0 },
+    ];
+    const moved = moveClipClamped(spread, 'b', -99 * TICKS_PER_SECOND);
+    expect(moved[1].startTime).toBe(TICKS_PER_SECOND);
+  });
+
+  it('末片段可自由右移，起点不能为负', () => {
+    const moved = moveClipClamped(clips, 'body', 9 * TICKS_PER_SECOND);
+    expect(moved[1].startTime).toBe(9 * TICKS_PER_SECOND);
+    expect(moveClipClamped(clips, 'missing', TICKS_PER_SECOND)).toBe(clips);
+  });
+
+  it('约束后的片段按时间排序仍两两不重叠', () => {
+    const moved = moveClipClamped(clips, 'body', 4 * TICKS_PER_SECOND);
+    const ordered = [...moved].sort((a, b) => a.startTime - b.startTime);
+    for (let i = 1; i < ordered.length; i += 1) {
+      expect(ordered[i].startTime).toBeGreaterThanOrEqual(
+        ordered[i - 1].startTime + ordered[i - 1].duration,
+      );
+    }
   });
 
   it('plannedFrameCount 走 core 帧计划并至少 1 帧', () => {

@@ -302,6 +302,36 @@ export function moveClipBy(
 }
 
 /**
+ * 拖拽平移片段并做重叠约束（W-08 第五批）：按原 startTime 顺序取前后邻居，
+ * 把目标起点夹在「前邻居结束」与「后邻居开始 − 目标时长」之间；
+ * 因此片段不会跨过邻居、结果始终无重叠。无变化或目标缺失时返回输入引用。
+ * @param clips 当前片段
+ * @param clipId 拖拽的片段 id
+ * @param proposedStart 像素换算出的目标起点（ticks）
+ * @returns {TimelineClip[]} 约束后的片段
+ */
+export function moveClipClamped(
+  clips: TimelineClip[],
+  clipId: string,
+  proposedStart: number,
+): TimelineClip[] {
+  const target = clips.find((clip) => clip.id === clipId);
+  if (!target) return clips;
+  const sorted = [...clips].sort((a, b) => a.startTime - b.startTime);
+  const index = sorted.findIndex((clip) => clip.id === clipId);
+  const previous = index > 0 ? sorted[index - 1] : null;
+  const next = index < sorted.length - 1 ? sorted[index + 1] : null;
+  const lower = previous ? previous.startTime + previous.duration : 0;
+  const upper = next ? next.startTime - target.duration : Number.POSITIVE_INFINITY;
+  const ceiling = Math.max(lower, upper);
+  const clamped = Math.max(lower, Math.min(Math.max(0, proposedStart), ceiling));
+  if (clamped === target.startTime) return clips;
+  return clips.map((clip) =>
+    clip.id === clipId ? { ...clip, startTime: clamped } : clip,
+  );
+}
+
+/**
  * 按片段覆盖时长向 core 询问帧计划，返回规范化的帧数（至少 1）。
  * @param clips 片段集合
  * @param adapter core 适配层

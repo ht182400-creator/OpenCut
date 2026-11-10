@@ -43,6 +43,7 @@ import {
   clipsToOtioText,
   mapProjectFrame,
   moveClipBy,
+  moveClipClamped,
   otioImportToClips,
   plannedFrameCount,
   splitClipAt,
@@ -92,9 +93,7 @@ function Editor() {
   const refreshCacheInfo = async () => {
     const stats = getFrameCacheStats()
     const persisted = await getPersistedCacheStats()
-    setCacheInfo(
-      `代理缓存 ${stats.entries} 份 / ${stats.cachedFrames} 帧 / ${(stats.cachedBytes / 1048576).toFixed(1)}MB · 持久化 ${persisted.entries} 份 / ${(persisted.bytes / 1048576).toFixed(1)}MB · 命中 ${stats.hits} / 未命中 ${stats.misses}`,
-    )
+    setCacheInfo(`代理缓存 ${stats.entries} 份 / ${stats.cachedFrames} 帧 / ${(stats.cachedBytes / 1048576).toFixed(1)}MB · 持久化 ${persisted.entries} 份 / ${(persisted.bytes / 1048576).toFixed(1)}MB · 命中 ${stats.hits} / 未命中 ${stats.misses}`)
   }
 
   /** 载入项目 JSON 文本并初始化会话。 */
@@ -186,11 +185,13 @@ function Editor() {
   const applyClipEdit = (
     unchangedHint: string,
     edit: (clips: CoreElement[], ctx: { clipId: string; playhead: number; ticksPerFrame: number }) => CoreElement[],
+    forcedId?: string,
   ) => {
-    if (!session || !selectedId) return
+    const clipId = forcedId ?? selectedId
+    if (!session || !clipId) return
     setErrorText(null)
     const ctx = {
-      clipId: selectedId,
+      clipId,
       playhead: frameIndex * session.ticksPerFrame,
       ticksPerFrame: session.ticksPerFrame,
     }
@@ -307,9 +308,8 @@ function Editor() {
   const handleProxyExport = async () => {
     if (!media) return
     try {
-      const file = await createProxyFile(media)
       if (proxyUrl) URL.revokeObjectURL(proxyUrl)
-      setProxyUrl(URL.createObjectURL(file))
+      setProxyUrl(URL.createObjectURL(await createProxyFile(media)))
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : String(error))
     }
@@ -492,6 +492,7 @@ function Editor() {
             selectedId={selectedId}
             onSelect={setSelectedId}
             adjustments={adjustments}
+            onMoveClip={(id, start) => applyClipEdit('片段被相邻片段挡住，无法移动到该位置', (cs) => moveClipClamped(cs, id, start), id)}
             statusText={`${selectedId ? `已选中 ${selectedId}` : '未选中片段'} · 剩余 ${elements.length} 个`}
             actions={[
               { label: '删除选中片段', disabled: !selectedId || elements.length < 2, onClick: deleteSelected },
