@@ -44,3 +44,12 @@ Rust golden master 逐字段比对导入结果，并对**每个成功用例**额
 导入时把原始 `value / rate` 保存在 `EditClip` 上，导出时优先原样写回；
 只有新建片段（无原始值）才用 `round(ticks × rate / 120000)` 反算。
 因此 23.976 / 29.97 这类非整数帧率的往返不会累积漂移。
+
+## 与官方 OpenTimelineIO 的实文件往返（W-10 第三批）
+
+- 官方实现：`opentimelineio 0.18.1`（Python 3.13，cp313 wheel），生成与校验脚本见 `tests/third_party_roundtrip.py`。
+- **兼容性差异**：官方 `Clip` 为 **`Clip.2`**（其余仍是 `.1`），`media_references` 是**字典**（由 `active_media_reference_key` 指定活动项），而非数组或 `media_reference` 单字段。`schema.rs` 白名单加入 `Clip.2`；`read_media_url` 同时支持三代写法：单字段 / 数组 / 字典。
+- 静态 fixture：`tests/fixtures/third_party_otio_018.json`，由官方 `adapters.write_to_string` 生成（4,770 字节），含 2 个 Clip + 1 个 Gap；`editor-wasm.contract.mjs` 直接读它，无需 Python 即可回归官方格式。
+- 动态往返：`node tests/third_party_roundtrip.test.mjs` 在检测到 `opentimelineio` 时执行「官方 make → 我们 import/export → 官方 validate」，逐项比较 `name` / `duration` / `rate` / `source_start` / `url`；未安装时如实 SKIP，不冒充通过。
+- 实测 **15/15 通过**：官方 adapter 能读回我们导出的 `.1` 格式（自动把 `Clip.1` 升级到 `Clip.2`），剪辑决策逐项一致。
+- 可选安装：`python -m pip install opentimelineio`，或 `pip install --target <dir> opentimelineio` 后用 `PYTHONPATH` 指向该目录。

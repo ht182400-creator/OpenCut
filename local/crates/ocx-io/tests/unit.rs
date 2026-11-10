@@ -211,3 +211,77 @@ fn concurrent_import_export_is_deterministic() {
         handle.join().expect("线程不应 panic");
     }
 }
+
+/** 官方 OTIO 0.18 的 Clip.2 + media_references 字典，按 active key 选引用。 */
+#[test]
+fn official_clip2_media_reference_dict() {
+    let text = serde_json::to_string(&json!({
+        "OTIO_SCHEMA": "Timeline.1", "name": "official",
+        "metadata": {"opencut": {"schemaVersion": 1}},
+        "tracks": {"OTIO_SCHEMA": "Stack.1", "children": [
+            {"OTIO_SCHEMA": "Track.1", "name": "V1", "kind": "Video", "children": [
+                {"OTIO_SCHEMA": "Clip.2", "name": "intro",
+                 "source_range": {"OTIO_SCHEMA": "TimeRange.1",
+                   "start_time": {"OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 30},
+                   "duration": {"OTIO_SCHEMA": "RationalTime.1", "value": 30, "rate": 30}},
+                 "media_references": {
+                   "proxy": {"OTIO_SCHEMA": "ExternalReference.1", "target_url": "proxy.mp4"},
+                   "DEFAULT_MEDIA": {"OTIO_SCHEMA": "ExternalReference.1", "target_url": "online.mp4"}
+                 },
+                 "active_media_reference_key": "DEFAULT_MEDIA"}
+            ]}
+        ]}
+    }))
+    .unwrap();
+    let timeline = import_otio(&text).unwrap();
+    assert_eq!(
+        timeline.tracks[0].clips[0].media_url.as_deref(),
+        Some("online.mp4")
+    );
+}
+
+/** 字典缺少 active key 时回退到首个可用引用。 */
+#[test]
+fn official_clip2_dict_without_active_key_falls_back() {
+    let text = serde_json::to_string(&json!({
+        "OTIO_SCHEMA": "Timeline.1", "name": "official",
+        "tracks": {"OTIO_SCHEMA": "Stack.1", "children": [
+            {"OTIO_SCHEMA": "Track.1", "name": "V1", "kind": "Video", "children": [
+                {"OTIO_SCHEMA": "Clip.2", "name": "c",
+                 "source_range": {"OTIO_SCHEMA": "TimeRange.1",
+                   "start_time": {"OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 30},
+                   "duration": {"OTIO_SCHEMA": "RationalTime.1", "value": 30, "rate": 30}},
+                 "media_references": {
+                   "alpha": {"OTIO_SCHEMA": "ExternalReference.1", "target_url": "alpha.mp4"},
+                   "zeta": {"OTIO_SCHEMA": "ExternalReference.1", "target_url": "zeta.mp4"}
+                 }}
+            ]}
+        ]}
+    }))
+    .unwrap();
+    let timeline = import_otio(&text).unwrap();
+    assert_eq!(
+        timeline.tracks[0].clips[0].media_url.as_deref(),
+        Some("alpha.mp4")
+    );
+}
+
+/** 官方工具生成的完整文件：导入 → 导出 → 再导入，剪辑决策不丢失。 */
+#[test]
+fn official_otio_018_fixture_roundtrip_preserves_decisions() {
+    let official = include_str!("fixtures/third_party_otio_018.json");
+    let imported = import_otio(official).unwrap();
+    assert_eq!(imported.name, "third-party-roundtrip");
+    assert_eq!(imported.tracks[0].clips.len(), 3);
+    assert_eq!(
+        imported.tracks[0].clips[0].media_url.as_deref(),
+        Some("file:///intro.mp4")
+    );
+    assert_eq!(imported.tracks[0].clips[1].source_start_ticks, 120000);
+    assert!(imported.tracks[0].clips[2].is_gap);
+    let exported = export_otio(&imported).unwrap();
+    assert_eq!(
+        decision_key(&imported),
+        decision_key(&import_otio(&exported).unwrap())
+    );
+}

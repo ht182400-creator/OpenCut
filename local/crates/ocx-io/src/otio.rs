@@ -135,22 +135,35 @@ fn read_rational(value: &Value) -> Result<(i64, f64), IoError> {
     Ok((raw as i64, rate))
 }
 
-/** 兼容 OTIO 新旧两种媒体引用写法。 */
+/** 兼容 OTIO 的三代媒体引用写法：单字段 / 数组 / 官方 0.18 的字典。 */
 fn read_media_url(clip: &Value) -> Option<String> {
     if let Some(url) = clip["media_reference"]["target_url"].as_str() {
         return Some(url.to_string());
     }
-    let references = clip["media_references"].as_array()?;
+    let references = &clip["media_references"];
     let active = clip["active_media_reference_key"].as_str();
+    // 官方 0.15+：字典 key → MediaReference，按 active_media_reference_key 选取
+    if let Some(map) = references.as_object() {
+        if let Some(key) = active
+            && let Some(url) = map.get(key).and_then(|item| item["target_url"].as_str())
+        {
+            return Some(url.to_string());
+        }
+        return map
+            .values()
+            .find_map(|item| item["target_url"].as_str())
+            .map(str::to_string);
+    }
+    // 早期实验格式：数组，按 name 匹配 active key
+    let list = references.as_array()?;
     if let Some(key) = active {
-        for reference in references {
+        for reference in list {
             if reference["name"].as_str() == Some(key) {
                 return reference["target_url"].as_str().map(str::to_string);
             }
         }
     }
-    references
-        .first()
+    list.first()
         .and_then(|reference| reference["target_url"].as_str())
         .map(str::to_string)
 }

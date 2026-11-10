@@ -18,6 +18,8 @@ pub const SUPPORTED_OTIO_SCHEMAS: &[&str] = &[
     "Stack.1",
     "Track.1",
     "Clip.1",
+    // 官方 OpenTimelineIO 0.18 起 Clip 升级到 .2（media_references 改为字典）
+    "Clip.2",
     "Gap.1",
     "TimeRange.1",
     "RationalTime.1",

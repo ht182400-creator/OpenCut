@@ -50,3 +50,5 @@
 **追加（W-09 第三批）**：`apps/web/src/local/clip-history.ts` 的版本快照纯函数与撤销/重做 hook、`ToolbarSection` 为本地新写实现，未拷贝 Olive 的版本快照或第三方撤销栈实现；未引入新的前端依赖。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-09 第四批）**：`apps/web/src/local/scrub-benchmark.ts` 的基准测量、`createBenchmarkVideoFile` 的 4K 灰底白块素材与历史 localStorage 持久化均为本地新写实现；`avc1.640033` 为 H.264 High Profile Level 5.1 的标准 codec 字符串，不含第三方库代码；演示素材为程序生成，不含第三方音视频内容。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-10 第三批）**：`ocx-io` 对官方 `Clip.2` 的兼容逻辑、`third_party_roundtrip.py` / `.test.mjs` 跨工具脚本为本地新写实现；`opentimelineio 0.18.1` 仅作为**可选验证依赖**在临时目录安装（未提交、未加入项目依赖），用于生成与校验实文件，其代码未被拷贝进本仓库；静态 fixture 由该工具生成，仅含程序指定的示例剪辑数据。经典版 MIT © 2025-2026 声明仍由上文保留。

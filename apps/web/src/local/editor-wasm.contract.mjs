@@ -428,6 +428,18 @@ try {
   check("OTIO 非法 JSON 被拒绝", () =>
     assert.equal(JSON.parse(otio_import("{ 非法")).error, "INVALID_JSON"));
 
+  // 官方 OpenTimelineIO 0.18 生成的静态文件（Clip.2 + media_references 字典 + Gap）
+  const officialText = readFileSync(
+    path.resolve(HERE, "../../../../local/crates/ocx-io/tests/fixtures/third_party_otio_018.json"),
+    "utf8",
+  );
+  const official = JSON.parse(otio_import(officialText));
+  check("官方 OTIO 0.18 Clip.2 可导入", () => assert.equal(official.ok, true));
+  check("官方 Clip.2 媒体引用字典解析", () =>
+    assert.equal(official.timeline.tracks[0].clips[0].mediaUrl, "file:///intro.mp4"));
+  check("官方文件 Gap 被识别", () =>
+    assert.equal(official.timeline.tracks[0].clips[2].isGap, true));
+
   check("未知 kind 被明确拒绝", () => {
     assert.throws(() => domain_eval(JSON.stringify({ kind: "nope" })), /不支持的 kind/);
   });
