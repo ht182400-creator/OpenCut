@@ -46,3 +46,5 @@
 **追加（W-08 第五批）**：`Timeline` 的鼠标拖拽（原生 mouse 事件与本地预览）、`moveClipClamped` 的重叠夹取均为本地新写实现，未拷贝第三方 NLE 的拖拽交互代码；未引入新的前端依赖。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-08 第六批）**：`Timeline` 的左右边缘把手与 `resizeClipEdge` 的时长/素材入点换算为本地新写实现，未拷贝 Olive / Kdenlive / OpenShot 的边缘裁剪交互代码；未引入新的前端依赖。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-09 第三批）**：`apps/web/src/local/clip-history.ts` 的版本快照纯函数与撤销/重做 hook、`ToolbarSection` 为本地新写实现，未拷贝 Olive 的版本快照或第三方撤销栈实现；未引入新的前端依赖。经典版 MIT © 2025-2026 声明仍由上文保留。

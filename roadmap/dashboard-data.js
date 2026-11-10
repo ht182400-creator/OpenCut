@@ -55,14 +55,14 @@ const HOTSPOTS = [
   { id: "H09", title: "许可证合规（MIT/LGPL/OFL）", priority: "P1", milestone: "全程", status: "未开始", action: "MIT 声明已由 NOTICE.md 保留；剩余 LGPL 随附与字体归属" },
   { id: "H10", title: "docs/ 被 .gitignore 忽略", priority: "P2", milestone: "M0", status: "已完成", action: "已改用 roadmap/，文档可随 fork 正常提交" },
   { id: "H11", title: "经典版 31 版项目迁移兼容", priority: "P1", milestone: "M4", status: "进行中", action: "只读兼容层已落地（additive-only、25 用例 / 107/107、/editor 加载真实项目）；剩余写回与迁移测试" },
-  { id: "H12", title: "4K 预览性能（代理/缓存/快照）", priority: "P2", milestone: "M6", status: "进行中", action: "W-09 两批：内存 LRU + IndexedDB 三级缓存、代理 MP4，跨刷新 11733ms→107ms，单帧 <16ms 阈值；剩余真实 4K 素材基准与版本快照" },
+  { id: "H12", title: "4K 预览性能（代理/缓存/快照）", priority: "P2", milestone: "M6", status: "进行中", action: "W-09 三批：三级缓存 + 代理 MP4（跨刷新 11733ms→107ms）+ M6 版本快照与撤销重做；剩余真实 4K 素材 scrub 基准与快照跨会话持久化" },
   { id: "H13", title: "上游落地六项能力导致双实现收敛（L3）", priority: "P1", milestone: "全程", status: "进行中", action: "按 README.md §7.9 做命名空间隔离、upstream-mirror、能力台账与 merge-tree 预演" },
   { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "W-08 六批 + W-10 两批：真实音视频闭环、裁剪/拖拽/边缘裁剪（零重叠）、OTIO 双向交换；剩余第三方 OTIO 实文件往返与 4K scrub 基准" },
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r25";
-const DATA_UPDATED_AT = "2026-11-10 14:30";
+const DATA_VERSION = "2026-11-08-r26";
+const DATA_UPDATED_AT = "2026-11-10 15:00";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**

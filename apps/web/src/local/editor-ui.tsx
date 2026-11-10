@@ -116,6 +116,87 @@ export function ProjectSummary(props: { session: Session; trackCount: number }) 
   )
 }
 
+/** 工具栏动作描述。 */
+export interface ToolbarAction {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+}
+
+/** 工具栏：文件输入、动作按钮、状态信息与下载链接。 */
+export function ToolbarSection(props: {
+  projectFileRef: RefObject<HTMLInputElement | null>
+  videoFileRef: RefObject<HTMLInputElement | null>
+  otioFileRef: RefObject<HTMLInputElement | null>
+  onDropFile: (file?: File) => void
+  onOtioFile: (file?: File) => void
+  actions: ToolbarAction[]
+  sourceName: string
+  mediaStatus: string
+  cacheInfo: string
+  historyLabel: string
+  proxyUrl: string | null
+  otioUrl: string | null
+  exportState: ExportState
+}) {
+  return (
+    <div
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault()
+        props.onDropFile(event.dataTransfer.files[0])
+      }}
+      style={{ ...PANEL_STYLE, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}
+    >
+      <label style={BUTTON_STYLE}>
+        导入项目 JSON
+        <input ref={props.projectFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
+          onChange={(event) => props.onDropFile(event.target.files?.[0])} />
+      </label>
+      <label style={BUTTON_STYLE}>
+        导入视频素材
+        <input ref={props.videoFileRef} type="file" accept="video/*,.mp4,.webm" style={{ display: 'none' }}
+          onChange={(event) => props.onDropFile(event.target.files?.[0])} />
+      </label>
+      {props.actions.map((action) => (
+        <button key={action.label} type="button" style={BUTTON_STYLE}
+          onClick={action.onClick} disabled={action.disabled}>
+          {action.label}
+        </button>
+      ))}
+      <label style={BUTTON_STYLE}>
+        导入 OTIO
+        <input ref={props.otioFileRef} type="file" accept=".otio,application/json" style={{ display: 'none' }}
+          onChange={(event) => props.onOtioFile(event.target.files?.[0])} />
+      </label>
+      <span style={{ color: TEXT_MUTED, fontSize: 13 }}>当前：{props.sourceName} · {props.mediaStatus}</span>
+      <span style={{ color: TEXT_MUTED, fontSize: 13 }}>{props.cacheInfo}</span>
+      <span style={{ color: TEXT_MUTED, fontSize: 13 }}>{props.historyLabel}</span>
+      {props.proxyUrl && (
+        <a href={props.proxyUrl} download="opencut-proxy.mp4" style={{ color: '#7dd3fc', fontSize: 13 }}>
+          下载代理 MP4
+        </a>
+      )}
+      {props.otioUrl && (
+        <a href={props.otioUrl} download="opencut-timeline.otio" style={{ color: '#7dd3fc', fontSize: 13 }}>
+          下载 OTIO
+        </a>
+      )}
+      {props.exportState.status === 'running' && (
+        <span style={{ color: TEXT_MUTED, fontSize: 13 }}>编码中 {props.exportState.done}/{props.exportState.total}</span>
+      )}
+      {props.exportState.status === 'done' && props.exportState.url && (
+        <a href={props.exportState.url} download="opencut-export.mp4" style={{ color: '#7dd3fc', fontSize: 13 }}>
+          下载 MP4（{props.exportState.message} · {props.exportState.bytes} 字节）
+        </a>
+      )}
+      {props.exportState.status === 'error' && (
+        <span style={{ color: '#fca5a5', fontSize: 13 }}>{props.exportState.message}</span>
+      )}
+    </div>
+  )
+}
+
 /** 时间轴面板：导入前/后对照、片段选中与一组剪辑动作按钮。 */
 export function TimelineSection(props: {
   originalElements: CoreElement[]

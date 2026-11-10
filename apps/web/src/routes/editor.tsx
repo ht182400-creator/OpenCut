@@ -1,20 +1,20 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { buildTimelineAudio, isAacEncodingSupported, type PcmAudio } from '../local/audio'
+import { useClipHistory } from '../local/clip-history'
 import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
 import {
   BASE_PROFILE,
-  BUTTON_STYLE,
   DEMO_PARAMS,
   PANEL_STYLE,
   PREVIEW_HEIGHT,
   PREVIEW_WIDTH,
   SCRUB_THRESHOLD_MS,
   TEXT_MAIN,
-  TEXT_MUTED,
   PreviewSection,
   ProjectSummary,
   TimelineSection,
+  ToolbarSection,
   blankFrame,
   type ApplyResponse,
   type CoreElement,
@@ -85,6 +85,13 @@ function Editor() {
     status: 'idle', done: 0, total: 0, message: '', url: null, bytes: 0,
   })
   const [sourceName, setSourceName] = useState('内置示例项目')
+  /** 撤销/重做恢复的片段重新应用帧计划；历史由 M6 快照驱动。 */
+  const clipHistory = useClipHistory((clips) => {
+    setElements(clips as CoreElement[])
+    setSelectedId(null)
+    setPlaying(false)
+    if (session) setFrameCount(plannedFrameCount(clips, session.adapter, session.profile))
+  })
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const projectFileRef = useRef<HTMLInputElement>(null)
   const videoFileRef = useRef<HTMLInputElement>(null)
@@ -128,6 +135,7 @@ function Editor() {
       })
       setOriginalElements(mainElements)
       setElements(mainElements)
+      clipHistory.reset(mainElements, '导入项目')
       setAdjustments([])
       setSelectedId(null)
       setFrameIndex(0)
@@ -173,6 +181,7 @@ function Editor() {
         .map((item) => ({ ...item, trimStart: trimById.get(item.id) ?? 0 }))
       setAdjustments(ripple.adjustments)
       setElements(next)
+      clipHistory.record(next, '删除片段')
       setSelectedId(null)
       setFrameCount(plannedFrameCount(next, session.adapter, session.profile))
       setFrameIndex(0)
@@ -187,6 +196,7 @@ function Editor() {
     unchangedHint: string,
     edit: (clips: CoreElement[], ctx: { clipId: string; playhead: number; ticksPerFrame: number }) => CoreElement[],
     forcedId?: string,
+    label = '片段编辑',
   ) => {
     const clipId = forcedId ?? selectedId
     if (!session || !clipId) return
@@ -202,6 +212,7 @@ function Editor() {
       return
     }
     setElements(next)
+    clipHistory.record(next, label)
     setSelectedId(null)
     setPlaying(false)
     setFrameCount(plannedFrameCount(next, session.adapter, session.profile))
@@ -341,6 +352,7 @@ function Editor() {
       setFrameIndex(0)
       setPlaying(false)
       setSourceName(file.name)
+      clipHistory.record(clips, '导入 OTIO')
       setFrameCount(plannedFrameCount(clips, session.adapter, session.profile))
     } catch (error) {
       setErrorText(formatCoreError(error))
@@ -412,70 +424,29 @@ function Editor() {
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 编辑器</h1>
       <p style={{ color: '#475569', fontSize: 13, marginBottom: 18 }}>导入项目或真实音视频，删除、分割、裁剪入出点、平移片段，逐帧预览并导出带 AAC 音轨的 MP4；代理帧三级缓存与单帧耗时量化由 W-09 提供，Rust core（WASM）负责合成与出帧。</p>
 
-      <div
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => {
-          event.preventDefault()
-          void readFile(event.dataTransfer.files[0])
-        }}
-        style={{ ...PANEL_STYLE, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}
-      >
-        <label style={BUTTON_STYLE}>
-          导入项目 JSON
-          <input ref={projectFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
-            onChange={(event) => void readFile(event.target.files?.[0])} />
-        </label>
-        <label style={BUTTON_STYLE}>
-          导入视频素材
-          <input ref={videoFileRef} type="file" accept="video/*,.mp4,.webm" style={{ display: 'none' }}
-            onChange={(event) => void readFile(event.target.files?.[0])} />
-        </label>
-        <button type="button" style={BUTTON_STYLE} onClick={() => void handleDemoClip()}>
-          生成演示素材
-        </button>
-        <button type="button" style={BUTTON_STYLE} onClick={() => void handleClearCache()}>
-          清除帧缓存
-        </button>
-        <button type="button" style={BUTTON_STYLE} onClick={() => void handleProxyExport()} disabled={!media}>
-          导出代理文件
-        </button>
-        <button type="button" style={BUTTON_STYLE} onClick={() => void handleOtioExport()} disabled={!session}>
-          导出 OTIO
-        </button>
-        <label style={BUTTON_STYLE}>
-          导入 OTIO
-          <input ref={otioFileRef} type="file" accept=".otio,application/json" style={{ display: 'none' }}
-            onChange={(event) => void handleOtioImport(event.target.files?.[0])} />
-        </label>
-        {otioUrl && (
-          <a href={otioUrl} download="opencut-timeline.otio" style={{ color: '#7dd3fc', fontSize: 13 }}>
-            下载 OTIO
-          </a>
-        )}
-        <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
-          当前：{sourceName} · {mediaStatus}
-        </span>
-        <span style={{ color: TEXT_MUTED, fontSize: 13 }}>{cacheInfo}</span>
-        {proxyUrl && (
-          <a href={proxyUrl} download="opencut-proxy.mp4" style={{ color: '#7dd3fc', fontSize: 13 }}>
-            下载代理 MP4
-          </a>
-        )}
-        <button type="button" style={BUTTON_STYLE} onClick={() => void handleExport()} disabled={!session || exportState.status === 'running'}>
-          导出 MP4
-        </button>
-        {exportState.status === 'running' && (
-          <span style={{ color: TEXT_MUTED, fontSize: 13 }}>编码中 {exportState.done}/{exportState.total}</span>
-        )}
-        {exportState.status === 'done' && exportState.url && (
-          <a href={exportState.url} download="opencut-export.mp4" style={{ color: '#7dd3fc', fontSize: 13 }}>
-            下载 MP4（{exportState.message} · {exportState.bytes} 字节）
-          </a>
-        )}
-        {exportState.status === 'error' && (
-          <span style={{ color: '#fca5a5', fontSize: 13 }}>{exportState.message}</span>
-        )}
-      </div>
+      <ToolbarSection
+        projectFileRef={projectFileRef}
+        videoFileRef={videoFileRef}
+        otioFileRef={otioFileRef}
+        onDropFile={(file) => void readFile(file)}
+        onOtioFile={(file) => void handleOtioImport(file)}
+        sourceName={sourceName}
+        mediaStatus={mediaStatus}
+        cacheInfo={cacheInfo}
+        historyLabel={clipHistory.label}
+        proxyUrl={proxyUrl}
+        otioUrl={otioUrl}
+        exportState={exportState}
+        actions={[
+          { label: '生成演示素材', onClick: () => void handleDemoClip() },
+          { label: '清除帧缓存', onClick: () => void handleClearCache() },
+          { label: '导出代理文件', disabled: !media, onClick: () => void handleProxyExport() },
+          { label: '导出 OTIO', disabled: !session, onClick: () => void handleOtioExport() },
+          { label: '撤销', disabled: !clipHistory.canUndo, onClick: clipHistory.undo },
+          { label: '重做', disabled: !clipHistory.canRedo, onClick: clipHistory.redo },
+          { label: '导出 MP4', disabled: !session || exportState.status === 'running', onClick: () => void handleExport() },
+        ]}
+      />
 
       {!session && !errorText && <div style={{ ...PANEL_STYLE, color: TEXT_MAIN }}>正在加载项目与 Rust core WASM…</div>}
       {errorText && <div style={{ ...PANEL_STYLE, color: '#fecaca' }}>{errorText}</div>}
@@ -490,8 +461,8 @@ function Editor() {
             selectedId={selectedId}
             onSelect={setSelectedId}
             adjustments={adjustments}
-            onMoveClip={(id, start) => applyClipEdit('片段被相邻片段挡住，无法移动到该位置', (cs) => moveClipClamped(cs, id, start), id)}
-            onResizeClip={(id, edge, delta) => applyClipEdit('片段已到时长边界', (cs) => resizeClipEdge(cs, id, edge, delta, session?.ticksPerFrame ?? 4000), id)}
+            onMoveClip={(id, start) => applyClipEdit('片段被相邻片段挡住，无法移动到该位置', (cs) => moveClipClamped(cs, id, start), id, '拖拽片段')}
+            onResizeClip={(id, edge, delta) => applyClipEdit('片段已到时长边界', (cs) => resizeClipEdge(cs, id, edge, delta, session?.ticksPerFrame ?? 4000), id, '边缘裁剪')}
             statusText={`${selectedId ? `已选中 ${selectedId}` : '未选中片段'} · 剩余 ${elements.length} 个`}
             actions={[
               { label: '删除选中片段', disabled: !selectedId || elements.length < 2, onClick: deleteSelected },
