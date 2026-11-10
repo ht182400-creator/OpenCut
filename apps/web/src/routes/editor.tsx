@@ -12,9 +12,9 @@ import {
   SCRUB_THRESHOLD_MS,
   TEXT_MAIN,
   TEXT_MUTED,
-  Timeline,
   PreviewSection,
   ProjectSummary,
+  TimelineSection,
   blankFrame,
   type ApplyResponse,
   type CoreElement,
@@ -42,9 +42,13 @@ import {
   clipAtTime,
   clipsToOtioText,
   mapProjectFrame,
+  moveClipBy,
   otioImportToClips,
+  plannedFrameCount,
   splitClipAt,
   timelineDuration,
+  trimClipInAt,
+  trimClipOutAt,
 } from '../local/timeline'
 import { probeWebCodecsSupport } from '../local/webcodecs'
 
@@ -167,13 +171,10 @@ function Editor() {
       const next = applied.tracks.main.elements
         .filter((item) => remainingIds.has(item.id))
         .map((item) => ({ ...item, trimStart: trimById.get(item.id) ?? 0 }))
-      const plan = session.adapter.evaluate<FramePlanView>({
-        kind: 'buildFramePlan', durationTicks: timelineDuration(next), profile: session.profile,
-      })
       setAdjustments(ripple.adjustments)
       setElements(next)
       setSelectedId(null)
-      setFrameCount(Math.max(plan.frameCount, 1))
+      setFrameCount(plannedFrameCount(next, session.adapter, session.profile))
       setFrameIndex(0)
       setPlaying(false)
     } catch (error) {
@@ -181,18 +182,28 @@ function Editor() {
     }
   }
 
-  /** 在播放头处分割选中片段：素材 trimStart 连续，不改变总时长。 */
-  const splitAtPlayhead = () => {
+  /** 应用一次片段编辑：无变化时提示原因，有变化则重算帧计划并复位选中。 */
+  const applyClipEdit = (
+    unchangedHint: string,
+    edit: (clips: CoreElement[], ctx: { clipId: string; playhead: number; ticksPerFrame: number }) => CoreElement[],
+  ) => {
     if (!session || !selectedId) return
     setErrorText(null)
-    const next = splitClipAt(elements, selectedId, frameIndex * session.ticksPerFrame)
+    const ctx = {
+      clipId: selectedId,
+      playhead: frameIndex * session.ticksPerFrame,
+      ticksPerFrame: session.ticksPerFrame,
+    }
+    const next = edit(elements, ctx)
     if (next === elements) {
-      setErrorText('播放头不在选中片段内部，无法分割')
+      setErrorText(unchangedHint)
       return
     }
     setElements(next)
     setSelectedId(null)
     setPlaying(false)
+    setFrameCount(plannedFrameCount(next, session.adapter, session.profile))
+    setFrameIndex(Math.min(frameIndex, frameCount - 1))
   }
 
   /** 生成当前帧像素：按片段 trimStart 取代理帧，交给 core 合成。 */
@@ -329,10 +340,7 @@ function Editor() {
       setFrameIndex(0)
       setPlaying(false)
       setSourceName(file.name)
-      const plan = session.adapter.evaluate<FramePlanView>({
-        kind: 'buildFramePlan', durationTicks: timelineDuration(clips), profile: session.profile,
-      })
-      setFrameCount(Math.max(plan.frameCount, 1))
+      setFrameCount(plannedFrameCount(clips, session.adapter, session.profile))
     } catch (error) {
       setErrorText(formatCoreError(error))
     }
@@ -399,16 +407,12 @@ function Editor() {
     }
   }
 
-  const activeClip = session
-    ? clipAtTime(elements, frameIndex * session.ticksPerFrame)?.id ?? '空档'
-    : '—'
+  const activeClip = clipAtTime(elements, frameIndex * (session?.ticksPerFrame ?? 0))?.id ?? (session ? '空档' : '—')
 
   return (
     <main style={{ maxWidth: 880, margin: '32px auto', padding: '0 16px', color: '#0f172a' }}>
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 编辑器</h1>
-      <p style={{ color: '#475569', fontSize: 13, marginBottom: 18 }}>
-        导入项目 JSON 与真实音视频素材，删除或在播放头分割片段，逐帧预览，导出带 AAC 音轨的 MP4。代理帧三级缓存与单帧耗时量化由 W-09 提供，Rust core（WASM）负责合成与出帧。
-      </p>
+      <p style={{ color: '#475569', fontSize: 13, marginBottom: 18 }}>导入项目或真实音视频，删除、分割、裁剪入出点、平移片段，逐帧预览并导出带 AAC 音轨的 MP4；代理帧三级缓存与单帧耗时量化由 W-09 提供，Rust core（WASM）负责合成与出帧。</p>
 
       <div
         onDragOver={(event) => event.preventDefault()}
@@ -482,29 +486,27 @@ function Editor() {
         <>
           <ProjectSummary session={session} trackCount={session.projectTrackCount} />
 
-          <section style={PANEL_STYLE}>
-            <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>时间轴（点击片段选中）</h2>
-            <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 6px' }}>导入时</p>
-            <Timeline elements={originalElements} selectedId={null} />
-            <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '10px 0 6px' }}>当前</p>
-            <Timeline elements={elements} selectedId={selectedId} onSelect={setSelectedId} />
-            <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button type="button" style={BUTTON_STYLE} onClick={deleteSelected} disabled={!selectedId || elements.length < 2}>
-                删除选中片段
-              </button>
-              <button type="button" style={BUTTON_STYLE} onClick={splitAtPlayhead} disabled={!selectedId}>
-                在播放头分割
-              </button>
-              <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
-                {selectedId ? `已选中 ${selectedId}` : '未选中片段'} · 剩余 {elements.length} 个
-              </span>
-            </div>
-            {adjustments.length > 0 && (
-              <pre style={{ fontSize: 12, color: '#a5b4fc', marginTop: 12, marginBottom: 0 }}>
-                {JSON.stringify(adjustments, null, 2)}
-              </pre>
-            )}
-          </section>
+          <TimelineSection
+            originalElements={originalElements}
+            elements={elements}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            adjustments={adjustments}
+            statusText={`${selectedId ? `已选中 ${selectedId}` : '未选中片段'} · 剩余 ${elements.length} 个`}
+            actions={[
+              { label: '删除选中片段', disabled: !selectedId || elements.length < 2, onClick: deleteSelected },
+              { label: '在播放头分割', disabled: !selectedId,
+                onClick: () => applyClipEdit('播放头不在选中片段内部，无法分割', (cs, ctx) => splitClipAt(cs, ctx.clipId, ctx.playhead)) },
+              { label: '入点设到播放头', disabled: !selectedId,
+                onClick: () => applyClipEdit('播放头不在选中片段内部，无法设置入点', (cs, ctx) => trimClipInAt(cs, ctx.clipId, ctx.playhead)) },
+              { label: '出点设到播放头', disabled: !selectedId,
+                onClick: () => applyClipEdit('播放头不在选中片段内部，无法设置出点', (cs, ctx) => trimClipOutAt(cs, ctx.clipId, ctx.playhead)) },
+              { label: '左移一帧', disabled: !selectedId,
+                onClick: () => applyClipEdit('片段已在时间轴起点', (cs, ctx) => moveClipBy(cs, ctx.clipId, -ctx.ticksPerFrame)) },
+              { label: '右移一帧', disabled: !selectedId,
+                onClick: () => applyClipEdit('片段无法再右移', (cs, ctx) => moveClipBy(cs, ctx.clipId, ctx.ticksPerFrame)) },
+            ]}
+          />
 
           <PreviewSection
             canvasRef={canvasRef}

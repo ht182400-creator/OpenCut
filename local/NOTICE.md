@@ -40,3 +40,5 @@
 **追加（W-10 第一批）**：`local/crates/ocx-io/` 为本地新写实现，按 OpenTimelineIO 公开 JSON schema 的核心子集构造数据模型，未引入 `otio-rs` / `oximedia-edl` / `quercus-otio` 等第三方库代码，也未链接 OTIO C++ 运行时；`metadata.opencut` 是本仓库自有命名空间，不改动 OTIO 标准字段。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-10 第二批）**：`apps/web/src/local/timeline.ts` 的 OTIO 桥接（clips ↔ EditTimeline 视图）为本地新写实现，仅调用本仓库 `ocx-io` 的 WASM 入口，未引入第三方 OTIO 库；`/editor` 的导入/导出按钮只做文件读取与下载封装。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-08 第四批）**：`trimClipInAt` / `trimClipOutAt` / `moveClipBy` 与 `TimelineSection` 为本地新写实现，未拷贝 Olive / Kdenlive / OpenShot 的裁剪/拖拽交互代码；head-trim 语义为行业标准概念。经典版 MIT © 2025-2026 声明仍由上文保留。

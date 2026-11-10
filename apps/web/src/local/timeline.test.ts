@@ -7,13 +7,18 @@ import {
   editTimelineToClips,
   framesForDuration,
   mapProjectFrame,
+  moveClipBy,
   otioImportToClips,
+  plannedFrameCount,
   splitClipAt,
   TICKS_PER_SECOND,
   timelineDuration,
+  trimClipInAt,
+  trimClipOutAt,
   type EditTimelineView,
   type TimelineClip,
 } from './timeline';
+import type { EditorAdapter } from './editor-adapter';
 
 /** 片段级素材映射与分割的纯函数回归（W-08 第二批）。 */
 describe('片段与素材帧映射', () => {
@@ -176,5 +181,70 @@ describe('OTIO 双向桥接', () => {
     // 3s 项目在 4000 ticks/帧（30fps）下需要 90 帧
     expect(framesForDuration(clips, 4000)).toBe(90);
     expect(framesForDuration([], 4000)).toBe(1);
+  });
+});
+
+/** 裁剪入出点与片段平移回归（W-08 第四批）。 */
+describe('裁剪与平移', () => {
+  const clips: TimelineClip[] = [
+    { id: 'intro', startTime: 0, duration: TICKS_PER_SECOND, trimStart: 0 },
+    {
+      id: 'body', startTime: TICKS_PER_SECOND, duration: 2 * TICKS_PER_SECOND,
+      trimStart: TICKS_PER_SECOND,
+    },
+  ];
+
+  it('入点推到播放头：位置不动、素材入点后移、时长缩短', () => {
+    const result = trimClipInAt(clips, 'body', 2 * TICKS_PER_SECOND);
+    expect(result[1]).toMatchObject({
+      startTime: TICKS_PER_SECOND,
+      duration: TICKS_PER_SECOND,
+      trimStart: 2 * TICKS_PER_SECOND,
+    });
+    expect(result[0]).toBe(clips[0]);
+  });
+
+  it('入点裁剪后画面随素材入点改变', () => {
+    const trimmed = trimClipInAt(clips, 'body', 2 * TICKS_PER_SECOND);
+    // 项目 1.1s：裁剪前素材 1.1s → 帧 33；裁剪后素材 2.1s → 帧 63
+    expect(mapProjectFrame(clips, 1.1 * TICKS_PER_SECOND, 30, 200).sourceFrameIndex).toBe(33);
+    expect(mapProjectFrame(trimmed, 1.1 * TICKS_PER_SECOND, 30, 200).sourceFrameIndex).toBe(63);
+  });
+
+  it('出点缩到播放头：只改时长，素材入点不变', () => {
+    const result = trimClipOutAt(clips, 'intro', TICKS_PER_SECOND / 2);
+    expect(result[0]).toMatchObject({
+      startTime: 0, duration: TICKS_PER_SECOND / 2, trimStart: 0,
+    });
+    expect(result[1]).toBe(clips[1]);
+  });
+
+  it('播放头不在片段内部或目标缺失时原样返回', () => {
+    expect(trimClipInAt(clips, 'body', TICKS_PER_SECOND / 2)).toBe(clips);
+    expect(trimClipInAt(clips, 'body', 5 * TICKS_PER_SECOND)).toBe(clips);
+    expect(trimClipOutAt(clips, 'body', TICKS_PER_SECOND)).toBe(clips);
+    expect(trimClipOutAt(clips, 'body', 5 * TICKS_PER_SECOND)).toBe(clips);
+    expect(trimClipInAt(clips, 'missing', TICKS_PER_SECOND)).toBe(clips);
+  });
+
+  it('平移只改起点并夹到 0，素材入点不变', () => {
+    const moved = moveClipBy(clips, 'intro', 10 * TICKS_PER_SECOND);
+    expect(moved[0]).toMatchObject({ startTime: 10 * TICKS_PER_SECOND, trimStart: 0 });
+    expect(mapProjectFrame(moved, 10.5 * TICKS_PER_SECOND, 30, 400).clipId).toBe('intro');
+    const clamped = moveClipBy(clips, 'intro', -TICKS_PER_SECOND);
+    expect(clamped[0]).toMatchObject({ startTime: 0 });
+    expect(moveClipBy(clips, 'intro', 0)).toBe(clips);
+    expect(moveClipBy(clips, 'missing', TICKS_PER_SECOND)).toBe(clips);
+  });
+
+  it('plannedFrameCount 走 core 帧计划并至少 1 帧', () => {
+    const adapter = {
+      evaluate: (request: { durationTicks: number }) => ({
+        frameCount: Math.round(request.durationTicks / 4000),
+        ticksPerFrame: 4000,
+      }),
+    } as unknown as Pick<EditorAdapter, 'evaluate'>;
+    expect(plannedFrameCount(clips, adapter, {})).toBe(90);
+    expect(plannedFrameCount([], adapter, {})).toBe(1);
   });
 });

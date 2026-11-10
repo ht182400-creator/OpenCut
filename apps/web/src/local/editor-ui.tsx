@@ -115,6 +115,41 @@ export function ProjectSummary(props: { session: Session; trackCount: number }) 
   )
 }
 
+/** 时间轴面板：导入前/后对照、片段选中与一组剪辑动作按钮。 */
+export function TimelineSection(props: {
+  originalElements: CoreElement[]
+  elements: CoreElement[]
+  selectedId: string | null
+  onSelect: (id: string) => void
+  actions: Array<{ label: string; onClick: () => void; disabled?: boolean }>
+  statusText: string
+  adjustments: RippleAdjustment[]
+}) {
+  return (
+    <section style={PANEL_STYLE}>
+      <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>时间轴（点击片段选中）</h2>
+      <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 6px' }}>导入时</p>
+      <Timeline elements={props.originalElements} selectedId={null} />
+      <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '10px 0 6px' }}>当前</p>
+      <Timeline elements={props.elements} selectedId={props.selectedId} onSelect={props.onSelect} />
+      <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        {props.actions.map((action) => (
+          <button key={action.label} type="button" style={BUTTON_STYLE}
+            onClick={action.onClick} disabled={action.disabled}>
+            {action.label}
+          </button>
+        ))}
+        <span style={{ color: TEXT_MUTED, fontSize: 13 }}>{props.statusText}</span>
+      </div>
+      {props.adjustments.length > 0 && (
+        <pre style={{ fontSize: 12, color: '#a5b4fc', marginTop: 12, marginBottom: 0 }}>
+          {JSON.stringify(props.adjustments, null, 2)}
+        </pre>
+      )}
+    </section>
+  )
+}
+
 /** 时间轴片段：在 core 的 TimedElement 之外额外携带素材裁剪起点。 */
 export interface CoreElement extends TimelineClip {
   id: string

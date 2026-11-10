@@ -226,3 +226,97 @@ export function clipsToOtioText(
   }
   return result.otio;
 }
+
+/**
+ * 把片段入点设到播放头（W-08 第四批，head-trim）：片段在时间轴上的位置不动，
+ * 素材入点后移、时长缩短，因此保留区间的**画面内容随裁剪真实改变**。
+ * 播放头不在片段内部时原样返回输入引用。
+ * @param clips 当前片段
+ * @param clipId 目标片段 id
+ * @param playheadTicks 播放头（项目 ticks）
+ * @returns {TimelineClip[]} 裁剪后的片段
+ */
+export function trimClipInAt(
+  clips: TimelineClip[],
+  clipId: string,
+  playheadTicks: number,
+): TimelineClip[] {
+  const target = clips.find((clip) => clip.id === clipId);
+  if (!target) return clips;
+  const elapsed = playheadTicks - target.startTime;
+  if (elapsed <= 0 || elapsed >= target.duration) return clips;
+  return clips.map((clip) =>
+    clip.id === clipId
+      ? {
+          ...clip,
+          duration: clip.duration - elapsed,
+          trimStart: clip.trimStart + elapsed,
+        }
+      : clip,
+  );
+}
+
+/**
+ * 把片段出点缩到播放头（W-08 第四批）：只缩短时长，素材入点不变。
+ * 播放头不在片段内部时原样返回输入引用。
+ * @param clips 当前片段
+ * @param clipId 目标片段 id
+ * @param playheadTicks 播放头（项目 ticks）
+ * @returns {TimelineClip[]} 裁剪后的片段
+ */
+export function trimClipOutAt(
+  clips: TimelineClip[],
+  clipId: string,
+  playheadTicks: number,
+): TimelineClip[] {
+  const target = clips.find((clip) => clip.id === clipId);
+  if (!target) return clips;
+  const elapsed = playheadTicks - target.startTime;
+  if (elapsed <= 0 || elapsed >= target.duration) return clips;
+  return clips.map((clip) =>
+    clip.id === clipId ? { ...clip, duration: elapsed } : clip,
+  );
+}
+
+/**
+ * 沿时间轴平移片段（W-08 第四批）：只改 startTime，素材入点不变——
+ * 画面内容不变、位置改变。起点会被夹到 0。
+ * 诚实边界：当前单轨线性模型不做重叠校验，重叠时画面取数组顺序先命中的片段。
+ * @param clips 当前片段
+ * @param clipId 目标片段 id
+ * @param deltaTicks 位移量（正数右移）
+ * @returns {TimelineClip[]} 平移后的片段
+ */
+export function moveClipBy(
+  clips: TimelineClip[],
+  clipId: string,
+  deltaTicks: number,
+): TimelineClip[] {
+  const target = clips.find((clip) => clip.id === clipId);
+  if (!target) return clips;
+  const nextStart = Math.max(0, target.startTime + deltaTicks);
+  if (nextStart === target.startTime) return clips;
+  return clips.map((clip) =>
+    clip.id === clipId ? { ...clip, startTime: nextStart } : clip,
+  );
+}
+
+/**
+ * 按片段覆盖时长向 core 询问帧计划，返回规范化的帧数（至少 1）。
+ * @param clips 片段集合
+ * @param adapter core 适配层
+ * @param profile 导出配置基线
+ * @returns {number} 帧数
+ */
+export function plannedFrameCount(
+  clips: TimelineClip[],
+  adapter: Pick<EditorAdapter, 'evaluate'>,
+  profile: Record<string, unknown>,
+): number {
+  const plan = adapter.evaluate<{ frameCount: number; ticksPerFrame: number }>({
+    kind: 'buildFramePlan',
+    durationTicks: timelineDuration(clips),
+    profile,
+  });
+  return Math.max(plan.frameCount, 1);
+}
