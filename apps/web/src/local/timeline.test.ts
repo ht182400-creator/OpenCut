@@ -11,6 +11,7 @@ import {
   moveClipClamped,
   otioImportToClips,
   plannedFrameCount,
+  resizeClipEdge,
   splitClipAt,
   TICKS_PER_SECOND,
   timelineDuration,
@@ -270,6 +271,55 @@ describe('裁剪与平移', () => {
   it('约束后的片段按时间排序仍两两不重叠', () => {
     const moved = moveClipClamped(clips, 'body', 4 * TICKS_PER_SECOND);
     const ordered = [...moved].sort((a, b) => a.startTime - b.startTime);
+    for (let i = 1; i < ordered.length; i += 1) {
+      expect(ordered[i].startTime).toBeGreaterThanOrEqual(
+        ordered[i - 1].startTime + ordered[i - 1].duration,
+      );
+    }
+  });
+
+  it('拖右边缘向内缩短时长，素材入点与位置不变', () => {
+    const result = resizeClipEdge(clips, 'intro', 'right', -TICKS_PER_SECOND / 2, 4000);
+    expect(result[0]).toMatchObject({
+      startTime: 0, duration: TICKS_PER_SECOND / 2, trimStart: 0,
+    });
+  });
+
+  it('拖右边缘向外延长但不能压到后邻居', () => {
+    const result = resizeClipEdge(clips, 'intro', 'right', 99 * TICKS_PER_SECOND, 4000);
+    // body 起点 1s → intro 时长上限 1s，即原值
+    expect(result[0].duration).toBe(TICKS_PER_SECOND);
+    expect(result).toBe(clips);
+  });
+
+  it('拖左边缘 head-trim：位置不动，素材入点增加、时长缩短', () => {
+    const result = resizeClipEdge(clips, 'body', 'left', TICKS_PER_SECOND / 2, 4000);
+    expect(result[1]).toMatchObject({
+      startTime: TICKS_PER_SECOND,
+      duration: 1.5 * TICKS_PER_SECOND,
+      trimStart: 1.5 * TICKS_PER_SECOND,
+    });
+    // 项目 1.1s 的素材帧由 33 变为 48，画面随裁剪改变
+    expect(mapProjectFrame(result, 1.1 * TICKS_PER_SECOND, 30, 200).sourceFrameIndex).toBe(48);
+  });
+
+  it('拖左边缘向外可恢复被裁掉的素材，但不能让 trimStart 为负', () => {
+    const trimmed = resizeClipEdge(clips, 'body', 'left', TICKS_PER_SECOND / 2, 4000);
+    const restored = resizeClipEdge(trimmed, 'body', 'left', -99 * TICKS_PER_SECOND, 4000);
+    expect(restored[1].trimStart).toBe(0);
+    expect(restored[1].duration).toBeGreaterThan(trimmed[1].duration);
+    expect(restored[1].startTime).toBe(TICKS_PER_SECOND);
+  });
+
+  it('边缘裁剪受最小时长约束，未知 id 返回原引用', () => {
+    const result = resizeClipEdge(clips, 'intro', 'right', -99 * TICKS_PER_SECOND, 4000);
+    expect(result[0].duration).toBe(4000);
+    expect(resizeClipEdge(clips, 'missing', 'left', 1, 4000)).toBe(clips);
+  });
+
+  it('调整后片段按时间排序仍两两不重叠', () => {
+    const result = resizeClipEdge(clips, 'intro', 'right', -TICKS_PER_SECOND / 4, 4000);
+    const ordered = [...result].sort((a, b) => a.startTime - b.startTime);
     for (let i = 1; i < ordered.length; i += 1) {
       expect(ordered[i].startTime).toBeGreaterThanOrEqual(
         ordered[i - 1].startTime + ordered[i - 1].duration,

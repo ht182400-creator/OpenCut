@@ -44,3 +44,5 @@
 **追加（W-08 第四批）**：`trimClipInAt` / `trimClipOutAt` / `moveClipBy` 与 `TimelineSection` 为本地新写实现，未拷贝 Olive / Kdenlive / OpenShot 的裁剪/拖拽交互代码；head-trim 语义为行业标准概念。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-08 第五批）**：`Timeline` 的鼠标拖拽（原生 mouse 事件与本地预览）、`moveClipClamped` 的重叠夹取均为本地新写实现，未拷贝第三方 NLE 的拖拽交互代码；未引入新的前端依赖。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-08 第六批）**：`Timeline` 的左右边缘把手与 `resizeClipEdge` 的时长/素材入点换算为本地新写实现，未拷贝 Olive / Kdenlive / OpenShot 的边缘裁剪交互代码；未引入新的前端依赖。经典版 MIT © 2025-2026 声明仍由上文保留。

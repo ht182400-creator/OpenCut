@@ -3,7 +3,7 @@
  * 从 `routes/editor.tsx` 抽离，保持单个代码文件不超过 500 行。
  */
 import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties, RefObject } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react'
 
 import type { DiscoverResult, EditorAdapter, ProjectView } from './editor-adapter'
 import type { TimelineClip } from './timeline'
@@ -126,6 +126,7 @@ export function TimelineSection(props: {
   statusText: string
   adjustments: RippleAdjustment[]
   onMoveClip?: (clipId: string, proposedStart: number) => void
+  onResizeClip?: (clipId: string, edge: 'left' | 'right', deltaTicks: number) => void
 }) {
   return (
     <section style={PANEL_STYLE}>
@@ -134,7 +135,7 @@ export function TimelineSection(props: {
       <Timeline elements={props.originalElements} selectedId={null} />
       <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '10px 0 6px' }}>当前</p>
       <Timeline elements={props.elements} selectedId={props.selectedId}
-        onSelect={props.onSelect} onMoveClip={props.onMoveClip} />
+        onSelect={props.onSelect} onMoveClip={props.onMoveClip} onResizeClip={props.onResizeClip} />
       <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         {props.actions.map((action) => (
           <button key={action.label} type="button" style={BUTTON_STYLE}
@@ -219,43 +220,83 @@ export function blankFrame(): Uint8Array {
  * @returns {React.ReactElement} 时间轴
  */
 /** 拖拽中的鼠标位移记录（像素 → ticks 换算所需的上下文）。 */
+type DragMode = 'move' | 'left' | 'right'
+
 interface ClipDrag {
   id: string
+  mode: DragMode
   startX: number
   startTicks: number
+  origDuration: number
   total: number
   width: number
   proposed: number
+  delta: number
+}
+
+/** 边缘把手样式：窄条、横向缩放光标、覆盖在片段之上。 */
+const HANDLE_STYLE: CSSProperties = {
+  position: 'absolute', top: 0, bottom: 0, width: 8, cursor: 'ew-resize',
+  background: 'rgba(255,255,255,.28)',
 }
 
 export function Timeline(props: {
   elements: CoreElement[]
   selectedId: string | null
   onSelect?: (id: string) => void
-  /** 提供时启用拖拽；松开鼠标提交目标起点，重叠约束由调用方处理。 */
+  /** 提供时启用整段拖拽；松开鼠标提交目标起点，重叠约束由调用方处理。 */
   onMoveClip?: (clipId: string, proposedStart: number) => void
+  /** 提供时启用边缘裁剪；提交边缘与位移量，约束由调用方处理。 */
+  onResizeClip?: (clipId: string, edge: 'left' | 'right', deltaTicks: number) => void
 }) {
   const total = Math.max(...props.elements.map((item) => item.startTime + item.duration), 1)
   const trackRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<ClipDrag | null>(null)
   const moveRef = useRef(props.onMoveClip)
-  const [preview, setPreview] = useState<{ id: string; start: number } | null>(null)
+  const resizeRef = useRef(props.onResizeClip)
+  const [preview, setPreview] = useState<{ id: string; start: number; duration: number } | null>(null)
   moveRef.current = props.onMoveClip
+  resizeRef.current = props.onResizeClip
+
+  /** 开始一次拖拽；边缘把手会阻止冒泡以免触发整段平移。 */
+  const startDrag = (event: ReactMouseEvent, element: CoreElement, mode: DragMode) => {
+    if (mode === 'move' && !props.onMoveClip) return
+    if (mode !== 'move' && !props.onResizeClip) return
+    event.preventDefault()
+    event.stopPropagation()
+    dragRef.current = {
+      id: element.id, mode,
+      startX: event.clientX, startTicks: element.startTime,
+      origDuration: element.duration, total,
+      width: trackRef.current?.getBoundingClientRect().width ?? 1,
+      proposed: element.startTime, delta: 0,
+    }
+  }
 
   useEffect(() => {
     const onMove = (event: MouseEvent) => {
       const drag = dragRef.current
       if (!drag) return
       const delta = Math.round(((event.clientX - drag.startX) / drag.width) * drag.total)
-      drag.proposed = Math.max(0, drag.startTicks + delta)
-      setPreview({ id: drag.id, start: drag.proposed })
+      drag.delta = delta
+      if (drag.mode === 'move') {
+        drag.proposed = Math.max(0, drag.startTicks + delta)
+        setPreview({ id: drag.id, start: drag.proposed, duration: drag.origDuration })
+      } else {
+        const shown = drag.origDuration + (drag.mode === 'right' ? delta : -delta)
+        setPreview({ id: drag.id, start: drag.startTicks, duration: Math.max(1, shown) })
+      }
     }
     const onUp = () => {
       const drag = dragRef.current
       if (!drag) return
       dragRef.current = null
       setPreview(null)
-      if (drag.proposed !== drag.startTicks) moveRef.current?.(drag.id, drag.proposed)
+      if (drag.mode === 'move' && drag.proposed !== drag.startTicks) {
+        moveRef.current?.(drag.id, drag.proposed)
+      } else if (drag.mode !== 'move' && drag.delta !== 0) {
+        resizeRef.current?.(drag.id, drag.mode, drag.delta)
+      }
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -269,27 +310,17 @@ export function Timeline(props: {
     <div ref={trackRef} style={TRACK_STYLE}>
       {props.elements.map((element) => {
         const shownStart = preview?.id === element.id ? preview.start : element.startTime
+        const shownDuration = preview?.id === element.id ? preview.duration : element.duration
         return (
           <div
             key={element.id}
             onClick={() => props.onSelect?.(element.id)}
-            onMouseDown={(event) => {
-              if (!props.onMoveClip) return
-              event.preventDefault()
-              dragRef.current = {
-                id: element.id,
-                startX: event.clientX,
-                startTicks: element.startTime,
-                total,
-                width: trackRef.current?.getBoundingClientRect().width ?? 1,
-                proposed: element.startTime,
-              }
-            }}
+            onMouseDown={(event) => startDrag(event, element, 'move')}
             title={`${element.id}: ${element.startTime} + ${element.duration} ticks, trim=${element.trimStart}`}
             style={{
               position: 'absolute',
               left: `${(shownStart / total) * 100}%`,
-              width: `${(element.duration / total) * 100}%`,
+              width: `${(shownDuration / total) * 100}%`,
               height: '100%',
               background: element.id.includes('intro') || element.id.includes('title')
                 ? '#6366f1'
@@ -304,6 +335,14 @@ export function Timeline(props: {
               cursor: props.onMoveClip ? (preview ? 'grabbing' : 'grab') : (props.onSelect ? 'pointer' : 'default'),
             }}
           >
+            {props.onResizeClip && (
+              <>
+                <div data-edge="left" title="拖动左边缘裁剪入点" style={{ ...HANDLE_STYLE, left: 0 }}
+                  onMouseDown={(event) => startDrag(event, element, 'left')} />
+                <div data-edge="right" title="拖动右边缘裁剪出点" style={{ ...HANDLE_STYLE, right: 0 }}
+                  onMouseDown={(event) => startDrag(event, element, 'right')} />
+              </>
+            )}
             {element.id}
           </div>
         )

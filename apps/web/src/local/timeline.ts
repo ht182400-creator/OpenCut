@@ -332,6 +332,49 @@ export function moveClipClamped(
 }
 
 /**
+ * 拖片段边缘改时长（W-08 第六批）。
+ * - 右边缘：只改 duration，夹在 [minDuration, 后邻居起点 − 自身起点]。
+ * - 左边缘：head-trim 语义，位置不动、trimStart 与 duration 反向变化；
+ *   时长被夹时反算 trimStart，保证素材时间连续。
+ * 无变化或目标缺失时返回输入引用。
+ * @param clips 当前片段
+ * @param clipId 目标片段 id
+ * @param edge 左/右边缘
+ * @param deltaTicks 像素换算出的位移（正数表示边缘右移）
+ * @param minDuration 最小时长（通常一帧的 ticks）
+ * @returns {TimelineClip[]} 调整后的片段
+ */
+export function resizeClipEdge(
+  clips: TimelineClip[],
+  clipId: string,
+  edge: 'left' | 'right',
+  deltaTicks: number,
+  minDuration: number,
+): TimelineClip[] {
+  const target = clips.find((clip) => clip.id === clipId);
+  if (!target) return clips;
+  const sorted = [...clips].sort((a, b) => a.startTime - b.startTime);
+  const index = sorted.findIndex((clip) => clip.id === clipId);
+  const next = index < sorted.length - 1 ? sorted[index + 1] : null;
+  const maxDuration = next ? next.startTime - target.startTime : Number.POSITIVE_INFINITY;
+  const ceiling = Math.max(minDuration, maxDuration);
+  let duration: number;
+  let trimStart = target.trimStart;
+  if (edge === 'right') {
+    duration = Math.max(minDuration, Math.min(target.duration + deltaTicks, ceiling));
+  } else {
+    const proposedTrim = Math.max(0, target.trimStart + deltaTicks);
+    const proposedDuration = target.duration - (proposedTrim - target.trimStart);
+    duration = Math.max(minDuration, Math.min(proposedDuration, ceiling));
+    trimStart = Math.max(0, target.trimStart + (target.duration - duration));
+  }
+  if (duration === target.duration && trimStart === target.trimStart) return clips;
+  return clips.map((clip) =>
+    clip.id === clipId ? { ...clip, duration, trimStart } : clip,
+  );
+}
+
+/**
  * 按片段覆盖时长向 core 询问帧计划，返回规范化的帧数（至少 1）。
  * @param clips 片段集合
  * @param adapter core 适配层

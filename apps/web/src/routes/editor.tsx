@@ -46,6 +46,7 @@ import {
   moveClipClamped,
   otioImportToClips,
   plannedFrameCount,
+  resizeClipEdge,
   splitClipAt,
   timelineDuration,
   trimClipInAt,
@@ -353,9 +354,7 @@ function Editor() {
       const text = clipsToOtioText(elements, sourceName, session.fps, media?.name ?? null, session.adapter)
       if (otioUrl) URL.revokeObjectURL(otioUrl)
       setOtioUrl(URL.createObjectURL(new Blob([text], { type: 'application/json' })))
-    } catch (error) {
-      setErrorText(formatCoreError(error))
-    }
+    } catch (error) { setErrorText(formatCoreError(error)) }
   }
 
   /** 读取用户选择/拖入的文件：视频走解码，其余按项目 JSON 处理。 */
@@ -399,8 +398,7 @@ function Editor() {
     setErrorText(null)
     setMediaStatus('正在生成演示素材…')
     try {
-      const file = await createDemoVideoFile()
-      await readFile(file)
+      await readFile(await createDemoVideoFile())
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : String(error))
       setMediaStatus('演示素材生成失败')
@@ -493,6 +491,7 @@ function Editor() {
             onSelect={setSelectedId}
             adjustments={adjustments}
             onMoveClip={(id, start) => applyClipEdit('片段被相邻片段挡住，无法移动到该位置', (cs) => moveClipClamped(cs, id, start), id)}
+            onResizeClip={(id, edge, delta) => applyClipEdit('片段已到时长边界', (cs) => resizeClipEdge(cs, id, edge, delta, session?.ticksPerFrame ?? 4000), id)}
             statusText={`${selectedId ? `已选中 ${selectedId}` : '未选中片段'} · 剩余 ${elements.length} 个`}
             actions={[
               { label: '删除选中片段', disabled: !selectedId || elements.length < 2, onClick: deleteSelected },
