@@ -56,13 +56,53 @@ function readContract() {
 
 test("契约文件版本与字段完整", () => {
   const contract = readContract();
-  assert.equal(contract.version, 1);
+  assert.equal(contract.version, 2);
   assert.equal(contract.fieldNaming, "camelCase");
   assert.ok(contract.envelope.includes("apiVersion"));
   assert.ok(contract.envelope.includes("schemaVersion"));
   assert.ok(contract.envelope.includes("commandId"));
   assert.ok(contract.invariants.includes("I-01"));
   assert.ok(contract.invariants.includes("I-05"));
+});
+
+test("W-11 接口冻结：旧字段保留、新结构完整", () => {
+  const contract = readContract();
+  assert.equal(contract.frozen, true);
+  assert.equal(contract.compatibility, "additive-only");
+  // 向后兼容：v1 的字段一个都不能少
+  for (const key of [
+    "apiVersion", "schemaVersion", "backendId", "capabilities",
+    "envelope", "commands", "errors", "invariants",
+  ]) {
+    assert.ok(Object.prototype.hasOwnProperty.call(contract, key), `契约缺少 v1 字段 ${key}`);
+  }
+  assert.equal(contract.envelope.length, 5);
+  assert.ok(contract.supportedSchemaVersions.includes(contract.schemaVersion));
+  assert.deepEqual(contract.outcome, ["events", "snapshotId", "schemaVersion"]);
+  assert.deepEqual(contract.event, ["kind", "payload", "schemaVersion"]);
+  assert.ok(contract.snapshot.includes("schemaVersion"));
+  assert.ok(contract.discover.includes("supportedSchemaVersions"));
+  assert.deepEqual(contract.negotiation.request, [
+    "apiVersion", "schemaVersions", "requiredCapabilities",
+  ]);
+  assert.deepEqual(contract.negotiation.result, [
+    "compatible", "schemaVersion", "missingCapabilities", "reason",
+  ]);
+});
+
+test("W-11 契约新结构与 Rust 实现一致", () => {
+  const contract = readContract();
+  const source = readRustSources();
+  assert.ok(source.includes("SUPPORTED_SCHEMA_VERSIONS"), "Rust 缺少支持版本常量");
+  assert.ok(source.includes("default_schema_version"), "Rust 缺少旧 JSON 版本默认值");
+  assert.ok(source.includes("pub mod negotiation"), "Rust 缺少能力协商模块");
+  assert.ok(source.includes("pub fn negotiate"), "Rust 缺少协商函数");
+  for (const reason of contract.negotiation.reasons) {
+    assert.ok(source.includes(reason), `Rust 缺少协商 reason ${reason}`);
+  }
+  for (const field of ["schema_version", "supported_schema_versions"]) {
+    assert.ok(source.includes(field), `Rust 缺少版本字段 ${field}`);
+  }
 });
 
 test("契约常量与 Rust 实现一致", () => {
@@ -104,6 +144,8 @@ test("测试案例文档存在且与契约属同一迭代", () => {
   const doc = readFileSync(CASES_DOC_PATH, "utf8");
   assert.ok(doc.includes("测试结果"));
   assert.ok(doc.includes("E19"));
+  assert.ok(doc.includes("W-11"), "用例文档缺少 W-11 稳定性章节");
+  assert.ok(doc.includes("stability.rs"));
 });
 
 test("异常与边界：损坏的契约必须被明确拒绝", () => {

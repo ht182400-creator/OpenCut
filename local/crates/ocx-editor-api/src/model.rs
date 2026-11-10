@@ -10,6 +10,8 @@ use serde_json::Value;
 
 pub const API_VERSION: &str = "0.1.0";
 pub const SCHEMA_VERSION: &str = "1";
+/** 当前实现可接受的跨边界 schema 版本（additive-only，旧版本字段仍可读）。 */
+pub const SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["1"];
 pub const BACKEND_IN_MEMORY: &str = "ocx-in-memory";
 pub const COMMAND_ADD_CLIP: &str = "addClip";
 pub const COMMAND_SET_PLAYHEAD: &str = "setPlayhead";
@@ -61,11 +63,17 @@ impl fmt::Display for ApiError {
 
 impl std::error::Error for ApiError {}
 
+/** 旧版 JSON 缺少 schemaVersion 时按 v1 处理（向后兼容，I-03）。 */
+pub fn default_schema_version() -> String {
+    SCHEMA_VERSION.to_owned()
+}
+
 /// 跨边界的命令信封；字段名与 TS 侧保持一致（camelCase）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandEnvelope {
     pub api_version: String,
+    #[serde(default = "default_schema_version")]
     pub schema_version: String,
     pub command_id: String,
     pub kind: String,
@@ -74,9 +82,23 @@ pub struct CommandEnvelope {
 
 /// 命令产生的事件，供 UI 订阅、脚本回放与协同映射。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Event {
     pub kind: String,
     pub payload: Value,
+    #[serde(default = "default_schema_version")]
+    pub schema_version: String,
+}
+
+impl Event {
+    /// 构造带当前 schema 版本的事件，避免每个命令重复填写。
+    pub fn new(kind: impl Into<String>, payload: Value) -> Self {
+        Self {
+            kind: kind.into(),
+            payload,
+            schema_version: default_schema_version(),
+        }
+    }
 }
 
 /// 命令执行结果。
@@ -85,6 +107,8 @@ pub struct Event {
 pub struct CommandOutcome {
     pub events: Vec<Event>,
     pub snapshot_id: u64,
+    #[serde(default = "default_schema_version")]
+    pub schema_version: String,
 }
 
 /// 最小场景状态；W-05 会替换为完整的 `domain` 模型。
@@ -105,6 +129,8 @@ pub struct SceneSnapshot {
     pub clip_count: u32,
     pub label: String,
     pub snapshot_id: u64,
+    #[serde(default = "default_schema_version")]
+    pub schema_version: String,
 }
 
 /// 能力发现结果，对齐 MCP `server/discover` 的思路。
@@ -115,6 +141,9 @@ pub struct DiscoverResult {
     pub schema_version: String,
     pub backend_id: String,
     pub capabilities: Vec<String>,
+    /// 供客户端做能力协商：本实现支持的全部 schema 版本。
+    #[serde(default)]
+    pub supported_schema_versions: Vec<String>,
 }
 
 /// 命令 trait：所有编辑操作都必须走这里，天然支持 undo、脚本与回放。

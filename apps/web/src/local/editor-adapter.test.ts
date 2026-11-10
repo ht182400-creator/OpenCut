@@ -5,6 +5,7 @@ import {
   SUPPORTED_KINDS,
   formatCoreError,
   validateFrameRequest,
+  validateCapabilitiesRequest,
   validateOtioText,
   validateRequest,
 } from './editor-adapter';
@@ -102,6 +103,20 @@ describe('validateOtioText', () => {
 
   it('错误提示带自定义名称', () => {
     expect(() => validateOtioText('', '时间轴 JSON')).toThrow(/时间轴 JSON/);
+  });
+});
+
+describe('validateCapabilitiesRequest（W-11）', () => {
+  it('合法对象（含空对象）通过', () => {
+    expect(() => validateCapabilitiesRequest({})).not.toThrow();
+    expect(() => validateCapabilitiesRequest({ apiVersion: '0.1.0' })).not.toThrow();
+  });
+
+  it('null、数组与非对象被拒绝', () => {
+    expect(() => validateCapabilitiesRequest(null)).toThrow(/必须是对象/);
+    expect(() => validateCapabilitiesRequest([])).toThrow(/必须是对象/);
+    expect(() => validateCapabilitiesRequest('x')).toThrow(/必须是对象/);
+    expect(() => validateCapabilitiesRequest(42)).toThrow(/必须是对象/);
   });
 });
 

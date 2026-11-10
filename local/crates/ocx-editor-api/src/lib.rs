@@ -12,12 +12,18 @@
 pub mod backend;
 mod command;
 pub mod model;
+pub mod negotiation;
 
 pub use backend::{BackendRegistry, InMemoryBackend};
 pub use model::{
     API_VERSION, ApiError, BACKEND_IN_MEMORY, CAPABILITIES, COMMAND_ADD_CLIP, COMMAND_CLEAR,
     COMMAND_SET_PLAYHEAD, Command, CommandEnvelope, CommandOutcome, DiscoverResult, EditorApi,
-    Event, MAX_LABEL_CHARS, SCHEMA_VERSION, SceneSnapshot, SceneState,
+    Event, MAX_LABEL_CHARS, SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS, SceneSnapshot, SceneState,
+    default_schema_version,
+};
+pub use negotiation::{
+    CapabilitiesRequest, NEGOTIATE_API_MISMATCH, NEGOTIATE_MISSING_CAPABILITIES,
+    NEGOTIATE_NO_COMMON_SCHEMA, NEGOTIATE_OK, NegotiationResult, negotiate, supported_versions,
 };
 
 #[cfg(test)]

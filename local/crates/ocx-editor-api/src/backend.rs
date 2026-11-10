@@ -9,7 +9,9 @@ use crate::command::command_from;
 use crate::model::{
     API_VERSION, ApiError, BACKEND_IN_MEMORY, CAPABILITIES, Command, CommandEnvelope,
     CommandOutcome, DiscoverResult, EditorApi, Event, SCHEMA_VERSION, SceneSnapshot, SceneState,
+    default_schema_version,
 };
+use crate::negotiation::supported_versions;
 
 /// 单后端注册器（I-05）：重复注册返回错误，测试可创建独立实例。
 #[derive(Default)]
@@ -103,6 +105,7 @@ impl EditorApi for InMemoryBackend {
             schema_version: SCHEMA_VERSION.to_owned(),
             backend_id: BACKEND_IN_MEMORY.to_owned(),
             capabilities: CAPABILITIES.iter().map(|item| (*item).to_owned()).collect(),
+            supported_schema_versions: supported_versions(),
         }
     }
 
@@ -131,6 +134,7 @@ impl EditorApi for InMemoryBackend {
         Ok(CommandOutcome {
             events,
             snapshot_id,
+            schema_version: default_schema_version(),
         })
     }
 
@@ -142,6 +146,7 @@ impl EditorApi for InMemoryBackend {
             clip_count: inner.state.clip_count,
             label: inner.state.label.clone(),
             snapshot_id: inner.snapshot_counter,
+            schema_version: default_schema_version(),
         })
     }
 
@@ -156,11 +161,9 @@ impl EditorApi for InMemoryBackend {
         let snapshot_id = Self::next_snapshot_id(&mut inner);
         inner.redo_stack.push(entry);
         Ok(CommandOutcome {
-            events: vec![Event {
-                kind: "undone".to_owned(),
-                payload: json!({}),
-            }],
+            events: vec![Event::new("undone", json!({}))],
             snapshot_id,
+            schema_version: default_schema_version(),
         })
     }
 
@@ -176,6 +179,7 @@ impl EditorApi for InMemoryBackend {
         Ok(CommandOutcome {
             events,
             snapshot_id,
+            schema_version: default_schema_version(),
         })
     }
 }

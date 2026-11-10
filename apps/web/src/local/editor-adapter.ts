@@ -35,6 +35,32 @@ export interface DiscoverResult {
   schemaVersion: string;
   backendId: string;
   capabilities: string[];
+  /** W-11：可选，旧版 core 响应没有此字段。 */
+  supportedSchemaVersions?: string[];
+}
+
+/** W-11 能力协商请求（字段可缺省，core 侧按 v1 兼容）。 */
+export interface CapabilitiesRequest {
+  apiVersion?: string;
+  schemaVersions?: string[];
+  requiredCapabilities?: string[];
+}
+
+/** W-11 能力协商结果。 */
+export interface NegotiationResult {
+  compatible: boolean;
+  schemaVersion: string | null;
+  missingCapabilities: string[];
+  reason: string;
+}
+
+/** 校验能力协商请求是普通对象，避免把空值送进 WASM。 */
+export function validateCapabilitiesRequest(
+  request: unknown,
+): asserts request is CapabilitiesRequest {
+  if (typeof request !== 'object' || request === null || Array.isArray(request)) {
+    throw new Error('能力协商请求必须是对象；请检查后重试。');
+  }
 }
 
 /** 预览帧请求：像素走独立入口，不经 JSON 序列化。 */
@@ -234,6 +260,8 @@ export interface EditorAdapter {
   otioImport(otioJson: string): OtioResult;
   /** 导出内部时间轴为 OTIO JSON 文本（W-10）。 */
   otioExport(timelineJson: string): OtioResult;
+  /** W-11：与 core 协商 API/schema 版本与必需能力。 */
+  negotiate(request: CapabilitiesRequest): NegotiationResult;
 }
 
 let adapterPromise: Promise<EditorAdapter> | null = null;
@@ -278,6 +306,10 @@ export async function createEditorAdapter(): Promise<EditorAdapter> {
         otioExport: (timelineJson: string): OtioResult => {
           validateOtioText(timelineJson, '时间轴 JSON');
           return JSON.parse(glue.otio_export(timelineJson)) as OtioResult;
+        },
+        negotiate: (request: CapabilitiesRequest): NegotiationResult => {
+          validateCapabilitiesRequest(request);
+          return JSON.parse(glue.api_negotiate(JSON.stringify(request))) as NegotiationResult;
         },
       };
     } catch (error) {

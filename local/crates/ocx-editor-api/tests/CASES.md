@@ -37,3 +37,26 @@
 - 额外校验：用例 ID 唯一、三类分类齐全、本文包含全部 ID、`API_VERSION`/`SCHEMA_VERSION`/错误码常量未漂移。
 - 日志：`cargo test` 输出按「编译 → 单元测试 → 集成测试 → 汇总」分层；运行日志使用带日期时间的文件名（`opencut-cargo-test-YYYYMMDD-HHmmss.log`）存于系统临时目录，不写入仓库。
 - 新增行为必须先补 JSON 用例、更新本表，再改实现。
+
+## W-11 接口冻结与能力协商（`stability.rs`）
+
+契约 `apps/web/src/local/editor-api.contract.json` 升到 **v2**：`frozen=true`、`compatibility=additive-only`，v1 字段一个不删；新增 `outcome` / `event` / `snapshot` / `discover` / `negotiation` 结构清单，由 `editor-api.contract.test.mjs` 与 Rust 源码双向校验。
+
+| 用例 | 分类 | 输入 | 预期 |
+| --- | --- | --- | --- |
+| S01 | 正常 | 匹配客户端协商 | compatible=true、schemaVersion=1、reason=OK |
+| S02 | 向后兼容 | 空请求 `{}`（旧客户端未声明版本） | 按 v1 兼容、reason=OK |
+| S03 | 异常 | apiVersion=9.9.9 | API_VERSION_MISMATCH |
+| S04 | 异常 | 只声明 schemaVersion=999 | NO_COMMON_SCHEMA |
+| S05 | 边界 | 声明 `["999","1"]` | 取最高共同版本 1 |
+| S06 | 异常 | 必需能力含 gpu-render / ai | MISSING_CAPABILITIES 且按序返回缺失项 |
+| S07 | 正常 | `supported_versions()` | 与 `SUPPORTED_SCHEMA_VERSIONS` 一致 |
+| S08 | 正常 | `NegotiationResult` 序列化 | camelCase 字段齐全 |
+| S09 | 向后兼容 | 旧 envelope 无 schemaVersion | 按 v1 执行成功，事件/响应带版本 |
+| S10 | 向后兼容 | 旧 Event / Outcome / Snapshot JSON | 反序列化后版本为 v1 |
+| S11 | 正常 | 新 discover / execute / snapshot 输出 | 均含 schemaVersion，discover 另含 supportedSchemaVersions |
+| S12 | 边界 | 未来 schema + 未知字段 | 未知字段忽略、未来版本仍 VERSION_MISMATCH |
+| S13 | 向后兼容 | 旧 DiscoverResult 无 supportedSchemaVersions | 反序列化成功、列表为空 |
+
+- 执行命令：`cargo test -p ocx-editor-api --test stability`（13 项）。
+- WASM 侧 `api_negotiate` 由 `apps/web/src/local/editor-wasm.contract.mjs` 的真实产物验证。

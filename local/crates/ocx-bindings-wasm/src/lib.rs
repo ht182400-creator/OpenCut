@@ -16,7 +16,10 @@ use ocx_domain::{
     PlacementTimeSpan, ScalarChannel, SceneTracks, apply_ripple_adjustments,
     compute_ripple_adjustments, get_scalar_channel_value_at_time, resolve_track_placement,
 };
-use ocx_editor_api::{API_VERSION, CommandEnvelope, EditorApi, InMemoryBackend, SCHEMA_VERSION};
+use ocx_editor_api::{
+    API_VERSION, CapabilitiesRequest, CommandEnvelope, EditorApi, InMemoryBackend, SCHEMA_VERSION,
+    negotiate,
+};
 use ocx_io::{EditTimeline, export_otio, import_otio};
 use ocx_render::{
     ExportProfile, FrameParams, build_frame_plan, composite_frame, render_frame,
@@ -156,6 +159,15 @@ pub fn domain_eval(request_json: &str) -> Result<String, JsValue> {
 #[wasm_bindgen]
 pub fn read_classic_project(project_json: &str) -> Result<String, JsValue> {
     legacy::read_classic_project_wasm(project_json)
+}
+
+/// W-11：与客户端协商 API/schema 版本与必需能力。
+/// 返回 `NegotiationResult` 的 JSON（camelCase），非法请求抛中文错误。
+#[wasm_bindgen]
+pub fn api_negotiate(request_json: &str) -> Result<String, JsValue> {
+    let request: CapabilitiesRequest =
+        serde_json::from_str(request_json).map_err(|error| js_error("解析能力协商请求", error))?;
+    to_json(&negotiate(&request))
 }
 
 /// 导入 OTIO JSON 为内部 `EditTimeline`（W-10）。

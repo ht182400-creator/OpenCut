@@ -52,3 +52,5 @@
 **追加（W-09 第四批）**：`apps/web/src/local/scrub-benchmark.ts` 的基准测量、`createBenchmarkVideoFile` 的 4K 灰底白块素材与历史 localStorage 持久化均为本地新写实现；`avc1.640033` 为 H.264 High Profile Level 5.1 的标准 codec 字符串，不含第三方库代码；演示素材为程序生成，不含第三方音视频内容。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-10 第三批）**：`ocx-io` 对官方 `Clip.2` 的兼容逻辑、`third_party_roundtrip.py` / `.test.mjs` 跨工具脚本为本地新写实现；`opentimelineio 0.18.1` 仅作为**可选验证依赖**在临时目录安装（未提交、未加入项目依赖），用于生成与校验实文件，其代码未被拷贝进本仓库；静态 fixture 由该工具生成，仅含程序指定的示例剪辑数据。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-11 第一批）**：`ocx-editor-api` 的版本化字段、能力协商模块与跨语言契约 v2 均为本地新写实现，未引入第三方协商库，也未拷贝 MCP / 插件框架的协商代码（`discover` 仅对齐其公开设计思路）。经典版 MIT © 2025-2026 声明仍由上文保留。

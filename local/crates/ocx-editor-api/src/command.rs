@@ -62,14 +62,14 @@ impl Command for AddClipCommand {
         state.clip_count = state.clip_count.saturating_add(1);
         state.ticks = state.ticks.saturating_add(self.duration_ticks);
         state.label = self.label.clone();
-        Ok(vec![Event {
-            kind: "clipAdded".to_owned(),
-            payload: json!({
+        Ok(vec![Event::new(
+            "clipAdded",
+            json!({
                 "clipCount": state.clip_count,
                 "ticks": state.ticks,
                 "previousLabel": previous_label,
             }),
-        }])
+        )])
     }
 
     fn undo(&self, state: &mut SceneState, events: &[Event]) -> Result<(), ApiError> {
@@ -99,10 +99,10 @@ impl Command for SetPlayheadCommand {
     fn execute(&self, state: &mut SceneState) -> Result<Vec<Event>, ApiError> {
         let previous = state.ticks;
         state.ticks = self.ticks;
-        Ok(vec![Event {
-            kind: "playheadMoved".to_owned(),
-            payload: json!({ "ticks": state.ticks, "previousTicks": previous }),
-        }])
+        Ok(vec![Event::new(
+            "playheadMoved",
+            json!({ "ticks": state.ticks, "previousTicks": previous }),
+        )])
     }
 
     fn undo(&self, state: &mut SceneState, events: &[Event]) -> Result<(), ApiError> {
@@ -127,10 +127,7 @@ impl Command for ClearCommand {
 
     fn execute(&self, state: &mut SceneState) -> Result<Vec<Event>, ApiError> {
         *state = SceneState::default();
-        Ok(vec![Event {
-            kind: "sceneCleared".to_owned(),
-            payload: json!({ "clipCount": 0 }),
-        }])
+        Ok(vec![Event::new("sceneCleared", json!({ "clipCount": 0 }))])
     }
 
     fn undo(&self, _state: &mut SceneState, _events: &[Event]) -> Result<(), ApiError> {

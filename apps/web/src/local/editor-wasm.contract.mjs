@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import init, {
+  api_negotiate,
   api_version,
   channel_kind,
   composite_frame_rgba,
@@ -381,6 +382,32 @@ try {
       /INVALID_BASE_FRAME|合成预览帧/,
     ),
   );
+
+  // W-11：能力协商走真实 WASM 产物
+  const negotiated = JSON.parse(api_negotiate(JSON.stringify({
+    apiVersion: "0.1.0", schemaVersions: ["1"], requiredCapabilities: ["command", "snapshot"],
+  })));
+  check("能力协商匹配客户端", () => assert.equal(negotiated.compatible, true));
+  check("能力协商返回选用版本", () => assert.equal(negotiated.schemaVersion, "1"));
+  check("能力协商 reason 稳定", () => assert.equal(negotiated.reason, "OK"));
+  check("能力协商兼容旧客户端空请求", () =>
+    assert.equal(JSON.parse(api_negotiate("{}")).compatible, true));
+  check("能力协商拒绝 API 版本不匹配", () =>
+    assert.equal(
+      JSON.parse(api_negotiate(JSON.stringify({ apiVersion: "9.9.9" }))).reason,
+      "API_VERSION_MISMATCH",
+    ));
+  check("能力协商拒绝无共同 schema", () =>
+    assert.equal(
+      JSON.parse(api_negotiate(JSON.stringify({ schemaVersions: ["999"] }))).reason,
+      "NO_COMMON_SCHEMA",
+    ));
+  check("能力协商列出缺失能力", () => {
+    const result = JSON.parse(api_negotiate(JSON.stringify({ requiredCapabilities: ["gpu-render"] })));
+    assert.equal(result.reason, "MISSING_CAPABILITIES");
+    assert.deepEqual(result.missingCapabilities, ["gpu-render"]);
+  });
+  check("能力协商非法 JSON 抛错", () => assert.throws(() => api_negotiate("{ 非法")));
 
   const otioDoc = {
     OTIO_SCHEMA: "Timeline.1",

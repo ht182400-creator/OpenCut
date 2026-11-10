@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "description": "Rust Editor API 与 Web 适配层之间的机器可读契约；由 editor-api.contract.test.mjs 校验与 Rust 实现一致。",
+  "version": 2,
+  "description": "Rust Editor API 与 Web 适配层之间的机器可读契约；由 editor-api.contract.test.mjs 校验与 Rust 实现一致。W-11 起接口冻结：字段只增不改，旧版 JSON 缺新增字段时按 v1 兼容。",
   "apiVersion": "0.1.0",
   "schemaVersion": "1",
   "fieldNaming": "camelCase",
@@ -21,5 +21,17 @@
     "STATE_LOCKED"
   ],
   "invariants": ["I-01", "I-03", "I-05"],
-  "notes": "W-03 落地 Rust 侧；TS 适配层在 W-06 随 Web 绑定一起接入并做类型验证。所有调用必须经 editor-api（I-01），同一时刻只注册一个 core 后端（I-05）。"
+  "frozen": true,
+  "compatibility": "additive-only",
+  "supportedSchemaVersions": ["1"],
+  "outcome": ["events", "snapshotId", "schemaVersion"],
+  "event": ["kind", "payload", "schemaVersion"],
+  "snapshot": ["atTicks", "stateTicks", "clipCount", "label", "snapshotId", "schemaVersion"],
+  "discover": ["apiVersion", "schemaVersion", "backendId", "capabilities", "supportedSchemaVersions"],
+  "negotiation": {
+    "request": ["apiVersion", "schemaVersions", "requiredCapabilities"],
+    "result": ["compatible", "schemaVersion", "missingCapabilities", "reason"],
+    "reasons": ["OK", "API_VERSION_MISMATCH", "NO_COMMON_SCHEMA", "MISSING_CAPABILITIES"]
+  },
+  "notes": "W-03 落地 Rust 侧，W-06 接入 TS 适配层，W-11 冻结接口并加入版本化事件/响应/快照与 discover 式能力协商。所有调用必须经 editor-api（I-01），同一时刻只注册一个 core 后端（I-05）。"
 }

@@ -2,6 +2,12 @@
 /* eslint-disable */
 
 /**
+ * W-11：与客户端协商 API/schema 版本与必需能力。
+ * 返回 `NegotiationResult` 的 JSON（camelCase），非法请求抛中文错误。
+ */
+export function api_negotiate(request_json: string): string;
+
+/**
  * core 的接口版本（供前端展示与能力协商）。
  */
 export function api_version(): string;
@@ -74,6 +80,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly api_negotiate: (a: number, b: number) => [number, number, number, number];
     readonly api_version: () => [number, number];
     readonly channel_kind: (a: number, b: number) => [number, number, number, number];
     readonly composite_frame_rgba: (a: number, b: number, c: number, d: number) => [number, number, number, number];
@@ -86,9 +93,9 @@ export interface InitOutput {
     readonly render_frame_rgba: (a: number, b: number) => [number, number, number, number];
     readonly schema_version: () => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_start: () => void;
 }
