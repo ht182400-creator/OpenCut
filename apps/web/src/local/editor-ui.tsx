@@ -135,6 +135,7 @@ export function ToolbarSection(props: {
   mediaStatus: string
   cacheInfo: string
   historyLabel: string
+  benchmarkInfo: string
   proxyUrl: string | null
   otioUrl: string | null
   exportState: ExportState
@@ -172,6 +173,9 @@ export function ToolbarSection(props: {
       <span style={{ color: TEXT_MUTED, fontSize: 13 }}>当前：{props.sourceName} · {props.mediaStatus}</span>
       <span style={{ color: TEXT_MUTED, fontSize: 13 }}>{props.cacheInfo}</span>
       <span style={{ color: TEXT_MUTED, fontSize: 13 }}>{props.historyLabel}</span>
+      {props.benchmarkInfo && (
+        <span style={{ color: '#7dd3fc', fontSize: 13 }}>4K 基准：{props.benchmarkInfo}</span>
+      )}
       {props.proxyUrl && (
         <a href={props.proxyUrl} download="opencut-proxy.mp4" style={{ color: '#7dd3fc', fontSize: 13 }}>
           下载代理 MP4

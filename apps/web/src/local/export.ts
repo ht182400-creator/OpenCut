@@ -101,6 +101,8 @@ export interface ExportOptions {
   ticksPerFrame: number;
   profile: unknown;
   params: unknown;
+  /** 视频编码 codec 字符串；高分辨率素材需更高 H.264 Level（如 4K 用 avc1.640033）。 */
+  codec?: string;
   /** 进度回调：已完成帧数 / 总帧数。 */
   onProgress?: (done: number, total: number) => void;
 }
@@ -199,7 +201,7 @@ export async function exportProjectToMp4(options: ExportOptions): Promise<Export
 
   try {
     videoEncoder.configure({
-      codec: EXPORT_CODEC,
+      codec: options.codec ?? EXPORT_CODEC,
       width: options.width,
       height: options.height,
       bitrate: DEFAULT_EXPORT_BITRATE,

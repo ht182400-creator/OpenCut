@@ -7,7 +7,10 @@ import {
   createHistory,
   historyLabel,
   moveHistory,
+  persistHistory,
   pushSnapshot,
+  readPersistedHistory,
+  restoreProjectClips,
   type HistoryState,
 } from './clip-history';
 import type { TimelineClip } from './timeline';
@@ -107,5 +110,70 @@ describe('historyLabel', () => {
   it('显示当前步数、总步数与动作名', () => {
     const state = pushSnapshot(createHistory(clips()), clips(1), '删除选中片段');
     expect(historyLabel(state)).toBe('2 / 2 步 · 当前：删除选中片段');
+  });
+});
+
+/** 跨会话持久化回归（W-09 收尾）。 */
+describe('跨会话持久化', () => {
+  /** 内存存储桩。 */
+  function memoryStorage() {
+    const map = new Map<string, string>();
+    return {
+      getItem: (key: string) => map.get(key) ?? null,
+      setItem: (key: string, value: string) => void map.set(key, value),
+      removeItem: (key: string) => void map.delete(key),
+    };
+  }
+
+  it('写入后按项目键读回完整历史', () => {
+    const storage = memoryStorage();
+    const state = pushSnapshot(createHistory(clips()), clips(1), '删除片段');
+    expect(persistHistory(state, 'project-a', storage)).toBe(true);
+    const loaded = readPersistedHistory(storage);
+    expect(loaded?.projectKey).toBe('project-a');
+    expect(loaded?.state.entries).toHaveLength(2);
+    expect(loaded?.state.index).toBe(1);
+  });
+
+  it('恢复当前指针的片段，且是副本', () => {
+    const storage = memoryStorage();
+    let state = pushSnapshot(createHistory(clips()), clips(1), '删除片段');
+    state = moveHistory(state, -1).state;
+    persistHistory(state, 'project-a', storage);
+    const restored = restoreProjectClips(readPersistedHistory(storage), 'project-a');
+    expect(restored).toHaveLength(2);
+    restored?.[0] && (restored[0].duration = 1);
+    expect(state.entries[0].clips[0].duration).toBe(120000);
+  });
+
+  it('项目键不匹配时拒绝恢复', () => {
+    const storage = memoryStorage();
+    persistHistory(createHistory(clips()), 'project-a', storage);
+    expect(restoreProjectClips(readPersistedHistory(storage), 'project-b')).toBeNull();
+  });
+
+  it('损坏数据、空条目与越界 index 一律返回 null', () => {
+    const storage = memoryStorage();
+    storage.setItem('opencut-clip-history-v1', '{ 非法 json');
+    expect(readPersistedHistory(storage)).toBeNull();
+    storage.setItem('opencut-clip-history-v1', JSON.stringify({ projectKey: 'a', state: { entries: [], index: 0 } }));
+    expect(readPersistedHistory(storage)).toBeNull();
+    storage.setItem('opencut-clip-history-v1', JSON.stringify({
+      projectKey: 'a', state: { entries: [{ id: 0, label: 'x', at: 0, clips: [] }], index: 9 },
+    }));
+    expect(readPersistedHistory(storage)).toBeNull();
+    expect(readPersistedHistory(null)).toBeNull();
+  });
+
+  it('缺项目键或存储异常时静默降级', () => {
+    const storage = memoryStorage();
+    expect(persistHistory(createHistory(clips()), '', storage)).toBe(false);
+    expect(persistHistory(createHistory(clips()), 'a', null)).toBe(false);
+    const broken = {
+      getItem: () => null,
+      setItem: () => { throw new Error('quota'); },
+      removeItem: () => {},
+    };
+    expect(persistHistory(createHistory(clips()), 'a', broken)).toBe(false);
   });
 });

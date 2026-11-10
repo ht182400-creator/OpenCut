@@ -25,9 +25,11 @@ import {
   type Session,
 } from '../local/editor-ui'
 import { exportProjectToMp4, isExportSupported } from '../local/export'
+import { formatBenchmark, measureFrameCost } from '../local/scrub-benchmark'
 import {
   MAX_DECODE_FRAMES,
   clearFrameCache,
+  createBenchmarkVideoFile,
   createDemoVideoFile,
   createProxyFile,
   decodeVideoFile,
@@ -81,6 +83,7 @@ function Editor() {
   const [cacheInfo, setCacheInfo] = useState('代理缓存 0 份')
   const [proxyUrl, setProxyUrl] = useState<string | null>(null)
   const [otioUrl, setOtioUrl] = useState<string | null>(null)
+  const [benchmarkInfo, setBenchmarkInfo] = useState('')
   const [exportState, setExportState] = useState<ExportState>({
     status: 'idle', done: 0, total: 0, message: '', url: null, bytes: 0,
   })
@@ -124,7 +127,8 @@ function Editor() {
 
       const fps = project.fps.numerator / project.fps.denominator
       const profile = { ...BASE_PROFILE, frameRate: project.fps }
-      const duration = timelineDuration(mainElements)
+      const activeClips = clipHistory.reset(mainElements, '导入项目', name) ?? mainElements
+      const duration = timelineDuration(activeClips)
       const plan = adapter.evaluate<FramePlanView>({
         kind: 'buildFramePlan', durationTicks: duration, profile,
       })
@@ -134,8 +138,8 @@ function Editor() {
         ticksPerFrame: plan.ticksPerFrame, profile, projectTrackCount: tracks.length,
       })
       setOriginalElements(mainElements)
-      setElements(mainElements)
-      clipHistory.reset(mainElements, '导入项目')
+      setElements(activeClips)
+      setMediaStatus(activeClips === mainElements ? '未加载素材' : '已恢复上次编辑会话（可撤销）')
       setAdjustments([])
       setSelectedId(null)
       setFrameIndex(0)
@@ -316,6 +320,22 @@ function Editor() {
     }
   }
 
+  /** 生成 3840×2160 素材，导入后测量代理帧 scrub 的量化基准。 */
+  const handleBenchmark = async () => {
+    if (!session) return
+    setErrorText(null)
+    setBenchmarkInfo('正在生成 3840×2160 基准素材…')
+    try {
+      const started = performance.now()
+      const file = await createBenchmarkVideoFile()
+      const encodeMs = Math.round(performance.now() - started)
+      await readFile(file)
+      await new Promise((resolve) => window.setTimeout(resolve, 200))
+      const result = measureFrameCost((index) => frameSource(index), 30)
+      setBenchmarkInfo(`4K 源 ${file.size} 字节 · 编码 ${encodeMs}ms · ${formatBenchmark(result)}`)
+    } catch (error) { setBenchmarkInfo(formatCoreError(error)) }
+  }
+
   /** 把当前代理帧编码成低分辨率 MP4 供下载或跨设备复用。 */
   const handleProxyExport = async () => {
     if (!media) return
@@ -434,6 +454,7 @@ function Editor() {
         mediaStatus={mediaStatus}
         cacheInfo={cacheInfo}
         historyLabel={clipHistory.label}
+        benchmarkInfo={benchmarkInfo}
         proxyUrl={proxyUrl}
         otioUrl={otioUrl}
         exportState={exportState}
@@ -442,6 +463,7 @@ function Editor() {
           { label: '清除帧缓存', onClick: () => void handleClearCache() },
           { label: '导出代理文件', disabled: !media, onClick: () => void handleProxyExport() },
           { label: '导出 OTIO', disabled: !session, onClick: () => void handleOtioExport() },
+          { label: '4K scrub 基准', disabled: !session, onClick: () => void handleBenchmark() },
           { label: '撤销', disabled: !clipHistory.canUndo, onClick: clipHistory.undo },
           { label: '重做', disabled: !clipHistory.canRedo, onClick: clipHistory.redo },
           { label: '导出 MP4', disabled: !session || exportState.status === 'running', onClick: () => void handleExport() },

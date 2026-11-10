@@ -109,6 +109,87 @@ export function historyLabel(state: HistoryState): string {
   return `${state.index + 1} / ${state.entries.length} 步 · 当前：${current?.label ?? '—'}`;
 }
 
+/** 持久化键；仅保存片段集合，体积小，用 localStorage 即可。 */
+export const HISTORY_STORAGE_KEY = 'opencut-clip-history-v1';
+
+/** 可注入的存储后端，便于单测与隐私模式降级。 */
+export interface HistoryStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+/** 带项目标识的持久化内容。 */
+export interface PersistedHistory {
+  projectKey: string;
+  state: HistoryState;
+}
+
+/** 选择默认存储；不可用时返回 null（所有持久化静默降级）。 */
+export function defaultHistoryStorage(): HistoryStorage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 写入历史；失败返回 false（配额/隐私模式不阻断编辑）。
+ * @param state 历史状态
+ * @param projectKey 项目标识
+ * @param storage 存储后端
+ * @returns {boolean} 是否成功
+ */
+export function persistHistory(
+  state: HistoryState,
+  projectKey: string,
+  storage: HistoryStorage | null,
+): boolean {
+  if (!storage || !projectKey) return false;
+  try {
+    storage.setItem(HISTORY_STORAGE_KEY, JSON.stringify({ projectKey, state }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 读取并校验持久化历史；损坏或结构不合法时返回 null。
+ * @param storage 存储后端
+ * @returns {PersistedHistory | null} 持久化内容
+ */
+export function readPersistedHistory(storage: HistoryStorage | null): PersistedHistory | null {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedHistory;
+    const entries = parsed?.state?.entries;
+    if (!parsed?.projectKey || !Array.isArray(entries) || entries.length === 0) return null;
+    const { index } = parsed.state;
+    if (!Number.isInteger(index) || index < 0 || index >= entries.length) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 当项目标识匹配时，取出当前指针指向的片段集合（副本）。
+ * @param persisted 持久化内容
+ * @param projectKey 当前项目标识
+ * @returns {TimelineClip[] | null} 需要恢复的片段
+ */
+export function restoreProjectClips(
+  persisted: PersistedHistory | null,
+  projectKey: string,
+): TimelineClip[] | null {
+  if (!persisted || persisted.projectKey !== projectKey) return null;
+  return cloneClips(persisted.state.entries[persisted.state.index].clips);
+}
+
 /**
  * 编辑器侧的历史 hook：提供记录、重置、撤销/重做与 Ctrl/Cmd+Z 快捷键。
  * 恢复的片段通过 `onRestore` 交回编辑器重新应用帧计划。
@@ -116,20 +197,43 @@ export function historyLabel(state: HistoryState): string {
  * @returns {object} 历史状态与操作
  */
 export function useClipHistory(onRestore: (clips: TimelineClip[]) => void) {
-  const [state, setState] = useState<HistoryState>(() => createHistory([]));
+  const [state, setState] = useState<HistoryState>(
+    () => readPersistedHistory(defaultHistoryStorage())?.state ?? createHistory([]),
+  );
   const stateRef = useRef(state);
   const restoreRef = useRef(onRestore);
+  const projectKeyRef = useRef('');
+  const storageRef = useRef(defaultHistoryStorage());
   stateRef.current = state;
   restoreRef.current = onRestore;
+
+  /** 每次历史变化写回本地存储；项目尚未加载时不写，避免覆盖其他项目的历史。 */
+  useEffect(() => {
+    if (projectKeyRef.current) {
+      persistHistory(state, projectKeyRef.current, storageRef.current);
+    }
+  }, [state]);
 
   /** 记录一次剪辑后的快照。 */
   const record = (clips: TimelineClip[], label: string) => {
     setState((previous) => pushSnapshot(previous, clips, label));
   };
 
-  /** 加载新项目时重置历史。 */
-  const reset = (clips: TimelineClip[], label: string) => {
-    setState(createHistory(clips, label));
+  /** 加载项目：同项目则恢复持久化历史，否则新建；返回要恢复的片段。 */
+  const reset = (clips: TimelineClip[], label: string, projectKey: string): TimelineClip[] | null => {
+    projectKeyRef.current = projectKey;
+    const storage = storageRef.current;
+    const persisted = readPersistedHistory(storage);
+    const restored = restoreProjectClips(persisted, projectKey);
+    if (restored && persisted) {
+      setState(persisted.state);
+      persistHistory(persisted.state, projectKey, storage);
+      return restored;
+    }
+    const fresh = createHistory(clips, label);
+    setState(fresh);
+    persistHistory(fresh, projectKey, storage);
+    return null;
   };
 
   /** 在历史中移动并把恢复的片段交给编辑器。 */

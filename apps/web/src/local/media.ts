@@ -299,3 +299,51 @@ export async function createDemoVideoFile(
     lastModified: 0,
   });
 }
+
+/** 4K 基准素材的 H.264 Level 5.1；Baseline 3.1 的分辨率上限不足以承载 3840×2160。 */
+export const BENCHMARK_4K_CODEC = 'avc1.640033';
+
+/**
+ * 生成指定分辨率的基准素材（W-09 收尾）：灰底 + 移动白块。
+ * 用 `Uint32Array.fill` 批量写像素，避免 4K 逐像素循环；
+ * 导入后仍由 `decodeVideoFile` 抽成恒定 320×180 代理帧。
+ * @param width 源宽度
+ * @param height 源高度
+ * @param fps 帧率
+ * @param frameCount 帧数（4K 编码较慢，默认 4 帧）
+ * @returns {Promise<File>} 可作为输入重新导入的 MP4
+ */
+export async function createBenchmarkVideoFile(
+  width = 3840,
+  height = 2160,
+  fps = 30,
+  frameCount = 4,
+): Promise<File> {
+  const block = Math.min(240, Math.max(16, Math.round(width / 8)));
+  const frameSource = (frameIndex: number): Uint8Array => {
+    const pixels = new Uint8Array(width * height * 4);
+    const view = new Uint32Array(pixels.buffer);
+    view.fill(0xff3c3c3c);
+    const left = Math.round((frameIndex / Math.max(frameCount, 1)) * (width - block));
+    const top = Math.round(height / 2 - block / 2);
+    for (let y = top; y < top + block; y += 1) {
+      view.fill(0xffffffff, y * width + left, y * width + left + block);
+    }
+    return pixels;
+  };
+  const result = await exportProjectToMp4({
+    width,
+    height,
+    fps,
+    frameCount,
+    ticksPerFrame: 120000 / fps,
+    profile: {},
+    params: {},
+    frameSource,
+    codec: BENCHMARK_4K_CODEC,
+  });
+  return new File([result.blob], `benchmark-${width}x${height}.mp4`, {
+    type: 'video/mp4',
+    lastModified: 0,
+  });
+}

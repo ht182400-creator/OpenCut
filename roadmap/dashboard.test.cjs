@@ -196,7 +196,8 @@ function main() {
     assertEqual("M0 汇总不含 manual", Object.prototype.hasOwnProperty.call(m0, "manual"), false);
     assertEqual("M0 汇总不含 conflict", Object.prototype.hasOwnProperty.call(m0, "conflict"), false);
     assertEqual("M1 推导状态", api.derivedMilestoneStatus("M1"), "阻塞");
-    assertEqual("M6 推导状态", api.derivedMilestoneStatus("M6"), "进行中");
+    // M6 仅关联 H12；W-09 四批闭合 H12 后，M6 由热点推导为「已完成」
+    assertEqual("M6 推导状态", api.derivedMilestoneStatus("M6"), "已完成");
     const hotspotState = api.getState().hotspots;
     for (const id of ["H03", "H06", "H10", "H14"]) hotspotState[id] = "已完成";
     assertEqual("热点全完成后 M0 变已完成", api.statusOf("milestones", "M0"), "已完成");
@@ -212,7 +213,7 @@ function main() {
     // 直接验证决策台账 DOM 已更新，避免「数据改了但页面没渲染」的回归
     assertEqual("决策台账渲染卡片数", env.elements["question-list"].children.length, EXPECTED_QUESTIONS);
     assertEqual("统计显示已决 2 项", env.elements["question-stats"].textContent.includes("已决 2"), true);
-    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r26"), true);
+    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r27"), true);
     const svgTexts = [];
     const collectText = (node, target) => {
       if (node && typeof node.textContent === "string" && node.textContent) target.push(node.textContent);

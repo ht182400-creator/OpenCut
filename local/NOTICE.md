@@ -48,3 +48,5 @@
 **追加（W-08 第六批）**：`Timeline` 的左右边缘把手与 `resizeClipEdge` 的时长/素材入点换算为本地新写实现，未拷贝 Olive / Kdenlive / OpenShot 的边缘裁剪交互代码；未引入新的前端依赖。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-09 第三批）**：`apps/web/src/local/clip-history.ts` 的版本快照纯函数与撤销/重做 hook、`ToolbarSection` 为本地新写实现，未拷贝 Olive 的版本快照或第三方撤销栈实现；未引入新的前端依赖。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-09 第四批）**：`apps/web/src/local/scrub-benchmark.ts` 的基准测量、`createBenchmarkVideoFile` 的 4K 灰底白块素材与历史 localStorage 持久化均为本地新写实现；`avc1.640033` 为 H.264 High Profile Level 5.1 的标准 codec 字符串，不含第三方库代码；演示素材为程序生成，不含第三方音视频内容。经典版 MIT © 2025-2026 声明仍由上文保留。
