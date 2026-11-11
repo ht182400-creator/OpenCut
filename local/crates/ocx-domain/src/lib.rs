@@ -41,7 +41,7 @@ pub use placement::{
 pub use project_compat::{
     CLASSIC_PROJECT_VERSION, CanvasView, CompatError, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH,
     DEFAULT_FPS_DENOMINATOR, DEFAULT_FPS_NUMERATOR, ElementView, FpsView, ProjectView, SceneView,
-    TrackView, read_classic_project,
+    TrackView, read_classic_project, write_classic_project,
 };
 pub use ripple::{apply_ripple_adjustments, compute_ripple_adjustments, ripple_shift_elements};
 pub use types::{

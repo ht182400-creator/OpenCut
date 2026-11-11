@@ -13,6 +13,7 @@ export const param_kind: (a: number, b: number) => [number, number, number, numb
 export const read_classic_project: (a: number, b: number) => [number, number, number, number];
 export const render_frame_rgba: (a: number, b: number) => [number, number, number, number];
 export const schema_version: () => [number, number];
+export const write_classic_project: (a: number, b: number) => [number, number, number, number];
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

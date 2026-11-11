@@ -23,6 +23,7 @@ import init, {
   read_classic_project,
   render_frame_rgba,
   schema_version,
+  write_classic_project,
 } from "./wasm/ocx_bindings_wasm.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -382,6 +383,32 @@ try {
       /INVALID_BASE_FRAME|合成预览帧/,
     ),
   );
+
+  // W-05 第五批：经典版项目 JSON 无损写回（真实 WASM 产物）
+  const classicProject = readFileSync(path.resolve(HERE, "../../public/fixtures/classic-project-v31.json"), "utf8");
+  const classicView = JSON.parse(read_classic_project(classicProject));
+  const writeReq = (view) => JSON.parse(write_classic_project(JSON.stringify({ original: classicProject, view })));
+  check("经典版项目可读", () => assert.equal(classicView.version, 31));
+  classicView.name = "WASM 写回验证";
+  classicView.scenes[0].tracks.find((t) => t.id === "main").elements.find((e) => e.id === "clip-body").startTime = 100000;
+  const writeResult = writeReq(classicView);
+  check("经典版项目写回成功", () => assert.equal(writeResult.ok, true));
+  const writtenRaw = JSON.parse(writeResult.project);
+  check("写回保留未知字段", () => assert.equal(writtenRaw.metadata.createdAt, "2026-01-01T00:00:00.000Z"));
+  check("写回不写派生字段", () => assert.equal(writtenRaw.warnings, undefined));
+  const reread = JSON.parse(read_classic_project(writeResult.project));
+  check("写回后再读名称生效", () => assert.equal(reread.name, "WASM 写回验证"));
+  check("写回后再读剪辑决策生效", () => {
+    const track = reread.scenes[0].tracks.find((item) => item.id === "main");
+    assert.equal(track.elements.find((e) => e.id === "clip-body").startTime, 100000);
+  });
+  classicView.version = 32;
+  const mismatch = writeReq(classicView);
+  check("写回版本不匹配被拒绝", () => assert.equal(mismatch.error, "VERSION_MISMATCH"));
+  classicView.version = 31;
+  classicView.scenes[0].id = "not-there";
+  const missingEntity = writeReq(classicView);
+  check("写回未知实体被拒绝", () => assert.equal(missingEntity.error, "ENTITY_NOT_FOUND"));
 
   // W-11：能力协商走真实 WASM 产物
   const negotiated = JSON.parse(api_negotiate(JSON.stringify({

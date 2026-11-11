@@ -76,6 +76,11 @@ export function render_frame_rgba(request_json: string): Uint8Array;
  */
 export function schema_version(): string;
 
+/**
+ * 写回经典版项目 JSON（W-05 第五批）：按 id 合并视图、保留未知字段。
+ */
+export function write_classic_project(request_json: string): string;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -92,6 +97,7 @@ export interface InitOutput {
     readonly read_classic_project: (a: number, b: number) => [number, number, number, number];
     readonly render_frame_rgba: (a: number, b: number) => [number, number, number, number];
     readonly schema_version: () => [number, number];
+    readonly write_classic_project: (a: number, b: number) => [number, number, number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

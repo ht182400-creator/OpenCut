@@ -4,9 +4,9 @@
 //! 因此单独走 `read_classic_project_wasm`，避免先解析成对象再序列化回去的信息损失。
 
 use ocx_domain::{
-    ElementAnimations, format_linear_rgba, get_element_keyframes, get_keyframe_at_time,
-    get_keyframe_by_id, has_keyframes_for_path, is_animation_path, is_animation_storage_key,
-    read_classic_project,
+    ElementAnimations, ProjectView, format_linear_rgba, get_element_keyframes,
+    get_keyframe_at_time, get_keyframe_by_id, has_keyframes_for_path, is_animation_path,
+    is_animation_storage_key, read_classic_project, write_classic_project,
 };
 use serde_json::{Value, json};
 use wasm_bindgen::JsValue;
@@ -88,4 +88,22 @@ pub fn read_classic_project_wasm(project_json: &str) -> Result<String, JsValue> 
         Err(error) => json!({ "error": error.code() }),
     };
     serde_json::to_string(&value).map_err(|error| js_error("序列化项目结果", error))
+}
+
+/// W-05 第五批：把编辑后的归一化视图按 id 合并回原始项目 JSON。
+/// 请求 `{ "original": "<项目 JSON>", "view": ProjectView }`，
+/// 返回 `{"ok":true,"project":"<JSON>"}` 或 `{"ok":false,"error":"CODE"}`。
+pub fn write_classic_project_wasm(request_json: &str) -> Result<String, JsValue> {
+    let request: Value =
+        serde_json::from_str(request_json).map_err(|error| js_error("解析项目写回请求", error))?;
+    let original = request["original"]
+        .as_str()
+        .ok_or_else(|| js_error("解析字段 original", "缺少字符串"))?;
+    let view: ProjectView = serde_json::from_value(request["view"].clone())
+        .map_err(|error| js_error("解析字段 view", error))?;
+    let value = match write_classic_project(original, &view) {
+        Ok(project) => json!({ "ok": true, "project": project }),
+        Err(error) => json!({ "ok": false, "error": error.code() }),
+    };
+    serde_json::to_string(&value).map_err(|error| js_error("序列化写回结果", error))
 }

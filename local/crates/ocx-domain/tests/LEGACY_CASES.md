@@ -48,4 +48,18 @@
 
 ## additive-only 约束
 
-经典版 `services/storage/migrations/AGENTS.md` 规定迁移不得删除/改名/替换持久化数据。本兼容层严格**只读**：用宽容 `Value` 遍历、未知字段忽略但不写回、缺失字段补默认值并记 `warnings`、高于 v31 明确拒绝。输出 `ProjectView` 是消费视图，不是新的持久化格式。
+经典版 `services/storage/migrations/AGENTS.md` 规定迁移不得删除/改名/替换持久化数据。**读取路径**用宽容 `Value` 遍历、未知字段忽略、缺失字段补默认值并记 `warnings`、高于 v31 明确拒绝。**W-05 第五批起新增写回路径** `write_classic_project`：按 id 把编辑后的视图合并回原始文档，只更新已知字段、保留所有未知字段，不新增/删除场景/轨道/元素，不写派生字段（`version` / `sceneCount` / `warnings`）；版本不匹配或实体缺失分别返回 `VERSION_MISMATCH` / `ENTITY_NOT_FOUND`。`ProjectView` 是消费视图，不是新的持久化格式。
+
+## W-05 第五批 · 项目写回用例（`project_write.rs`）
+
+| 用例 | 分类 | 输入 | 预期 |
+| --- | --- | --- | --- |
+| P01 | 正常 | 真实 v31 fixture：读 → 改名称/画布/片段 startTime/duration/trimStart → 写 → 再读 | 所有改动生效，version 与 sceneCount 不变 |
+| P02 | 正常 | 原样视图写回 | `metadata.createdAt` / `timelineViewState` / 元素 `mediaId` / `params` 等未知字段保留；`warnings` / `sceneCount` 不写入 |
+| P03 | 正常 | 对写回结果再读再写 | 两次输出字节一致（幂等） |
+| P04 | 边界 | 原始元素缺 `trimStart` / `trimEnd` | 视图赋值后写回新增字段，再读得到该值 |
+| P05 | 异常 | `view.version = 32` 而原始为 31 | `VERSION_MISMATCH` |
+| P06 | 异常 | 未知 scene / track / element id | `ENTITY_NOT_FOUND`（不擅自新增实体） |
+| P07 | 异常 | 非法 JSON、缺 version、未来版本、缺 metadata、缺 scenes | 对应 5 个稳定错误码 |
+
+- 执行：`cargo test -p ocx-domain --test project_write`（7 项）；WASM 侧由 `editor-wasm.contract.mjs` 的真实产物验证同一闭环。

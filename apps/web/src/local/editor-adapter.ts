@@ -123,6 +123,13 @@ export interface ProjectView {
 /** 项目读取结果：成功为视图，失败为稳定错误码。 */
 export type ProjectResult = ProjectView | { error: string };
 
+/** 项目写回结果：成功给出 JSON 文本，失败给出稳定错误码。 */
+export interface ProjectWriteResult {
+  ok: boolean;
+  project?: string;
+  error?: string;
+}
+
 /** 每种请求的必填字段，用于在进入 WASM 前拦截明显错误。 */
 const REQUIRED_FIELDS: Record<CoreRequestKind, readonly string[]> = {
   rippleAdjustments: ['before', 'after'],
@@ -256,6 +263,8 @@ export interface EditorAdapter {
   compositeFrameRgba(basePixels: Uint8Array, request: CoreCompositeRequest): Uint8Array;
   /** 读取经典版项目 JSON（只读）。 */
   readClassicProject(projectJson: string): ProjectResult;
+  /** 写回经典版项目 JSON（按 id 合并、保留未知字段）。 */
+  writeClassicProject(originalJson: string, view: ProjectView): ProjectWriteResult;
   /** 导入 OTIO JSON 为内部时间轴（W-10）。 */
   otioImport(otioJson: string): OtioResult;
   /** 导出内部时间轴为 OTIO JSON 文本（W-10）。 */
@@ -299,6 +308,10 @@ export async function createEditorAdapter(): Promise<EditorAdapter> {
         },
         readClassicProject: (projectJson: string): ProjectResult =>
           JSON.parse(glue.read_classic_project(projectJson)) as ProjectResult,
+        writeClassicProject: (originalJson: string, view: ProjectView): ProjectWriteResult => {
+          if (typeof originalJson !== 'string' || !originalJson.trim()) throw new Error('原始项目 JSON 必须是非空字符串');
+          return JSON.parse(glue.write_classic_project(JSON.stringify({ original: originalJson, view }))) as ProjectWriteResult;
+        },
         otioImport: (otioJson: string): OtioResult => {
           validateOtioText(otioJson, 'OTIO 文档');
           return JSON.parse(glue.otio_import(otioJson)) as OtioResult;

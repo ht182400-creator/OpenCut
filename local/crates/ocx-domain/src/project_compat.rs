@@ -1,16 +1,17 @@
-//! 经典版项目 JSON 的**只读**兼容层（H11 前置，W-05 第四批）。
+//! 经典版项目 JSON 的兼容层（H11 前置，W-05 第四批；W-05 第五批加入写回）。
 //!
 //! 经典版 `CURRENT_PROJECT_VERSION = 31`，migrations 规定 **additive-only**：
-//! 不删、不改名、不替换持久化数据。本模块严格只读：
-//! - 用宽容的 `serde_json::Value` 遍历，未知字段原样忽略（**不写回**）；
-//! - 缺失的非关键字段用默认值补齐并记录 `warnings`，不静默丢弃信息；
-//! - 版本 > 31 明确拒绝（避免误读未来格式），而不是「尽力解析」；
-//! - 输出归一化视图 `ProjectView` 供 Web/core 消费，字段只增不删。
+//! 不删、不改名、不替换持久化数据。
+//! - 读取：用宽容的 `serde_json::Value` 遍历，未知字段原样忽略；缺失的非关键字段
+//!   用默认值补齐并记录 `warnings`；版本 > 31 明确拒绝；输出归一化视图 `ProjectView`。
+//! - 写回：`write_classic_project` 把编辑后的视图**按 id 合并回原始文档**，只更新
+//!   已知字段，未知字段原样保留，不新增/删除场景/轨道/元素；派生字段
+//!   （`version` / `sceneCount` / `warnings`）不写回。形成「读 → 改 → 写 → 再读」闭环。
 
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// 经典版当前项目版本号。
 pub const CLASSIC_PROJECT_VERSION: u32 = 31;
@@ -28,6 +29,10 @@ pub enum CompatError {
     UnsupportedVersion,
     MissingMetadata,
     MissingScenes,
+    /// 写回时视图版本与原始文档版本不一致。
+    VersionMismatch,
+    /// 写回时视图里的场景/轨道/元素 id 在原始文档中找不到（不擅自新增实体）。
+    EntityNotFound,
 }
 
 impl CompatError {
@@ -39,6 +44,8 @@ impl CompatError {
             CompatError::UnsupportedVersion => "UNSUPPORTED_VERSION",
             CompatError::MissingMetadata => "MISSING_METADATA",
             CompatError::MissingScenes => "MISSING_SCENES",
+            CompatError::VersionMismatch => "VERSION_MISMATCH",
+            CompatError::EntityNotFound => "ENTITY_NOT_FOUND",
         }
     }
 }
@@ -51,6 +58,8 @@ impl fmt::Display for CompatError {
             CompatError::UnsupportedVersion => "项目版本高于当前支持的最高版本，请升级后再打开",
             CompatError::MissingMetadata => "项目缺少 metadata 字段",
             CompatError::MissingScenes => "项目缺少 scenes 数组",
+            CompatError::VersionMismatch => "写回视图的版本与原始项目不一致，已拒绝",
+            CompatError::EntityNotFound => "写回视图含原始项目中不存在的实体，已拒绝（不擅自新增）",
         };
         write!(formatter, "{}：{detail}", self.code())
     }
@@ -285,4 +294,138 @@ pub fn read_classic_project(project_json: &str) -> Result<ProjectView, CompatErr
         scenes,
         warnings,
     })
+}
+
+/**
+ * 把单条轨道视图的已知字段合并回原始轨道；元素按 id 匹配，未知字段原样保留。
+ * @param target 原始轨道 JSON（可变）
+ * @param view 归一化轨道视图
+ * @returns {Result<(), CompatError>} 找不到元素时返回 ENTITY_NOT_FOUND
+ */
+fn merge_track(target: &mut Value, view: &TrackView) -> Result<(), CompatError> {
+    let object = target.as_object_mut().ok_or(CompatError::EntityNotFound)?;
+    object.insert("type".to_owned(), json!(view.track_type));
+    let elements = object.entry("elements").or_insert_with(|| json!([]));
+    let list = elements.as_array_mut().ok_or(CompatError::EntityNotFound)?;
+    for element_view in &view.elements {
+        let item = list
+            .iter_mut()
+            .find(|item| item["id"].as_str() == Some(element_view.id.as_str()))
+            .ok_or(CompatError::EntityNotFound)?;
+        let entry = item.as_object_mut().ok_or(CompatError::EntityNotFound)?;
+        entry.insert("type".to_owned(), json!(element_view.element_type));
+        entry.insert("startTime".to_owned(), json!(element_view.start_time));
+        entry.insert("duration".to_owned(), json!(element_view.duration));
+        entry.insert("trimStart".to_owned(), json!(element_view.trim_start));
+        entry.insert("trimEnd".to_owned(), json!(element_view.trim_end));
+    }
+    Ok(())
+}
+
+/**
+ * 把编辑后的 `ProjectView` 写回经典版项目 JSON。
+ *
+ * 只按 id 更新原始文档中已存在的实体的已知字段；不新增/删除场景、轨道、元素，
+ * 未知字段（含 `metadata` 扩展、`timelineViewState`、元素自定义字段）原样保留。
+ * 派生字段 `version` / `sceneCount` / `warnings` 不写回。
+ * @param original_json 原始经典版项目 JSON（v31 或更低）
+ * @param view 编辑后的归一化视图
+ * @returns {Result<String, CompatError>} 写回后的 JSON 文本
+ */
+pub fn write_classic_project(
+    original_json: &str,
+    view: &ProjectView,
+) -> Result<String, CompatError> {
+    let mut root: Value =
+        serde_json::from_str(original_json).map_err(|_| CompatError::InvalidJson)?;
+    if !root.is_object() {
+        return Err(CompatError::InvalidJson);
+    }
+    let version = root["version"]
+        .as_u64()
+        .ok_or(CompatError::MissingVersion)? as u32;
+    if version == 0 || version > CLASSIC_PROJECT_VERSION {
+        return Err(CompatError::UnsupportedVersion);
+    }
+    if root["metadata"].is_null() {
+        return Err(CompatError::MissingMetadata);
+    }
+    if !root["scenes"].is_array() {
+        return Err(CompatError::MissingScenes);
+    }
+    if view.version != version {
+        return Err(CompatError::VersionMismatch);
+    }
+
+    let object = root.as_object_mut().ok_or(CompatError::InvalidJson)?;
+    object.insert("currentSceneId".to_owned(), json!(view.current_scene_id));
+    {
+        let metadata = object.entry("metadata").or_insert_with(|| json!({}));
+        if let Some(fields) = metadata.as_object_mut() {
+            fields.insert("id".to_owned(), json!(view.project_id));
+            fields.insert("name".to_owned(), json!(view.name));
+            fields.insert("duration".to_owned(), json!(view.duration_ticks));
+        }
+    }
+    {
+        let settings = object.entry("settings").or_insert_with(|| json!({}));
+        if let Some(fields) = settings.as_object_mut() {
+            let fps = fields.entry("fps").or_insert_with(|| json!({}));
+            if let Some(f) = fps.as_object_mut() {
+                f.insert("numerator".to_owned(), json!(view.fps.numerator));
+                f.insert("denominator".to_owned(), json!(view.fps.denominator));
+            }
+            let canvas = fields.entry("canvasSize").or_insert_with(|| json!({}));
+            if let Some(c) = canvas.as_object_mut() {
+                c.insert("width".to_owned(), json!(view.canvas.width));
+                c.insert("height".to_owned(), json!(view.canvas.height));
+            }
+        }
+    }
+
+    let scenes = object
+        .get_mut("scenes")
+        .and_then(Value::as_array_mut)
+        .ok_or(CompatError::MissingScenes)?;
+    for scene_view in &view.scenes {
+        let scene = scenes
+            .iter_mut()
+            .find(|item| item["id"].as_str() == Some(scene_view.id.as_str()))
+            .ok_or(CompatError::EntityNotFound)?;
+        let scene_object = scene.as_object_mut().ok_or(CompatError::EntityNotFound)?;
+        scene_object.insert("name".to_owned(), json!(scene_view.name));
+        scene_object.insert("isMain".to_owned(), json!(scene_view.is_main));
+        let tracks = scene_object
+            .get_mut("tracks")
+            .and_then(Value::as_object_mut)
+            .ok_or(CompatError::EntityNotFound)?;
+        for track_view in &scene_view.tracks {
+            let mut found = false;
+            for key in ["overlay", "audio"] {
+                if let Some(list) = tracks.get_mut(key).and_then(Value::as_array_mut)
+                    && let Some(target) = list
+                        .iter_mut()
+                        .find(|item| item["id"].as_str() == Some(track_view.id.as_str()))
+                {
+                    merge_track(target, track_view)?;
+                    found = true;
+                    break;
+                }
+                if found {
+                    break;
+                }
+            }
+            if !found
+                && let Some(main) = tracks.get_mut("main")
+                && main["id"].as_str() == Some(track_view.id.as_str())
+            {
+                merge_track(main, track_view)?;
+                found = true;
+            }
+            if !found {
+                return Err(CompatError::EntityNotFound);
+            }
+        }
+    }
+    serde_json::to_string_pretty(&root).map_err(|_| CompatError::InvalidJson)
 }

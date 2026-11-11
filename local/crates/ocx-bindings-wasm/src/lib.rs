@@ -161,6 +161,12 @@ pub fn read_classic_project(project_json: &str) -> Result<String, JsValue> {
     legacy::read_classic_project_wasm(project_json)
 }
 
+/// 写回经典版项目 JSON（W-05 第五批）：按 id 合并视图、保留未知字段。
+#[wasm_bindgen]
+pub fn write_classic_project(request_json: &str) -> Result<String, JsValue> {
+    legacy::write_classic_project_wasm(request_json)
+}
+
 /// W-11：与客户端协商 API/schema 版本与必需能力。
 /// 返回 `NegotiationResult` 的 JSON（camelCase），非法请求抛中文错误。
 #[wasm_bindgen]
