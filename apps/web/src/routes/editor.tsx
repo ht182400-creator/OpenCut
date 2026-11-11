@@ -24,7 +24,12 @@ import {
   type RippleResponse,
   type Session,
 } from '../local/editor-ui'
-import { exportProjectToMp4, isExportSupported } from '../local/export'
+import {
+  exportProjectToMp4,
+  exportProjectToWebM,
+  isExportSupported,
+  isOpusEncodingSupported,
+} from '../local/export'
 import { formatBenchmark, measureFrameCost } from '../local/scrub-benchmark'
 import {
   MAX_DECODE_FRAMES,
@@ -278,8 +283,8 @@ function Editor() {
     return () => window.clearInterval(timer)
   }, [playing, frameCount, session])
 
-  /** 真实导出：编码 core 帧与可选 AAC 音轨，生成可下载的 MP4。 */
-  const handleExport = async () => {
+  /** 真实导出：同一帧源/音源编码为 MP4（H.264+AAC）或 WebM（VP9+Opus）。 */
+  const handleExport = async (container: 'mp4' | 'webm' = 'mp4') => {
     if (!session) return
     if (!isExportSupported()) {
       setExportState({ status: 'error', done: 0, total: 0, message: '当前浏览器不支持 WebCodecs 导出', url: null, bytes: 0 })
@@ -289,7 +294,7 @@ function Editor() {
     setExportState({ status: 'running', done: 0, total: frameCount, message: '', url: null, bytes: 0 })
     try {
       let audioSource: PcmAudio | undefined
-      if (media?.audio && await isAacEncodingSupported()) {
+      if (media?.audio && await (container === 'webm' ? isOpusEncodingSupported() : isAacEncodingSupported())) {
         audioSource = buildTimelineAudio({
           clips: elements,
           frameCount,
@@ -299,7 +304,7 @@ function Editor() {
           ticksPerSecond: TICKS_PER_SECOND,
         })
       }
-      const result = await exportProjectToMp4({
+      const result = await (container === 'webm' ? exportProjectToWebM : exportProjectToMp4)({
         width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT,
         fps: session.fps, frameCount, ticksPerFrame: session.ticksPerFrame,
         profile: session.profile, params: DEMO_PARAMS,
@@ -309,7 +314,8 @@ function Editor() {
       })
       setExportState({
         status: 'done', done: result.frameCount, total: frameCount,
-        message: `已导出 ${result.frameCount} 帧 · ${result.durationSeconds.toFixed(2)}s${result.hasAudio ? ' · 含 AAC 音轨' : ''}`,
+        message: `已导出 ${result.frameCount} 帧 · ${result.durationSeconds.toFixed(2)}s${result.hasAudio ? (container === 'webm' ? ' · 含 Opus 音轨' : ' · 含 AAC 音轨') : ''}`,
+        filename: container === 'webm' ? 'opencut-export.webm' : 'opencut-export.mp4',
         url: URL.createObjectURL(result.blob), bytes: result.bytes,
       })
     } catch (error) {
@@ -466,7 +472,8 @@ function Editor() {
           { label: '4K scrub 基准', disabled: !session, onClick: () => void handleBenchmark() },
           { label: '撤销', disabled: !clipHistory.canUndo, onClick: clipHistory.undo },
           { label: '重做', disabled: !clipHistory.canRedo, onClick: clipHistory.redo },
-          { label: '导出 MP4', disabled: !session || exportState.status === 'running', onClick: () => void handleExport() },
+          { label: '导出 MP4', disabled: !session || exportState.status === 'running', onClick: () => void handleExport('mp4') },
+          { label: '导出 WebM', disabled: !session || exportState.status === 'running', onClick: () => void handleExport('webm') },
         ]}
       />
 

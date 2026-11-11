@@ -190,8 +190,8 @@ export function ToolbarSection(props: {
         <span style={{ color: TEXT_MUTED, fontSize: 13 }}>编码中 {props.exportState.done}/{props.exportState.total}</span>
       )}
       {props.exportState.status === 'done' && props.exportState.url && (
-        <a href={props.exportState.url} download="opencut-export.mp4" style={{ color: '#7dd3fc', fontSize: 13 }}>
-          下载 MP4（{props.exportState.message} · {props.exportState.bytes} 字节）
+        <a href={props.exportState.url} download={props.exportState.filename ?? 'opencut-export.mp4'} style={{ color: '#7dd3fc', fontSize: 13 }}>
+          下载 {props.exportState.filename?.endsWith('.webm') ? 'WebM' : 'MP4'}（{props.exportState.message} · {props.exportState.bytes} 字节）
         </a>
       )}
       {props.exportState.status === 'error' && (
@@ -290,6 +290,8 @@ export interface ExportState {
   message: string
   url: string | null
   bytes: number
+  /** 目标下载文件名；缺省按 MP4。 */
+  filename?: string
 }
 
 /** 空档帧：不透明黑底，交给 core 叠加图层。 */

@@ -49,7 +49,7 @@ const HOTSPOTS = [
   { id: "H03", title: "本机工具链缺失且版本不符", priority: "P0", milestone: "M0", status: "已完成", action: "proto 0.63.2 已纳管 bun/moon/rust；moon 官方包校验通过；无需 FORCE_GLOBALS 旁路" },
   { id: "H04", title: "上游架构未定，长期分叉风险", priority: "P1", milestone: "全程", status: "进行中", action: "落地新增优先 + 差异台账 + git rerere，每 2~4 周小步同步" },
   { id: "H05", title: "原生 Rust 渲染路径从未验证", priority: "P0", milestone: "M1", status: "未开始", action: "补 render_frame_to_texture → Vec<u8> 用例与原生 CI" },
-  { id: "H06", title: "workspace 未启用 crates/*", priority: "P0", milestone: "M0", status: "进行中", action: "隔离目录与两个 crate 已迁入并编译通过；剩余 build.rs 与 moon ci 验证" },
+  { id: "H06", title: "workspace 未启用 crates/*", priority: "P0", milestone: "M0", status: "进行中", action: "七个 ocx-* crate 已在隔离目录编译通过，rust 1.97 与 moon ci 已实跑；剩余上游 crates/* 启用（按隔离策略待上游同步复核）" },
   { id: "H07", title: "插件运行时未选型", priority: "P1", milestone: "M3", status: "未开始", action: "M2 期间并行做 Extism spike，验证 wasm32 与原生双目标" },
   { id: "H08", title: "MCP 规范版本与长任务模型", priority: "P2", milestone: "M5", status: "未开始", action: "按 2026-07-28 规范实现，Tasks extension 承载长导出" },
   { id: "H09", title: "许可证合规（MIT/LGPL/OFL）", priority: "P1", milestone: "全程", status: "未开始", action: "MIT 声明已由 NOTICE.md 保留；剩余 LGPL 随附与字体归属" },
@@ -57,12 +57,12 @@ const HOTSPOTS = [
   { id: "H11", title: "经典版 31 版项目迁移兼容", priority: "P1", milestone: "M4", status: "进行中", action: "只读兼容层已落地（additive-only、25 用例 / 107/107、/editor 加载真实项目）；剩余写回与迁移测试" },
   { id: "H12", title: "4K 预览性能（代理/缓存/快照）", priority: "P2", milestone: "M6", status: "已完成", action: "W-09 四批闭合：三级缓存/代理 MP4/版本快照可跨刷新恢复；真实 3840×2160 素材 30 帧 scrub 峰值 0.9ms < 16ms 阈值达标" },
   { id: "H13", title: "上游落地六项能力导致双实现收敛（L3）", priority: "P1", milestone: "全程", status: "进行中", action: "按 README.md §7.9 做命名空间隔离、upstream-mirror、能力台账与 merge-tree 预演" },
-  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "W-08 六批 + W-09 四批 + W-10 三批 + W-11 一批：真实音视频闭环、4K scrub 达标、官方 OTIO 实文件往返、Editor API 契约冻结；剩余插件 host 与 MCP" },
+  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "进行中", action: "W-07 三批 + W-08 六批 + W-09 四批 + W-10 三批 + W-11 一批：双容器 MP4/WebM 导出、剪辑闭环、4K scrub、官方 OTIO 往返、契约冻结；剩余插件 host / MCP / AV1 / 经典版 JSON 写回" },
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r29";
-const DATA_UPDATED_AT = "2026-11-10 15:50";
+const DATA_VERSION = "2026-11-08-r30";
+const DATA_UPDATED_AT = "2026-11-11 21:30";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**
