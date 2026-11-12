@@ -96,6 +96,23 @@ async function main() {
   check("转场与标记往返一致", () =>
     assert.deepEqual(transitionsReimported.timeline.markers, transitions.timeline.markers));
 
+  // 1c. 官方工具生成的 Effect + 嵌套 Stack 文件（静态，不需要 Python）
+  const effectsFixture = readFileSync(
+    path.join(HERE, "fixtures/third_party_otio_effects.json"),
+    "utf8",
+  );
+  const effects = JSON.parse(otio_import(effectsFixture));
+  check("官方 Effect 文件导入成功", () => assert.equal(effects.ok, true));
+  check("官方 effect 节点保留", () =>
+    assert.equal(effects.timeline.tracks[0].clips[0].effects.length, 1));
+  check("官方嵌套 Stack 保留", () =>
+    assert.equal(effects.timeline.nestedStacks.length, 1));
+  const effectsExported = JSON.parse(otio_export(JSON.stringify(effects.timeline)));
+  check("官方 Effect 文件可回写", () => assert.equal(effectsExported.ok, true));
+  const effectsReimported = JSON.parse(otio_import(effectsExported.otio));
+  check("Effect 与嵌套 Stack 往返一致", () =>
+    assert.deepEqual(effectsReimported.timeline.nestedStacks, effects.timeline.nestedStacks));
+
   // 2. 动态：官方工具生成 → 我们读写 → 官方工具再校验
   const probe = spawnSync("python", [PYTHON_SCRIPT, "probe"], {
     encoding: "utf8",
@@ -155,6 +172,23 @@ async function main() {
       check("转场与剪辑决策逐项一致", () =>
         assert.deepEqual(after2.clips, before2.clips));
       check("标记逐项一致", () => assert.deepEqual(after2.markers, before2.markers));
+
+      // W-10 第五批：官方生成含 Effect + 嵌套 Stack 的文件，再走同一往返链路
+      const source3 = path.join(directory, "source3.otio");
+      const roundtrip3 = path.join(directory, "roundtrip3.otio");
+      runPython("make3", source3);
+      const fromOfficial3 = JSON.parse(otio_import(readFileSync(source3, "utf8")));
+      check("官方 make3 生成文件可导入", () => assert.equal(fromOfficial3.ok, true));
+      const reexport3 = JSON.parse(otio_export(JSON.stringify(fromOfficial3.timeline)));
+      writeFileSync(roundtrip3, reexport3.otio);
+      const before3 = runPython("validate", source3);
+      const after3 = runPython("validate", roundtrip3);
+      check("官方工具能读回 Effect/嵌套 Stack 导出文件", () =>
+        assert.equal(after3.name, before3.name));
+      check("effect 与剪辑决策逐项一致", () =>
+        assert.deepEqual(after3.clips, before3.clips));
+      check("嵌套 Stack 逐项一致", () =>
+        assert.deepEqual(after3.nested, before3.nested));
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

@@ -30,7 +30,19 @@ pub struct EditTimeline {
     /// 时间轴级标记（W-10 第四批）；Track/Clip 级标记暂不解析，导入时记 warning。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub markers: Vec<EditMarker>,
+    /// W-10 第五批：Stack children 里的嵌套 Stack，保留原始节点与其位置。
+    /// 内部不展开为可编辑轨道，但原样写回保证剪辑决策不丢。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nested_stacks: Vec<EditNestedStack>,
     pub warnings: Vec<String>,
+}
+
+/// 一个嵌套 Stack：`index` 是它在父 Stack children 中的原始位置。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditNestedStack {
+    pub index: usize,
+    pub node: Value,
 }
 
 /// 一个时间轴级标记（OTIO `Marker.1` 的归一化视图）。
@@ -86,6 +98,10 @@ pub struct EditClip {
     /// 转场类型（OTIO `transition_type`），属于剪辑决策；普通片段为 None。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transition_type: Option<String>,
+    /// W-10 第五批：Clip 上的 effects 原始节点（如 `LinearTimeWarp.1`）。
+    /// 保留完整 JSON、不解释语义，导出时原样写回。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<Value>,
 }
 
 /**
@@ -144,6 +160,12 @@ pub fn decision_key(timeline: &EditTimeline) -> String {
                 clip.out_offset_ticks,
                 clip.transition_type.as_deref().unwrap_or("")
             ));
+            if !clip.effects.is_empty() {
+                key.push_str(&format!(
+                    "|e:{}",
+                    serde_json::to_string(&clip.effects).unwrap_or_default()
+                ));
+            }
         }
     }
     for marker in &timeline.markers {
@@ -153,6 +175,13 @@ pub fn decision_key(timeline: &EditTimeline) -> String {
             marker.color.as_deref().unwrap_or(""),
             marker.start_ticks,
             marker.duration_ticks
+        ));
+    }
+    for nested in &timeline.nested_stacks {
+        key.push_str(&format!(
+            "|s:{}:{}",
+            nested.index,
+            serde_json::to_string(&nested.node).unwrap_or_default()
         ));
     }
     key
@@ -241,6 +270,7 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
     let track_values = stack["children"].as_array().ok_or(IoError::MissingTracks)?;
 
     let mut tracks = Vec::new();
+    let mut nested_stacks: Vec<EditNestedStack> = Vec::new();
     let mut rate: Option<f64> = None;
 
     // W-10 第四批：解析 Timeline 顶层与 Stack（官方 markers 挂在 Composition 上）级标记；
@@ -287,6 +317,17 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
 
     for (track_index, track_value) in track_values.iter().enumerate() {
         let track_schema = track_value["OTIO_SCHEMA"].as_str().unwrap_or("");
+        if track_schema.starts_with("Stack") && is_supported_otio_schema(track_schema) {
+            // W-10 第五批：嵌套 Stack 保留原始节点与位置，不展开为可编辑轨道
+            nested_stacks.push(EditNestedStack {
+                index: track_index,
+                node: track_value.clone(),
+            });
+            warnings.push(format!(
+                "嵌套 Stack 第 {track_index} 项保留原始节点，不展开为可编辑轨道"
+            ));
+            continue;
+        }
         if !track_schema.starts_with("Track") || !is_supported_otio_schema(track_schema) {
             return Err(IoError::UnsupportedOtioSchema);
         }
@@ -346,6 +387,17 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
             } else {
                 clip_name.clone()
             };
+            // W-10 第五批：effects 保留原始节点，白名单外的效果明确拒绝
+            let effects = clip_value["effects"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            for effect in &effects {
+                let effect_schema = effect["OTIO_SCHEMA"].as_str().unwrap_or("");
+                if !effect_schema.is_empty() && !is_supported_otio_schema(effect_schema) {
+                    return Err(IoError::UnsupportedOtioSchema);
+                }
+            }
             clips.push(EditClip {
                 id,
                 name: clip_name,
@@ -361,6 +413,7 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
                 in_offset_ticks,
                 out_offset_ticks,
                 transition_type: clip_value["transition_type"].as_str().map(str::to_string),
+                effects,
             });
             cursor = cursor.saturating_add(duration_ticks);
         }
@@ -380,8 +433,39 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
         rate: rate.unwrap_or(30.0),
         tracks,
         markers,
+        nested_stacks,
         warnings,
     })
+}
+
+/**
+ * 按嵌套 Stack 的原始位置，把 Track 节点与保留的嵌套节点合并回 Stack children。
+ * 嵌套节点不展开为可编辑轨道，但位置与内容原样保留，往返不丢决策。
+ * @param track_nodes 已导出的 Track 节点（按内部 tracks 顺序）
+ * @param nested_stacks 导入时保留的嵌套 Stack
+ * @returns {Vec<Value>} 还原顺序后的 children
+ */
+fn merge_nested_children(track_nodes: Vec<Value>, nested_stacks: &[EditNestedStack]) -> Vec<Value> {
+    let mut nested: Vec<&EditNestedStack> = nested_stacks.iter().collect();
+    nested.sort_by_key(|item| item.index);
+    let total = track_nodes.len() + nested.len();
+    let mut children = Vec::with_capacity(total);
+    let mut tracks = track_nodes.into_iter();
+    let mut nested_iter = nested.into_iter().peekable();
+    for position in 0..total {
+        if nested_iter
+            .peek()
+            .is_some_and(|item| item.index <= position)
+        {
+            children.push(nested_iter.next().expect("peek 已确认存在").node.clone());
+        } else if let Some(node) = tracks.next() {
+            children.push(node);
+        }
+    }
+    for item in nested_iter {
+        children.push(item.node.clone());
+    }
+    children
 }
 
 /**
@@ -454,6 +538,10 @@ pub fn export_otio(timeline: &EditTimeline) -> Result<String, IoError> {
                         "target_url": url
                     });
                 }
+                // W-10 第五批：effects 原样写回，官方工具可读
+                if !clip.effects.is_empty() {
+                    node["effects"] = json!(clip.effects);
+                }
                 node
             };
             clip_nodes.push(node);
@@ -465,6 +553,7 @@ pub fn export_otio(timeline: &EditTimeline) -> Result<String, IoError> {
             "children": clip_nodes
         }));
     }
+    let children = merge_nested_children(track_nodes, &timeline.nested_stacks);
     let mut marker_nodes = Vec::with_capacity(timeline.markers.len());
     for marker in &timeline.markers {
         let start_value = ticks_to_rational_value(marker.start_ticks, timeline.rate)?;
@@ -502,7 +591,7 @@ pub fn export_otio(timeline: &EditTimeline) -> Result<String, IoError> {
             "name": "tracks",
             // 官方 OTIO 的 markers 挂在 Composition（Stack）上，不是 Timeline 顶层
             "markers": marker_nodes,
-            "children": track_nodes
+            "children": children
         }
     });
     serde_json::to_string(&root).map_err(|_| IoError::InvalidExport)

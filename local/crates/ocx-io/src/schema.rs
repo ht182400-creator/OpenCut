@@ -29,6 +29,10 @@ pub const SUPPORTED_OTIO_SCHEMAS: &[&str] = &[
     // 官方 OpenTimelineIO 0.18 的 Marker 升级到 .2；自造子集仍用 .1
     "Marker.1",
     "Marker.2",
+    // W-10 第五批：Clip.effects 里的效果节点（保留原始 JSON，不解释语义）
+    "Effect.1",
+    "LinearTimeWarp.1",
+    "FreezeFrame.1",
 ];
 pub const TIMELINE_SCHEMA: &str = "Timeline.1";
 pub const STACK_SCHEMA: &str = "Stack.1";

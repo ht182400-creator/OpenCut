@@ -91,11 +91,53 @@ def make_transitions(otio, path):
         handle.write(otio.adapters.write_to_string(timeline, "otio_json"))
 
 
+def make_effects(otio, path):
+    """生成含 Clip effects 与嵌套 Stack 的官方文件（W-10 第五批）。"""
+    rational = otio.opentime.RationalTime
+    time_range = otio.opentime.TimeRange
+    timeline = otio.schema.Timeline(name="third-party-effects")
+    track = otio.schema.Track(name="V1", kind=otio.schema.TrackKind.Video)
+    timeline.tracks.append(track)
+    for name, start, duration, url in SOURCE_CLIPS:
+        clip = otio.schema.Clip(
+            name=name,
+            source_range=time_range(rational(start, 30), rational(duration, 30)),
+        )
+        reference = otio.schema.ExternalReference(target_url=url)
+        clip.set_media_references({"DEFAULT_MEDIA": reference}, "DEFAULT_MEDIA")
+        track.append(clip)
+    # 第一个片段挂一个官方变速效果
+    track[0].effects.append(otio.schema.LinearTimeWarp(name="speed", time_scalar=2.0))
+    # Stack children 里放一个嵌套 Stack（内部一条轨道）
+    nested = otio.schema.Stack(name="nested")
+    inner = otio.schema.Track(name="inner-V", kind=otio.schema.TrackKind.Video)
+    inner.append(
+        otio.schema.Clip(
+            name="inner-clip",
+            source_range=time_range(rational(0, 30), rational(15, 30)),
+        )
+    )
+    nested.append(inner)
+    timeline.tracks.append(nested)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(otio.adapters.write_to_string(timeline, "otio_json"))
+
+
 def summary(otio, path):
     """用官方 adapter 读回并输出剪辑决策摘要。"""
     timeline = otio.adapters.read_from_file(path, "otio_json")
     clips = []
+    nested = []
     for track in timeline.tracks:
+        # W-10 第五批：嵌套 Stack 只记录结构，不展开其内部片段
+        if isinstance(track, otio.schema.Stack):
+            nested.append(
+                {
+                    "name": track.name,
+                    "children": [child.name for child in track],
+                }
+            )
+            continue
         for item in track:
             if isinstance(item, otio.schema.Transition):
                 clips.append(
@@ -117,6 +159,10 @@ def summary(otio, path):
             media = getattr(item, "media_reference", None)
             if media is not None:
                 entry["url"] = getattr(media, "target_url", None)
+            entry["effects"] = [
+                {"name": effect.name, "schema": effect.schema_name()}
+                for effect in item.effects
+            ]
             clips.append(entry)
     markers = [
         {"name": marker.name, "duration": marker.marked_range.duration.value}
@@ -127,6 +173,7 @@ def summary(otio, path):
         "track_count": len(timeline.tracks),
         "clips": clips,
         "markers": markers,
+        "nested": nested,
     }
 
 
@@ -152,6 +199,9 @@ def main():
         print(json.dumps({"written": sys.argv[2], **summary(otio, sys.argv[2])}))
     elif command == "make2":
         make_transitions(otio, sys.argv[2])
+        print(json.dumps({"written": sys.argv[2], **summary(otio, sys.argv[2])}))
+    elif command == "make3":
+        make_effects(otio, sys.argv[2])
         print(json.dumps({"written": sys.argv[2], **summary(otio, sys.argv[2])}))
     elif command == "validate":
         print(json.dumps(summary(otio, sys.argv[2])))

@@ -30,6 +30,7 @@ fn new_clip(name: &str, duration_ticks: i64, source_start_ticks: i64, is_gap: bo
         in_offset_ticks: 0,
         out_offset_ticks: 0,
         transition_type: None,
+        effects: vec![],
     }
 }
 
@@ -46,6 +47,7 @@ fn timeline(clips: Vec<EditClip>, rate: f64) -> EditTimeline {
             clips,
         }],
         markers: vec![],
+        nested_stacks: vec![],
         warnings: vec![],
     }
 }
@@ -155,10 +157,12 @@ fn export_rejects_invalid_timelines() {
 #[test]
 fn schema_version_and_type_whitelist() {
     assert!(is_supported_otio_schema("Timeline.1"));
-    // W-10 第四批起 Transition 进入白名单；Effect / nested Stack 仍未支持
+    // W-10 第四、五批：Transition / Marker / Effect 系列进入白名单；未知类型仍拒绝
     assert!(is_supported_otio_schema("Transition.1"));
-    assert!(!is_supported_otio_schema("Effect.1"));
-    assert!(!is_supported_otio_schema("LinearTimeWarp.1"));
+    assert!(is_supported_otio_schema("Marker.2"));
+    assert!(is_supported_otio_schema("Effect.1"));
+    assert!(is_supported_otio_schema("LinearTimeWarp.1"));
+    assert!(!is_supported_otio_schema("FakeType.1"));
     let root = json!({ "metadata": { "opencut": { "schemaVersion": 1 } } });
     assert_eq!(read_schema_version(&root).unwrap(), (1, true));
     assert_eq!(read_schema_version(&json!({})).unwrap(), (1, false));
@@ -291,5 +295,53 @@ fn official_otio_018_fixture_roundtrip_preserves_decisions() {
     assert_eq!(
         decision_key(&imported),
         decision_key(&import_otio(&exported).unwrap())
+    );
+}
+
+/** W-10 第五批：官方 effects + 嵌套 Stack 文件，导入→导出→再导入决策不丢。 */
+#[test]
+fn official_effects_and_nested_stack_roundtrip() {
+    let official = include_str!("fixtures/third_party_otio_effects.json");
+    let imported = import_otio(official).unwrap();
+    assert_eq!(imported.name, "third-party-effects");
+    assert_eq!(imported.tracks.len(), 1);
+    assert_eq!(imported.tracks[0].clips[0].effects.len(), 1);
+    assert_eq!(imported.nested_stacks.len(), 1);
+    assert_eq!(imported.nested_stacks[0].index, 1);
+    let exported = export_otio(&imported).unwrap();
+    let root: serde_json::Value = serde_json::from_str(&exported).unwrap();
+    assert_eq!(
+        root["tracks"]["children"][1]["OTIO_SCHEMA"].as_str(),
+        Some("Stack.1")
+    );
+    assert_eq!(
+        root["tracks"]["children"][0]["children"][0]["effects"][0]["OTIO_SCHEMA"].as_str(),
+        Some("LinearTimeWarp.1")
+    );
+    assert_eq!(
+        decision_key(&imported),
+        decision_key(&import_otio(&exported).unwrap())
+    );
+}
+
+/** W-10 第五批：白名单外的 effect 明确拒绝，避免静默丢弃。 */
+#[test]
+fn unsupported_effect_schema_is_rejected() {
+    let text = serde_json::to_string(&json!({
+        "OTIO_SCHEMA": "Timeline.1", "name": "bad-effect",
+        "tracks": {"OTIO_SCHEMA": "Stack.1", "children": [
+            {"OTIO_SCHEMA": "Track.1", "name": "V1", "kind": "Video", "children": [
+                {"OTIO_SCHEMA": "Clip.1", "name": "c",
+                 "source_range": {"OTIO_SCHEMA": "TimeRange.1",
+                   "start_time": {"OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 30},
+                   "duration": {"OTIO_SCHEMA": "RationalTime.1", "value": 30, "rate": 30}},
+                 "effects": [{"OTIO_SCHEMA": "FakeEffect.1", "name": "fake"}]}
+            ]}
+        ]}
+    }))
+    .unwrap();
+    assert_eq!(
+        import_otio(&text).unwrap_err().code(),
+        "UNSUPPORTED_OTIO_SCHEMA"
     );
 }

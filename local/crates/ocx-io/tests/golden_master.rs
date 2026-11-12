@@ -126,6 +126,28 @@ fn golden_cases_match() {
                 }
             }
 
+            // W-10 第五批：effects 与嵌套 Stack 逐项比对
+            if let Some(count) = expected["effectsCount"].as_u64() {
+                assert_eq!(
+                    timeline.tracks[0].clips[0].effects.len(),
+                    count as usize,
+                    "{id} effectsCount"
+                );
+            }
+            if let Some(count) = expected["nestedStackCount"].as_u64() {
+                assert_eq!(
+                    timeline.nested_stacks.len(),
+                    count as usize,
+                    "{id} nestedStackCount"
+                );
+            }
+            if let Some(index) = expected["nestedIndex"].as_u64() {
+                assert_eq!(
+                    timeline.nested_stacks[0].index, index as usize,
+                    "{id} nestedIndex"
+                );
+            }
+
             // W-10 第四批：Timeline 级标记逐项比对
             if let Some(marker_expected) = expected.get("markers") {
                 let list = marker_expected.as_array().expect("markers 应为数组");

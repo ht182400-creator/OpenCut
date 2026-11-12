@@ -60,3 +60,5 @@
 **追加（W-05 第五批）**：`write_classic_project` 的按 id 合并与未知字段保留逻辑为本地新写实现，仅依据 `HOTSPOTS.md` 记录的经典版 v31 项目 JSON 结构（additive-only 约定），未拷贝经典版的存储 / migrations 代码，也未引入新依赖；写回产物仍是经典版自有格式。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-10 第四批）**：`ocx-io` 的 Transition / Marker 导入导出与 `third_party_roundtrip.py make2` 为本地新写实现，仅按 OpenTimelineIO 公开 JSON schema 构造数据；`opentimelineio 0.18.1` 仅作为可选验证依赖临时安装（未提交、未加入项目依赖），其代码未拷贝进本仓库；静态 fixture 由该工具生成，只含程序指定的示例剪辑数据。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-10 第五批）**：`EditClip.effects` / `EditTimeline.nestedStacks` 的原始节点保真与 `merge_nested_children` 位置还原、`third_party_roundtrip.py make3` 均为本地新写实现，仅按 OpenTimelineIO 公开 JSON schema 保留数据，未拷贝其 effects/Composition 实现代码；`opentimelineio 0.18.1` 仍只是临时可选验证依赖（未提交、未加入项目依赖），静态 fixture 由该工具生成且只含程序指定的示例剪辑数据。经典版 MIT © 2025-2026 声明仍由上文保留。

@@ -513,6 +513,25 @@ try {
   check("转场与标记往返不丢", () =>
     assert.deepEqual(transitionsBack.timeline.markers, transitions.timeline.markers));
 
+  // W-10 第五批：官方工具生成的 Effect + 嵌套 Stack 文件
+  const effectsText = readFileSync(
+    path.resolve(HERE, "../../../../local/crates/ocx-io/tests/fixtures/third_party_otio_effects.json"),
+    "utf8",
+  );
+  const effects = JSON.parse(otio_import(effectsText));
+  check("官方 Effect/嵌套 Stack 文件可导入", () => assert.equal(effects.ok, true));
+  check("官方 effect 原始节点被保留", () =>
+    assert.equal(effects.timeline.tracks[0].clips[0].effects.length, 1));
+  check("官方嵌套 Stack 被保留并记录位置", () => {
+    assert.equal(effects.timeline.nestedStacks.length, 1);
+    assert.equal(effects.timeline.nestedStacks[0].index, 1);
+  });
+  const effectsOut = JSON.parse(otio_export(JSON.stringify(effects.timeline)));
+  check("官方 Effect/嵌套 Stack 可回写", () => assert.equal(effectsOut.ok, true));
+  const effectsBack = JSON.parse(otio_import(effectsOut.otio));
+  check("Effect 与嵌套 Stack 往返不丢", () =>
+    assert.deepEqual(effectsBack.timeline.nestedStacks, effects.timeline.nestedStacks));
+
   check("未知 kind 被明确拒绝", () => {
     assert.throws(() => domain_eval(JSON.stringify({ kind: "nope" })), /不支持的 kind/);
   });

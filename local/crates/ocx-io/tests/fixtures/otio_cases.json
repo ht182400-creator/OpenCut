@@ -222,13 +222,13 @@
     },
     {
       "id": "T10",
-      "name": "不支持的 OTIO 类型（Effect）",
+      "name": "不支持的 OTIO 类型（未知类型）",
       "input": {
         "OTIO_SCHEMA": "Timeline.1", "name": "transition",
         "metadata": { "opencut": { "schemaVersion": 1 } },
         "tracks": { "OTIO_SCHEMA": "Stack.1", "children": [
           { "OTIO_SCHEMA": "Track.1", "name": "V1", "kind": "Video", "children": [
-            { "OTIO_SCHEMA": "Effect.1", "name": "warp" } ] } ] }
+            { "OTIO_SCHEMA": "FakeType.1", "name": "fake" } ] } ] }
       },
       "expected": { "ok": false, "error": "UNSUPPORTED_OTIO_SCHEMA" }
     },
@@ -341,6 +341,58 @@
         "trackCount": 1, "clipCount": 1, "warnings": 0,
         "markers": [ { "name": "chapter-1", "color": "GREEN", "startTicks": 0, "durationTicks": 240000 } ],
         "firstClip": { "name": "intro", "startTicks": 0, "durationTicks": 360000, "sourceStartTicks": 0, "isGap": false, "mediaUrl": "" }
+      }
+    },
+    {
+      "id": "T18",
+      "name": "Clip effects 保留与往返",
+      "input": {
+        "OTIO_SCHEMA": "Timeline.1", "name": "with-effects",
+        "metadata": { "opencut": { "schemaVersion": 1 } },
+        "tracks": { "OTIO_SCHEMA": "Stack.1", "children": [
+          { "OTIO_SCHEMA": "Track.1", "name": "V1", "kind": "Video", "children": [
+            { "OTIO_SCHEMA": "Clip.1", "name": "c1",
+              "source_range": { "OTIO_SCHEMA": "TimeRange.1",
+                "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 30 },
+                "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 30, "rate": 30 } },
+              "effects": [
+                { "OTIO_SCHEMA": "LinearTimeWarp.1", "name": "speed", "effect_name": "LinearTimeWarp", "enabled": true, "time_scalar": 2.0 }
+              ] }
+          ] } ] }
+      },
+      "expected": {
+        "ok": true, "name": "with-effects", "schemaVersion": 1, "rate": 30,
+        "trackCount": 1, "clipCount": 1, "warnings": 0, "effectsCount": 1,
+        "firstClip": { "name": "c1", "startTicks": 0, "durationTicks": 120000, "sourceStartTicks": 0, "isGap": false, "mediaUrl": "" }
+      }
+    },
+    {
+      "id": "T19",
+      "name": "嵌套 Stack 保留原始节点与位置",
+      "input": {
+        "OTIO_SCHEMA": "Timeline.1", "name": "with-nested",
+        "metadata": { "opencut": { "schemaVersion": 1 } },
+        "tracks": { "OTIO_SCHEMA": "Stack.1", "children": [
+          { "OTIO_SCHEMA": "Track.1", "name": "V1", "kind": "Video", "children": [
+            { "OTIO_SCHEMA": "Clip.1", "name": "c1",
+              "source_range": { "OTIO_SCHEMA": "TimeRange.1",
+                "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 30 },
+                "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 30, "rate": 30 } } }
+          ] },
+          { "OTIO_SCHEMA": "Stack.1", "name": "nested", "children": [
+            { "OTIO_SCHEMA": "Track.1", "name": "inner", "kind": "Video", "children": [
+              { "OTIO_SCHEMA": "Clip.1", "name": "inner-clip",
+                "source_range": { "OTIO_SCHEMA": "TimeRange.1",
+                  "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 30 },
+                  "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 15, "rate": 30 } } }
+            ] }
+          ] }
+        ] }
+      },
+      "expected": {
+        "ok": true, "name": "with-nested", "schemaVersion": 1, "rate": 30,
+        "trackCount": 1, "clipCount": 1, "warnings": 1, "nestedStackCount": 1, "nestedIndex": 1,
+        "firstClip": { "name": "c1", "startTicks": 0, "durationTicks": 120000, "sourceStartTicks": 0, "isGap": false, "mediaUrl": "" }
       }
     }
   ]
