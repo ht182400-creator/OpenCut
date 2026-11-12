@@ -494,6 +494,25 @@ try {
   check("官方文件 Gap 被识别", () =>
     assert.equal(official.timeline.tracks[0].clips[2].isGap, true));
 
+  // W-10 第四批：官方工具生成的 Transition + Marker 文件
+  const transitionsText = readFileSync(
+    path.resolve(HERE, "../../../../local/crates/ocx-io/tests/fixtures/third_party_otio_transitions.json"),
+    "utf8",
+  );
+  const transitions = JSON.parse(otio_import(transitionsText));
+  check("官方 Transition/Marker 文件可导入", () => assert.equal(transitions.ok, true));
+  check("官方转场被识别", () =>
+    assert.equal(transitions.timeline.tracks[0].clips[1].isTransition, true));
+  check("官方转场偏移换算", () =>
+    assert.equal(transitions.timeline.tracks[0].clips[1].inOffsetTicks, 48000));
+  check("官方 Marker 被导入", () =>
+    assert.equal(transitions.timeline.markers.length, 1));
+  const transitionsOut = JSON.parse(otio_export(JSON.stringify(transitions.timeline)));
+  check("官方转场/标记可回写", () => assert.equal(transitionsOut.ok, true));
+  const transitionsBack = JSON.parse(otio_import(transitionsOut.otio));
+  check("转场与标记往返不丢", () =>
+    assert.deepEqual(transitionsBack.timeline.markers, transitions.timeline.markers));
+
   check("未知 kind 被明确拒绝", () => {
     assert.throws(() => domain_eval(JSON.stringify({ kind: "nope" })), /不支持的 kind/);
   });

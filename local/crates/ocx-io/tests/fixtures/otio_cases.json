@@ -222,13 +222,13 @@
     },
     {
       "id": "T10",
-      "name": "不支持的 OTIO 类型（Transition）",
+      "name": "不支持的 OTIO 类型（Effect）",
       "input": {
         "OTIO_SCHEMA": "Timeline.1", "name": "transition",
         "metadata": { "opencut": { "schemaVersion": 1 } },
         "tracks": { "OTIO_SCHEMA": "Stack.1", "children": [
           { "OTIO_SCHEMA": "Track.1", "name": "V1", "kind": "Video", "children": [
-            { "OTIO_SCHEMA": "Transition.1", "name": "dissolve" } ] } ] }
+            { "OTIO_SCHEMA": "Effect.1", "name": "warp" } ] } ] }
       },
       "expected": { "ok": false, "error": "UNSUPPORTED_OTIO_SCHEMA" }
     },
@@ -286,6 +286,61 @@
         "ok": true, "name": "no-kind", "schemaVersion": 1, "rate": 30,
         "trackCount": 1, "clipCount": 1, "warnings": 1,
         "firstClip": { "name": "c", "startTicks": 0, "durationTicks": 120000, "sourceStartTicks": 0, "isGap": false, "mediaUrl": "" }
+      }
+    },
+    {
+      "id": "T16",
+      "name": "Transition 正向导入与往返",
+      "input": {
+        "OTIO_SCHEMA": "Timeline.1", "name": "with-transition",
+        "metadata": { "opencut": { "schemaVersion": 1 } },
+        "tracks": { "OTIO_SCHEMA": "Stack.1", "children": [
+          { "OTIO_SCHEMA": "Track.1", "name": "V1", "kind": "Video", "children": [
+            { "OTIO_SCHEMA": "Clip.1", "name": "intro",
+              "source_range": { "OTIO_SCHEMA": "TimeRange.1",
+                "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 30 },
+                "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 30, "rate": 30 } } },
+            { "OTIO_SCHEMA": "Transition.1", "name": "dissolve", "transition_type": "CrossDissolve",
+              "in_offset": { "OTIO_SCHEMA": "RationalTime.1", "value": 12, "rate": 30 },
+              "out_offset": { "OTIO_SCHEMA": "RationalTime.1", "value": 18, "rate": 30 } },
+            { "OTIO_SCHEMA": "Clip.1", "name": "body",
+              "source_range": { "OTIO_SCHEMA": "TimeRange.1",
+                "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 30, "rate": 30 },
+                "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 30, "rate": 30 } } }
+          ] } ] }
+      },
+      "expected": {
+        "ok": true, "name": "with-transition", "schemaVersion": 1, "rate": 30,
+        "trackCount": 1, "clipCount": 3, "warnings": 0,
+        "firstClip": { "name": "intro", "startTicks": 0, "durationTicks": 120000, "sourceStartTicks": 0, "isGap": false, "mediaUrl": "", "isTransition": false },
+        "secondClip": { "name": "dissolve", "startTicks": 120000, "durationTicks": 120000, "sourceStartTicks": 0, "isGap": false, "mediaUrl": "", "isTransition": true, "inOffsetTicks": 48000, "outOffsetTicks": 72000, "transitionType": "CrossDissolve" }
+      }
+    },
+    {
+      "id": "T17",
+      "name": "Timeline 级 Marker 导入与往返",
+      "input": {
+        "OTIO_SCHEMA": "Timeline.1", "name": "with-markers",
+        "markers": [
+          { "OTIO_SCHEMA": "Marker.1", "name": "chapter-1", "color": "GREEN",
+            "marked_range": { "OTIO_SCHEMA": "TimeRange.1",
+              "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 30 },
+              "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 60, "rate": 30 } } }
+        ],
+        "metadata": { "opencut": { "schemaVersion": 1 } },
+        "tracks": { "OTIO_SCHEMA": "Stack.1", "children": [
+          { "OTIO_SCHEMA": "Track.1", "name": "V1", "kind": "Video", "children": [
+            { "OTIO_SCHEMA": "Clip.1", "name": "intro",
+              "source_range": { "OTIO_SCHEMA": "TimeRange.1",
+                "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 30 },
+                "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 90, "rate": 30 } } }
+          ] } ] }
+      },
+      "expected": {
+        "ok": true, "name": "with-markers", "schemaVersion": 1, "rate": 30,
+        "trackCount": 1, "clipCount": 1, "warnings": 0,
+        "markers": [ { "name": "chapter-1", "color": "GREEN", "startTicks": 0, "durationTicks": 240000 } ],
+        "firstClip": { "name": "intro", "startTicks": 0, "durationTicks": 360000, "sourceStartTicks": 0, "isGap": false, "mediaUrl": "" }
       }
     }
   ]

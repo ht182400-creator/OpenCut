@@ -25,12 +25,22 @@ Rust golden master 逐字段比对导入结果，并对**每个成功用例**额
 | T07 | 显式 `schemaVersion=1` + 未知 metadata 字段 | 无 warning；未知字段忽略但不写回 |
 | T08 | `schemaVersion=2` | `UNSUPPORTED_IO_VERSION`（additive-only：不猜读未来格式） |
 | T09 | 顶层为 `Stack.1` | `MISSING_TIMELINE` |
-| T10 | 片段为 `Transition.1` | `UNSUPPORTED_OTIO_SCHEMA` |
+| T10 | 片段为 `Effect.1`（仍未支持的类型） | `UNSUPPORTED_OTIO_SCHEMA` |
 | T11 | 缺 `tracks` | `MISSING_TRACKS` |
 | T12 | `rate=0` | `INVALID_TIME_RANGE` |
 | T13 | 非法 JSON 文本 | `INVALID_JSON` |
 | T14 | `tracks.children=[]` | `MISSING_TRACKS` |
 | T15 | 轨道缺 `kind` | 补默认 `Video` 并记 1 条 warning |
+| T16 | 官方 `Transition.1`（in 12 帧 / out 18 帧 @30）夹在两个片段之间 | 导入 3 个条目，转场 `isTransition=true`、in/out 偏移 48,000 / 72,000 ticks、`transitionType=CrossDissolve`，往返指纹一致 |
+| T17 | Timeline 顶层 `Marker.1`（0 + 60 帧 @30） | 导入 1 个标记（0 + 240,000 ticks、GREEN），导出写到 Stack 级 `Marker.2`，往返指纹一致 |
+
+## W-10 第四批：官方 Transition / Marker
+
+- 官方 `opentimelineio 0.18.1` 的 markers 挂在 **Stack（`tracks`）** 而非 Timeline 顶层；本实现导入兼容两处，导出固定写 Stack 位置。
+- 官方 Marker schema 为 `Marker.2`：导出必须写 `.2`，写 `.1` 会被官方的 schema 升级路径把 `marked_range` 清空（`ValueError: expected TimeRange, found None`）。
+- 官方 `Transition.1` **必带** `transition_type`（如 `CrossDissolve`），缺失时官方读回会 `KeyError`；该字段属于剪辑决策，已纳入 `decision_key`。
+- 静态 fixture `fixtures/third_party_otio_transitions.json` 由 `third_party_roundtrip.py make2` 生成；Node 脚本 `third_party_roundtrip.test.mjs` 同时覆盖静态导入与动态「官方 make2 → 我们 import/export → 官方 validate」链路。
+- Track / Clip 级 Marker 暂不解析（导入时记一条 warning）；`Effect` 与 nested `Stack` 仍明确拒绝。
 
 ## additive-only 约定
 

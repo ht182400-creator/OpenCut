@@ -145,6 +145,7 @@ describe('OTIO 双向桥接', () => {
           clips: [
             { id: 'a', name: 'a', isGap: false, startTicks: 0, durationTicks: 1000, sourceStartTicks: 0, mediaUrl: null },
             { id: 'gap', name: 'gap', isGap: true, startTicks: 1000, durationTicks: 500, sourceStartTicks: 0, mediaUrl: null },
+            { id: 'dissolve', name: 'dissolve', isGap: false, isTransition: true, startTicks: 1500, durationTicks: 1000, sourceStartTicks: 0, mediaUrl: null },
           ],
         },
         {

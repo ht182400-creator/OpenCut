@@ -26,6 +26,10 @@ fn new_clip(name: &str, duration_ticks: i64, source_start_ticks: i64, is_gap: bo
         source_value: None,
         duration_value: None,
         source_rate: None,
+        is_transition: false,
+        in_offset_ticks: 0,
+        out_offset_ticks: 0,
+        transition_type: None,
     }
 }
 
@@ -41,6 +45,7 @@ fn timeline(clips: Vec<EditClip>, rate: f64) -> EditTimeline {
             kind: "Video".to_string(),
             clips,
         }],
+        markers: vec![],
         warnings: vec![],
     }
 }
@@ -150,7 +155,10 @@ fn export_rejects_invalid_timelines() {
 #[test]
 fn schema_version_and_type_whitelist() {
     assert!(is_supported_otio_schema("Timeline.1"));
-    assert!(!is_supported_otio_schema("Transition.1"));
+    // W-10 第四批起 Transition 进入白名单；Effect / nested Stack 仍未支持
+    assert!(is_supported_otio_schema("Transition.1"));
+    assert!(!is_supported_otio_schema("Effect.1"));
+    assert!(!is_supported_otio_schema("LinearTimeWarp.1"));
     let root = json!({ "metadata": { "opencut": { "schemaVersion": 1 } } });
     assert_eq!(read_schema_version(&root).unwrap(), (1, true));
     assert_eq!(read_schema_version(&json!({})).unwrap(), (1, false));

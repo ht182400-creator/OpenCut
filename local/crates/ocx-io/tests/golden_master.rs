@@ -42,6 +42,32 @@ fn assert_clip(id: &str, label: &str, actual: &ocx_io::EditClip, expected: &Valu
         expected["mediaUrl"].as_str().unwrap(),
         "{id} {label} mediaUrl"
     );
+    // W-10 第四批：转场字段按需断言（普通片段用例不含这些键）
+    if let Some(is_transition) = expected["isTransition"].as_bool() {
+        assert_eq!(
+            actual.is_transition, is_transition,
+            "{id} {label} isTransition"
+        );
+    }
+    if let Some(in_offset) = expected["inOffsetTicks"].as_i64() {
+        assert_eq!(
+            actual.in_offset_ticks, in_offset,
+            "{id} {label} inOffsetTicks"
+        );
+    }
+    if let Some(out_offset) = expected["outOffsetTicks"].as_i64() {
+        assert_eq!(
+            actual.out_offset_ticks, out_offset,
+            "{id} {label} outOffsetTicks"
+        );
+    }
+    if let Some(transition_type) = expected["transitionType"].as_str() {
+        assert_eq!(
+            actual.transition_type.as_deref().unwrap_or(""),
+            transition_type,
+            "{id} {label} transitionType"
+        );
+    }
 }
 
 /// 全部用例：导入结果逐字段比对，并对每个成功用例验证导出→再导入的剪辑决策不变量。
@@ -97,6 +123,35 @@ fn golden_cases_match() {
             for (label, index) in [("firstClip", 0), ("secondClip", 1)] {
                 if let Some(clip_expected) = expected.get(label) {
                     assert_clip(id, label, &timeline.tracks[0].clips[index], clip_expected);
+                }
+            }
+
+            // W-10 第四批：Timeline 级标记逐项比对
+            if let Some(marker_expected) = expected.get("markers") {
+                let list = marker_expected.as_array().expect("markers 应为数组");
+                assert_eq!(timeline.markers.len(), list.len(), "{id} markerCount");
+                for (index, item) in list.iter().enumerate() {
+                    let marker = &timeline.markers[index];
+                    assert_eq!(
+                        marker.name,
+                        item["name"].as_str().unwrap(),
+                        "{id} marker {index} name"
+                    );
+                    assert_eq!(
+                        marker.start_ticks,
+                        item["startTicks"].as_i64().unwrap(),
+                        "{id} marker {index} startTicks"
+                    );
+                    assert_eq!(
+                        marker.duration_ticks,
+                        item["durationTicks"].as_i64().unwrap(),
+                        "{id} marker {index} durationTicks"
+                    );
+                    assert_eq!(
+                        marker.color.as_deref().unwrap_or(""),
+                        item["color"].as_str().unwrap_or(""),
+                        "{id} marker {index} color"
+                    );
                 }
             }
 

@@ -13,9 +13,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::schema::{
-    CLIP_SCHEMA, EXTERNAL_REFERENCE_SCHEMA, GAP_SCHEMA, IoError, OTIO_GENERATOR,
+    CLIP_SCHEMA, EXTERNAL_REFERENCE_SCHEMA, GAP_SCHEMA, IoError, MARKER_SCHEMA, OTIO_GENERATOR,
     RATIONAL_TIME_SCHEMA, STACK_SCHEMA, TIME_RANGE_SCHEMA, TIMELINE_SCHEMA, TRACK_SCHEMA,
-    is_supported_otio_schema, read_schema_version,
+    TRANSITION_SCHEMA, is_supported_otio_schema, read_schema_version,
 };
 
 /// 归一化后的内部时间轴（字段只增不删，additive-only）。
@@ -27,7 +27,21 @@ pub struct EditTimeline {
     /// 时间轴帧率（来自第一个 RationalTime 的 rate）。
     pub rate: f64,
     pub tracks: Vec<EditTrack>,
+    /// 时间轴级标记（W-10 第四批）；Track/Clip 级标记暂不解析，导入时记 warning。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub markers: Vec<EditMarker>,
     pub warnings: Vec<String>,
+}
+
+/// 一个时间轴级标记（OTIO `Marker.1` 的归一化视图）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditMarker {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    pub start_ticks: i64,
+    pub duration_ticks: i64,
 }
 
 /// 一条轨道（Video / Audio）。
@@ -61,6 +75,17 @@ pub struct EditClip {
     pub duration_value: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_rate: Option<f64>,
+    /// W-10 第四批：OTIO `Transition.1` 归一化为转场条目（无媒体引用）。
+    #[serde(default)]
+    pub is_transition: bool,
+    /// 转场的 in_offset / out_offset（ticks）；普通片段为 0。
+    #[serde(default)]
+    pub in_offset_ticks: i64,
+    #[serde(default)]
+    pub out_offset_ticks: i64,
+    /// 转场类型（OTIO `transition_type`），属于剪辑决策；普通片段为 None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition_type: Option<String>,
 }
 
 /**
@@ -106,16 +131,29 @@ pub fn decision_key(timeline: &EditTimeline) -> String {
         key.push_str(&format!("|{}:{}:{}", track.id, track.name, track.kind));
         for clip in &track.clips {
             key.push_str(&format!(
-                "|{}:{}:{}:{}:{}:{}:{}",
+                "|{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
                 clip.id,
                 clip.name,
                 clip.is_gap,
                 clip.start_ticks,
                 clip.duration_ticks,
                 clip.source_start_ticks,
-                clip.media_url.as_deref().unwrap_or("")
+                clip.media_url.as_deref().unwrap_or(""),
+                clip.is_transition,
+                clip.in_offset_ticks,
+                clip.out_offset_ticks,
+                clip.transition_type.as_deref().unwrap_or("")
             ));
         }
+    }
+    for marker in &timeline.markers {
+        key.push_str(&format!(
+            "|m:{}:{}:{}:{}",
+            marker.name,
+            marker.color.as_deref().unwrap_or(""),
+            marker.start_ticks,
+            marker.duration_ticks
+        ));
     }
     key
 }
@@ -204,6 +242,49 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
 
     let mut tracks = Vec::new();
     let mut rate: Option<f64> = None;
+
+    // W-10 第四批：解析 Timeline 顶层与 Stack（官方 markers 挂在 Composition 上）级标记；
+    // Track/Clip 级标记记 warning
+    let mut markers = Vec::new();
+    let mut marker_values: Vec<&Value> = Vec::new();
+    if let Some(items) = root["markers"].as_array() {
+        marker_values.extend(items.iter());
+    }
+    if let Some(items) = stack["markers"].as_array() {
+        marker_values.extend(items.iter());
+    }
+    for marker_value in marker_values {
+        let marker_schema = marker_value["OTIO_SCHEMA"].as_str().unwrap_or("");
+        if !marker_schema.is_empty() && !is_supported_otio_schema(marker_schema) {
+            return Err(IoError::UnsupportedOtioSchema);
+        }
+        let (start_value, marker_rate) =
+            read_rational(&marker_value["marked_range"]["start_time"])?;
+        let (duration_value, _) = read_rational(&marker_value["marked_range"]["duration"])?;
+        markers.push(EditMarker {
+            name: marker_value["name"].as_str().unwrap_or("").to_string(),
+            color: marker_value["color"].as_str().map(str::to_string),
+            start_ticks: rational_to_ticks(start_value, marker_rate)?,
+            duration_ticks: rational_to_ticks(duration_value, marker_rate)?,
+        });
+    }
+    let has_nested_markers = track_values.iter().any(|track| {
+        track["markers"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    }) || track_values.iter().any(|track| {
+        track["children"].as_array().is_some_and(|items| {
+            items.iter().any(|item| {
+                item["markers"]
+                    .as_array()
+                    .is_some_and(|inner| !inner.is_empty())
+            })
+        })
+    });
+    if has_nested_markers {
+        warnings.push("Track/Clip 级 Marker 暂不解析，仅导入 Timeline/Stack 级".to_string());
+    }
+
     for (track_index, track_value) in track_values.iter().enumerate() {
         let track_schema = track_value["OTIO_SCHEMA"].as_str().unwrap_or("");
         if !track_schema.starts_with("Track") || !is_supported_otio_schema(track_schema) {
@@ -231,17 +312,32 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
                 return Err(IoError::UnsupportedOtioSchema);
             }
             let is_gap = clip_schema.starts_with("Gap");
-            let source_range = &clip_value["source_range"];
-            let (source_value, source_rate) = read_rational(&source_range["start_time"])?;
-            let (duration_value, duration_rate) = read_rational(&source_range["duration"])?;
-            if rate.is_none() {
-                rate = Some(source_rate);
-            }
-            if (source_rate - duration_rate).abs() > 1e-9 {
-                warnings.push(format!(
-                    "轨道 {track_id} 第 {clip_index} 段 start/duration rate 不一致，按 start_time 处理"
-                ));
-            }
+            let is_transition = clip_schema.starts_with("Transition");
+            let (source_value, source_rate, duration_value, in_offset_ticks, out_offset_ticks) =
+                if is_transition {
+                    // OTIO Transition 没有 source_range，时长 = in_offset + out_offset
+                    let (in_value, in_rate) = read_rational(&clip_value["in_offset"])?;
+                    let (out_value, out_rate) = read_rational(&clip_value["out_offset"])?;
+                    if rate.is_none() {
+                        rate = Some(in_rate);
+                    }
+                    let in_ticks = rational_to_ticks(in_value, in_rate)?;
+                    let out_ticks = rational_to_ticks(out_value, out_rate)?;
+                    (0, in_rate, in_value + out_value, in_ticks, out_ticks)
+                } else {
+                    let source_range = &clip_value["source_range"];
+                    let (source_value, source_rate) = read_rational(&source_range["start_time"])?;
+                    let (duration_value, duration_rate) = read_rational(&source_range["duration"])?;
+                    if rate.is_none() {
+                        rate = Some(source_rate);
+                    }
+                    if (source_rate - duration_rate).abs() > 1e-9 {
+                        warnings.push(format!(
+                            "轨道 {track_id} 第 {clip_index} 段 start/duration rate 不一致，按 start_time 处理"
+                        ));
+                    }
+                    (source_value, source_rate, duration_value, 0, 0)
+                };
             let source_start_ticks = rational_to_ticks(source_value, source_rate)?;
             let duration_ticks = rational_to_ticks(duration_value, source_rate)?;
             let clip_name = clip_value["name"].as_str().unwrap_or("").to_string();
@@ -261,6 +357,10 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
                 source_value: Some(source_value),
                 duration_value: Some(duration_value),
                 source_rate: Some(source_rate),
+                is_transition,
+                in_offset_ticks,
+                out_offset_ticks,
+                transition_type: clip_value["transition_type"].as_str().map(str::to_string),
             });
             cursor = cursor.saturating_add(duration_ticks);
         }
@@ -279,6 +379,7 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
         schema_version,
         rate: rate.unwrap_or(30.0),
         tracks,
+        markers,
         warnings,
     })
 }
@@ -296,42 +397,65 @@ pub fn export_otio(timeline: &EditTimeline) -> Result<String, IoError> {
     for track in &timeline.tracks {
         let mut clip_nodes = Vec::with_capacity(track.clips.len());
         for clip in &track.clips {
-            let (source_value, duration_value, rate) =
-                match (clip.source_value, clip.duration_value, clip.source_rate) {
-                    (Some(source), Some(duration), Some(original_rate)) => {
-                        (source, duration, original_rate)
-                    }
-                    _ => (
-                        ticks_to_rational_value(clip.source_start_ticks, timeline.rate)?,
-                        ticks_to_rational_value(clip.duration_ticks, timeline.rate)?,
-                        timeline.rate,
-                    ),
-                };
-            let mut node = json!({
-                "OTIO_SCHEMA": if clip.is_gap { GAP_SCHEMA } else { CLIP_SCHEMA },
-                "name": clip.name,
-                "source_range": {
-                    "OTIO_SCHEMA": TIME_RANGE_SCHEMA,
-                    "start_time": {
+            let node = if clip.is_transition {
+                // Transition 没有 source_range，时长 = in_offset + out_offset
+                let in_value = ticks_to_rational_value(clip.in_offset_ticks, timeline.rate)?;
+                let out_value = ticks_to_rational_value(clip.out_offset_ticks, timeline.rate)?;
+                json!({
+                    "OTIO_SCHEMA": TRANSITION_SCHEMA,
+                    "name": clip.name,
+                    // 官方 OTIO 要求 Transition 必带 transition_type
+                    "transition_type": clip.transition_type.as_deref().unwrap_or("CrossDissolve"),
+                    "in_offset": {
                         "OTIO_SCHEMA": RATIONAL_TIME_SCHEMA,
-                        "value": source_value,
-                        "rate": rate
+                        "value": in_value,
+                        "rate": timeline.rate
                     },
-                    "duration": {
+                    "out_offset": {
                         "OTIO_SCHEMA": RATIONAL_TIME_SCHEMA,
-                        "value": duration_value,
-                        "rate": rate
+                        "value": out_value,
+                        "rate": timeline.rate
                     }
-                }
-            });
-            if !clip.is_gap
-                && let Some(url) = &clip.media_url
-            {
-                node["media_reference"] = json!({
-                    "OTIO_SCHEMA": EXTERNAL_REFERENCE_SCHEMA,
-                    "target_url": url
+                })
+            } else {
+                let (source_value, duration_value, rate) =
+                    match (clip.source_value, clip.duration_value, clip.source_rate) {
+                        (Some(source), Some(duration), Some(original_rate)) => {
+                            (source, duration, original_rate)
+                        }
+                        _ => (
+                            ticks_to_rational_value(clip.source_start_ticks, timeline.rate)?,
+                            ticks_to_rational_value(clip.duration_ticks, timeline.rate)?,
+                            timeline.rate,
+                        ),
+                    };
+                let mut node = json!({
+                    "OTIO_SCHEMA": if clip.is_gap { GAP_SCHEMA } else { CLIP_SCHEMA },
+                    "name": clip.name,
+                    "source_range": {
+                        "OTIO_SCHEMA": TIME_RANGE_SCHEMA,
+                        "start_time": {
+                            "OTIO_SCHEMA": RATIONAL_TIME_SCHEMA,
+                            "value": source_value,
+                            "rate": rate
+                        },
+                        "duration": {
+                            "OTIO_SCHEMA": RATIONAL_TIME_SCHEMA,
+                            "value": duration_value,
+                            "rate": rate
+                        }
+                    }
                 });
-            }
+                if !clip.is_gap
+                    && let Some(url) = &clip.media_url
+                {
+                    node["media_reference"] = json!({
+                        "OTIO_SCHEMA": EXTERNAL_REFERENCE_SCHEMA,
+                        "target_url": url
+                    });
+                }
+                node
+            };
             clip_nodes.push(node);
         }
         track_nodes.push(json!({
@@ -339,6 +463,29 @@ pub fn export_otio(timeline: &EditTimeline) -> Result<String, IoError> {
             "name": track.name,
             "kind": track.kind,
             "children": clip_nodes
+        }));
+    }
+    let mut marker_nodes = Vec::with_capacity(timeline.markers.len());
+    for marker in &timeline.markers {
+        let start_value = ticks_to_rational_value(marker.start_ticks, timeline.rate)?;
+        let duration_value = ticks_to_rational_value(marker.duration_ticks, timeline.rate)?;
+        marker_nodes.push(json!({
+            "OTIO_SCHEMA": MARKER_SCHEMA,
+            "name": marker.name,
+            "color": marker.color,
+            "marked_range": {
+                "OTIO_SCHEMA": TIME_RANGE_SCHEMA,
+                "start_time": {
+                    "OTIO_SCHEMA": RATIONAL_TIME_SCHEMA,
+                    "value": start_value,
+                    "rate": timeline.rate
+                },
+                "duration": {
+                    "OTIO_SCHEMA": RATIONAL_TIME_SCHEMA,
+                    "value": duration_value,
+                    "rate": timeline.rate
+                }
+            }
         }));
     }
     let root = json!({
@@ -353,6 +500,8 @@ pub fn export_otio(timeline: &EditTimeline) -> Result<String, IoError> {
         "tracks": {
             "OTIO_SCHEMA": STACK_SCHEMA,
             "name": "tracks",
+            // 官方 OTIO 的 markers 挂在 Composition（Stack）上，不是 Timeline 顶层
+            "markers": marker_nodes,
             "children": track_nodes
         }
     });

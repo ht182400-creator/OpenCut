@@ -80,6 +80,22 @@ async function main() {
     assert.deepEqual(reimported.timeline.tracks, imported.timeline.tracks),
   );
 
+  // 1b. 官方工具生成的 Transition + Marker 文件（静态，不需要 Python）
+  const transitionsFixture = readFileSync(
+    path.join(HERE, "fixtures/third_party_otio_transitions.json"),
+    "utf8",
+  );
+  const transitions = JSON.parse(otio_import(transitionsFixture));
+  check("官方转场文件导入成功", () => assert.equal(transitions.ok, true));
+  check("官方转场条目被识别", () =>
+    assert.equal(transitions.timeline.tracks[0].clips[1].isTransition, true));
+  check("官方标记被导入", () => assert.equal(transitions.timeline.markers.length, 1));
+  const transitionsExported = JSON.parse(otio_export(JSON.stringify(transitions.timeline)));
+  check("官方转场文件可回写", () => assert.equal(transitionsExported.ok, true));
+  const transitionsReimported = JSON.parse(otio_import(transitionsExported.otio));
+  check("转场与标记往返一致", () =>
+    assert.deepEqual(transitionsReimported.timeline.markers, transitions.timeline.markers));
+
   // 2. 动态：官方工具生成 → 我们读写 → 官方工具再校验
   const probe = spawnSync("python", [PYTHON_SCRIPT, "probe"], {
     encoding: "utf8",
@@ -123,6 +139,22 @@ async function main() {
       check("剪辑决策逐项一致", () =>
         assert.deepEqual(after.clips, before.clips),
       );
+
+      // W-10 第四批：官方生成含 Transition + Marker 的文件，再走同一往返链路
+      const source2 = path.join(directory, "source2.otio");
+      const roundtrip2 = path.join(directory, "roundtrip2.otio");
+      runPython("make2", source2);
+      const fromOfficial2 = JSON.parse(otio_import(readFileSync(source2, "utf8")));
+      check("官方 make2 生成文件可导入", () => assert.equal(fromOfficial2.ok, true));
+      const reexport2 = JSON.parse(otio_export(JSON.stringify(fromOfficial2.timeline)));
+      writeFileSync(roundtrip2, reexport2.otio);
+      const before2 = runPython("validate", source2);
+      const after2 = runPython("validate", roundtrip2);
+      check("官方工具能读回转场/标记导出文件", () =>
+        assert.equal(after2.name, before2.name));
+      check("转场与剪辑决策逐项一致", () =>
+        assert.deepEqual(after2.clips, before2.clips));
+      check("标记逐项一致", () => assert.deepEqual(after2.markers, before2.markers));
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

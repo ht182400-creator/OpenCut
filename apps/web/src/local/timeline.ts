@@ -113,6 +113,13 @@ export interface EditTimelineView {
   name: string;
   schemaVersion: number;
   rate: number;
+  /** W-10 第四批：时间轴级标记（官方挂在 Stack 上，归一化后放在这里）。 */
+  markers?: Array<{
+    name: string;
+    color: string | null;
+    startTicks: number;
+    durationTicks: number;
+  }>;
   tracks: Array<{
     id: string;
     name: string;
@@ -121,6 +128,9 @@ export interface EditTimelineView {
       id: string;
       name: string;
       isGap: boolean;
+      isTransition?: boolean;
+      inOffsetTicks?: number;
+      outOffsetTicks?: number;
       startTicks: number;
       durationTicks: number;
       sourceStartTicks: number;
@@ -177,7 +187,7 @@ export function editTimelineToClips(timeline: EditTimelineView): TimelineClip[] 
   const video = timeline.tracks.find((track) => track.kind === 'Video') ?? timeline.tracks[0];
   if (!video) return [];
   return video.clips
-    .filter((clip) => !clip.isGap)
+    .filter((clip) => !clip.isGap && !clip.isTransition)
     .map((clip) => ({
       id: clip.id,
       startTime: clip.startTicks,

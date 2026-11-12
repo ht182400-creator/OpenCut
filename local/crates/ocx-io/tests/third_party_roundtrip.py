@@ -56,12 +56,57 @@ def make(otio, path):
         handle.write(otio.adapters.write_to_string(timeline, "otio_json"))
 
 
+def make_transitions(otio, path):
+    """生成含 Transition 与 Timeline 级 Marker 的官方文件（W-10 第四批）。"""
+    rational = otio.opentime.RationalTime
+    time_range = otio.opentime.TimeRange
+    timeline = otio.schema.Timeline(name="third-party-transitions")
+    track = otio.schema.Track(name="V1", kind=otio.schema.TrackKind.Video)
+    timeline.tracks.append(track)
+    for name, start, duration, url in SOURCE_CLIPS:
+        clip = otio.schema.Clip(
+            name=name,
+            source_range=time_range(rational(start, 30), rational(duration, 30)),
+        )
+        reference = otio.schema.ExternalReference(target_url=url)
+        clip.set_media_references({"DEFAULT_MEDIA": reference}, "DEFAULT_MEDIA")
+        track.append(clip)
+        if name == "intro":
+            track.append(
+                otio.schema.Transition(
+                    name="dissolve",
+                    transition_type="CrossDissolve",
+                    in_offset=rational(12, 30),
+                    out_offset=rational(18, 30),
+                )
+            )
+    timeline.tracks.markers.append(
+        otio.schema.Marker(
+            name="chapter-1",
+            color="GREEN",
+            marked_range=time_range(rational(0, 30), rational(60, 30)),
+        )
+    )
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(otio.adapters.write_to_string(timeline, "otio_json"))
+
+
 def summary(otio, path):
     """用官方 adapter 读回并输出剪辑决策摘要。"""
     timeline = otio.adapters.read_from_file(path, "otio_json")
     clips = []
     for track in timeline.tracks:
         for item in track:
+            if isinstance(item, otio.schema.Transition):
+                clips.append(
+                    {
+                        "name": item.name,
+                        "transition": True,
+                        "in_offset": item.in_offset.value,
+                        "out_offset": item.out_offset.value,
+                    }
+                )
+                continue
             source_range = item.source_range
             entry = {
                 "name": item.name,
@@ -73,7 +118,16 @@ def summary(otio, path):
             if media is not None:
                 entry["url"] = getattr(media, "target_url", None)
             clips.append(entry)
-    return {"name": timeline.name, "track_count": len(timeline.tracks), "clips": clips}
+    markers = [
+        {"name": marker.name, "duration": marker.marked_range.duration.value}
+        for marker in timeline.tracks.markers
+    ]
+    return {
+        "name": timeline.name,
+        "track_count": len(timeline.tracks),
+        "clips": clips,
+        "markers": markers,
+    }
 
 
 def main():
@@ -95,6 +149,9 @@ def main():
         return 2
     if command == "make":
         make(otio, sys.argv[2])
+        print(json.dumps({"written": sys.argv[2], **summary(otio, sys.argv[2])}))
+    elif command == "make2":
+        make_transitions(otio, sys.argv[2])
         print(json.dumps({"written": sys.argv[2], **summary(otio, sys.argv[2])}))
     elif command == "validate":
         print(json.dumps(summary(otio, sys.argv[2])))

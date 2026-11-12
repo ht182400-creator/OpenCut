@@ -24,12 +24,21 @@ pub const SUPPORTED_OTIO_SCHEMAS: &[&str] = &[
     "TimeRange.1",
     "RationalTime.1",
     "ExternalReference.1",
+    // W-10 第四批：转场与标记进入白名单（Effect / nested Stack 仍未支持）
+    "Transition.1",
+    // 官方 OpenTimelineIO 0.18 的 Marker 升级到 .2；自造子集仍用 .1
+    "Marker.1",
+    "Marker.2",
 ];
 pub const TIMELINE_SCHEMA: &str = "Timeline.1";
 pub const STACK_SCHEMA: &str = "Stack.1";
 pub const TRACK_SCHEMA: &str = "Track.1";
 pub const CLIP_SCHEMA: &str = "Clip.1";
 pub const GAP_SCHEMA: &str = "Gap.1";
+pub const TRANSITION_SCHEMA: &str = "Transition.1";
+/// 导出使用官方 0.18 的 Marker.2（写 Marker.1 会被官方升级路径清空 marked_range）；
+/// 导入白名单同时兼容自造子集的 Marker.1 与官方 Marker.2。
+pub const MARKER_SCHEMA: &str = "Marker.2";
 pub const TIME_RANGE_SCHEMA: &str = "TimeRange.1";
 pub const RATIONAL_TIME_SCHEMA: &str = "RationalTime.1";
 pub const EXTERNAL_REFERENCE_SCHEMA: &str = "ExternalReference.1";
