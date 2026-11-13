@@ -1,0 +1,15 @@
+[package]
+name = "ocx-plugin-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenCut 本地 core：插件 manifest、能力清单、越权拒绝与示例插件注册（W-12 第一批）"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+ocx-editor-api = { path = "../ocx-editor-api" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

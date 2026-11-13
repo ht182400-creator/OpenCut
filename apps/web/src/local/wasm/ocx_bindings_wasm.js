@@ -234,6 +234,43 @@ export function param_kind(value_json) {
 }
 
 /**
+ * W-12：校验一份插件 manifest 与 host 授予的能力清单。
+ * 返回 `{ok:true, registration:{...}}` 或 `{ok:false, error:"CODE", denied:[...]}`。
+ * @param {string} manifest_json
+ * @param {string} granted_json
+ * @returns {string}
+ */
+export function plugin_register(manifest_json, granted_json) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        let ptr0, len0, ptr1, len1;
+        try {
+            ptr0 = passStringToWasm0(manifest_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            len0 = WASM_VECTOR_LEN;
+            ptr1 = passStringToWasm0(granted_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            len1 = WASM_VECTOR_LEN;
+        } catch (e) {
+            if (ptr1) { wasm.__wbindgen_free(ptr1, len1 * 1, 1); }
+            if (ptr0) { wasm.__wbindgen_free(ptr0, len0 * 1, 1); }
+            throw e;
+        }
+        const ret = wasm.plugin_register(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
  * 读取经典版项目 JSON（原始文本），返回只读归一化视图或稳定错误码。
  *
  * 不修改输入、不写回；高于 v31 明确拒绝。字段缺失时补默认值并附 `warnings`。

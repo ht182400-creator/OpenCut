@@ -10,6 +10,7 @@ export const domain_eval: (a: number, b: number) => [number, number, number, num
 export const otio_export: (a: number, b: number) => [number, number, number, number];
 export const otio_import: (a: number, b: number) => [number, number, number, number];
 export const param_kind: (a: number, b: number) => [number, number, number, number];
+export const plugin_register: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const read_classic_project: (a: number, b: number) => [number, number, number, number];
 export const render_frame_rgba: (a: number, b: number) => [number, number, number, number];
 export const schema_version: () => [number, number];

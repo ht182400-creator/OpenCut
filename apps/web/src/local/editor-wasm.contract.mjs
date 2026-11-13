@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import init, {
   api_negotiate,
   api_version,
+  plugin_register,
   channel_kind,
   composite_frame_rgba,
   discover,
@@ -409,6 +410,58 @@ try {
   classicView.scenes[0].id = "not-there";
   const missingEntity = writeReq(classicView);
   check("写回未知实体被拒绝", () => assert.equal(missingEntity.error, "ENTITY_NOT_FOUND"));
+
+  // W-12：插件 manifest 校验与越权拒绝走真实 WASM 产物
+  const pluginText = readFileSync(
+    path.resolve(HERE, "../../../../local/crates/ocx-plugin-host/tests/fixtures/sample_plugin.json"),
+    "utf8",
+  );
+  const granted = JSON.stringify(["effect", "command", "snapshot"]);
+  const pluginOk = JSON.parse(plugin_register(pluginText, granted));
+  check("示例插件可注册 effect/command", () => {
+    assert.equal(pluginOk.ok, true);
+    assert.equal(pluginOk.registration.name, "sample-effects");
+    assert.deepEqual(pluginOk.registration.effects, ["brightness"]);
+    assert.deepEqual(pluginOk.registration.commands, ["ping"]);
+  });
+  const pluginDenied = JSON.parse(
+    plugin_register(pluginText, JSON.stringify(["command"])),
+  );
+  check("插件越权被拒并列出越权项", () => {
+    assert.equal(pluginDenied.ok, false);
+    assert.equal(pluginDenied.error, "PERMISSION_DENIED");
+    assert.deepEqual(pluginDenied.denied, ["effect"]);
+  });
+  check("注册项缺少必需能力被拒", () =>
+    assert.equal(
+      JSON.parse(plugin_register(JSON.stringify({
+        name: "p", capabilities: ["command"], effects: ["x"], commands: ["y"],
+      }), granted)).error,
+      "CAPABILITY_NOT_GRANTED",
+    ));
+  check("插件 API 版本不匹配被拒", () =>
+    assert.equal(
+      JSON.parse(plugin_register(JSON.stringify({
+        name: "p", apiVersion: "9.9.9", capabilities: ["effect"], effects: ["x"],
+      }), granted)).error,
+      "API_VERSION_MISMATCH",
+    ));
+  check("插件非法 JSON 被拒", () =>
+    assert.equal(JSON.parse(plugin_register("{ 非法", granted)).error, "INVALID_MANIFEST"));
+  check("插件未知权限被拒", () =>
+    assert.equal(
+      JSON.parse(plugin_register(JSON.stringify({
+        name: "p", capabilities: ["root-access"], effects: ["x"],
+      }), granted)).error,
+      "UNKNOWN_PERMISSION",
+    ));
+  check("插件旧 manifest 缺版本字段仍兼容", () =>
+    assert.equal(
+      JSON.parse(plugin_register(JSON.stringify({
+        name: "legacy", capabilities: ["effect"], effects: ["x"],
+      }), granted)).ok,
+      true,
+    ));
 
   // W-11：能力协商走真实 WASM 产物
   const negotiated = JSON.parse(api_negotiate(JSON.stringify({

@@ -54,6 +54,21 @@ export interface NegotiationResult {
   reason: string;
 }
 
+/** W-12 插件注册结果：成功给注册视图，失败给稳定错误码与越权项。 */
+export interface PluginRegisterResult {
+  ok: boolean;
+  registration?: {
+    name: string;
+    version: string;
+    schemaVersion: string;
+    capabilities: string[];
+    effects: string[];
+    commands: string[];
+  };
+  error?: string;
+  denied: string[];
+}
+
 /** 校验能力协商请求是普通对象，避免把空值送进 WASM。 */
 export function validateCapabilitiesRequest(
   request: unknown,
@@ -271,6 +286,8 @@ export interface EditorAdapter {
   otioExport(timelineJson: string): OtioResult;
   /** W-11：与 core 协商 API/schema 版本与必需能力。 */
   negotiate(request: CapabilitiesRequest): NegotiationResult;
+  /** W-12：校验并注册插件 manifest（越权由 core 拒绝）。 */
+  pluginRegister(manifestJson: string, grantedCapabilities: string[]): PluginRegisterResult;
 }
 
 let adapterPromise: Promise<EditorAdapter> | null = null;
@@ -323,6 +340,11 @@ export async function createEditorAdapter(): Promise<EditorAdapter> {
         negotiate: (request: CapabilitiesRequest): NegotiationResult => {
           validateCapabilitiesRequest(request);
           return JSON.parse(glue.api_negotiate(JSON.stringify(request))) as NegotiationResult;
+        },
+        pluginRegister: (manifestJson: string, grantedCapabilities: string[]): PluginRegisterResult => {
+          validateOtioText(manifestJson, '插件清单 JSON');
+          if (!Array.isArray(grantedCapabilities)) throw new Error('host 能力清单必须是数组；请检查后重试。');
+          return JSON.parse(glue.plugin_register(manifestJson, JSON.stringify(grantedCapabilities))) as PluginRegisterResult;
         },
       };
     } catch (error) {

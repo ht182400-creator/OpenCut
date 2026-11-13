@@ -64,3 +64,5 @@
 **追加（W-10 第五批）**：`EditClip.effects` / `EditTimeline.nestedStacks` 的原始节点保真与 `merge_nested_children` 位置还原、`third_party_roundtrip.py make3` 均为本地新写实现，仅按 OpenTimelineIO 公开 JSON schema 保留数据，未拷贝其 effects/Composition 实现代码；`opentimelineio 0.18.1` 仍只是临时可选验证依赖（未提交、未加入项目依赖），静态 fixture 由该工具生成且只含程序指定的示例剪辑数据。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-10 第六批 / W-07 第四批）**：`read_markers` / `marker_nodes` 四层标记 helper、`make4` 脚本、AV1 WebM 容器分支与 `exportProjectToAv1WebM` 均为本地新写实现；`V_AV1` / `av01.0.04M.08` 是 Matroska / AV1 的标准 codec 标识，不含第三方实现代码；`webm-muxer@5.1.4` 与既有 `mp4-muxer` 为已记录的浏览器端 muxer 依赖，本批未新增依赖。官方 `opentimelineio 0.18.1` 仍只是临时可选验证依赖（未提交、未加入项目依赖）。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-12 第一批）**：`local/crates/ocx-plugin-host` 的 manifest 模型、稳定错误码、权限校验与处理器分派均为本地新写实现，未引入 Extism / WASI / WIT 运行时或第三方插件框架代码，也未拷贝 MCP / 经典版插件系统实现；仅复用本仓库 W-11 的能力协商纯函数。示例插件 manifest 与处理器为程序指定数据，不含第三方内容。经典版 MIT © 2025-2026 声明仍由上文保留。

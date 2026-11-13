@@ -176,6 +176,16 @@ pub fn api_negotiate(request_json: &str) -> Result<String, JsValue> {
     to_json(&negotiate(&request))
 }
 
+/// W-12：校验一份插件 manifest 与 host 授予的能力清单。
+/// 返回 `{ok:true, registration:{...}}` 或 `{ok:false, error:"CODE", denied:[...]}`。
+#[wasm_bindgen]
+pub fn plugin_register(manifest_json: &str, granted_json: &str) -> Result<String, JsValue> {
+    let granted: Vec<String> = serde_json::from_str(granted_json)
+        .map_err(|error| js_error("解析 host 能力清单", error))?;
+    let refs: Vec<&str> = granted.iter().map(String::as_str).collect();
+    to_json(&ocx_plugin_host::check_manifest(&refs, manifest_json))
+}
+
 /// 导入 OTIO JSON 为内部 `EditTimeline`（W-10）。
 /// 返回 `{"ok":true,"timeline":{...}}` 或 `{"ok":false,"error":"CODE"}`。
 #[wasm_bindgen]

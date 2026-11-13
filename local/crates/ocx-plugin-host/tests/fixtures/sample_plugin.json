@@ -1,0 +1,9 @@
+{
+  "name": "sample-effects",
+  "version": "1.0.0",
+  "apiVersion": "0.1.0",
+  "schemaVersion": "1",
+  "capabilities": ["effect", "command"],
+  "effects": ["brightness"],
+  "commands": ["ping"]
+}

@@ -57,6 +57,12 @@ export function otio_import(otio_json: string): string;
 export function param_kind(value_json: string): string;
 
 /**
+ * W-12：校验一份插件 manifest 与 host 授予的能力清单。
+ * 返回 `{ok:true, registration:{...}}` 或 `{ok:false, error:"CODE", denied:[...]}`。
+ */
+export function plugin_register(manifest_json: string, granted_json: string): string;
+
+/**
  * 读取经典版项目 JSON（原始文本），返回只读归一化视图或稳定错误码。
  *
  * 不修改输入、不写回；高于 v31 明确拒绝。字段缺失时补默认值并附 `warnings`。
@@ -94,6 +100,7 @@ export interface InitOutput {
     readonly otio_export: (a: number, b: number) => [number, number, number, number];
     readonly otio_import: (a: number, b: number) => [number, number, number, number];
     readonly param_kind: (a: number, b: number) => [number, number, number, number];
+    readonly plugin_register: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly read_classic_project: (a: number, b: number) => [number, number, number, number];
     readonly render_frame_rgba: (a: number, b: number) => [number, number, number, number];
     readonly schema_version: () => [number, number];
