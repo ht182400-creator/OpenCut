@@ -62,3 +62,5 @@
 **追加（W-10 第四批）**：`ocx-io` 的 Transition / Marker 导入导出与 `third_party_roundtrip.py make2` 为本地新写实现，仅按 OpenTimelineIO 公开 JSON schema 构造数据；`opentimelineio 0.18.1` 仅作为可选验证依赖临时安装（未提交、未加入项目依赖），其代码未拷贝进本仓库；静态 fixture 由该工具生成，只含程序指定的示例剪辑数据。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-10 第五批）**：`EditClip.effects` / `EditTimeline.nestedStacks` 的原始节点保真与 `merge_nested_children` 位置还原、`third_party_roundtrip.py make3` 均为本地新写实现，仅按 OpenTimelineIO 公开 JSON schema 保留数据，未拷贝其 effects/Composition 实现代码；`opentimelineio 0.18.1` 仍只是临时可选验证依赖（未提交、未加入项目依赖），静态 fixture 由该工具生成且只含程序指定的示例剪辑数据。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-10 第六批 / W-07 第四批）**：`read_markers` / `marker_nodes` 四层标记 helper、`make4` 脚本、AV1 WebM 容器分支与 `exportProjectToAv1WebM` 均为本地新写实现；`V_AV1` / `av01.0.04M.08` 是 Matroska / AV1 的标准 codec 标识，不含第三方实现代码；`webm-muxer@5.1.4` 与既有 `mp4-muxer` 为已记录的浏览器端 muxer 依赖，本批未新增依赖。官方 `opentimelineio 0.18.1` 仍只是临时可选验证依赖（未提交、未加入项目依赖）。经典版 MIT © 2025-2026 声明仍由上文保留。

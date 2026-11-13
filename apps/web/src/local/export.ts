@@ -39,8 +39,10 @@ export const WEBM_VIDEO_CODEC = 'vp09.00.10.08';
 /** WebM 容器使用的 Opus 音频 codec 与码率。 */
 export const WEBM_AUDIO_CODEC = 'opus';
 export const WEBM_AUDIO_BITRATE = 96_000;
-/** 导出容器类型。 */
-export type ExportContainer = 'mp4' | 'webm';
+/** WebM 容器使用 AV1 时的 codec 字符串（Main profile、level 2.0、8bit）。 */
+export const AV1_VIDEO_CODEC = 'av01.0.04M.08';
+/** 导出容器类型：`webm` 用 VP9，`webm-av1` 用 AV1，音频均为 Opus。 */
+export type ExportContainer = 'mp4' | 'webm' | 'webm-av1';
 
 interface VideoFrameLike {
   close(): void;
@@ -197,12 +199,13 @@ function createContainer(
   container: ExportContainer,
   hasAudio: boolean,
 ): ContainerConfig {
-  if (container === 'webm') {
+  if (container !== 'mp4') {
+    const av1 = container === 'webm-av1';
     const target = new WebmTarget();
     const muxer = new WebmMuxer({
       target,
       video: {
-        codec: 'V_VP9',
+        codec: av1 ? 'V_AV1' : 'V_VP9',
         width: options.width,
         height: options.height,
         frameRate: options.fps,
@@ -222,7 +225,7 @@ function createContainer(
       muxer: muxer as unknown as MuxerLike,
       target: target as unknown as TargetLike,
       mime: 'video/webm',
-      videoCodec: WEBM_VIDEO_CODEC,
+      videoCodec: av1 ? AV1_VIDEO_CODEC : WEBM_VIDEO_CODEC,
       audioCodec: WEBM_AUDIO_CODEC,
       audioBitrate: WEBM_AUDIO_BITRATE,
       videoExtra: {},
@@ -305,7 +308,8 @@ async function runExport(
 
   try {
     videoEncoder.configure({
-      codec: container === 'webm' ? config.videoCodec : options.codec ?? config.videoCodec,
+      // AV1/VP9 固定用容器 codec；`options.codec` 只用于覆盖 MP4 的 H.264 Level（4K）
+      codec: container === 'mp4' ? options.codec ?? config.videoCodec : config.videoCodec,
       width: options.width,
       height: options.height,
       bitrate: DEFAULT_EXPORT_BITRATE,
@@ -394,4 +398,13 @@ export function exportProjectToMp4(options: ExportOptions): Promise<ExportResult
  */
 export function exportProjectToWebM(options: ExportOptions): Promise<ExportResult> {
   return runExport(options, 'webm');
+}
+
+/**
+ * 导出为 WebM（AV1 + Opus）；与 VP9 WebM 共用同一编码循环、帧源与音源。
+ * @param options 导出选项
+ * @returns {Promise<ExportResult>} WebM Blob 与统计
+ */
+export function exportProjectToAv1WebM(options: ExportOptions): Promise<ExportResult> {
+  return runExport(options, 'webm-av1');
 }

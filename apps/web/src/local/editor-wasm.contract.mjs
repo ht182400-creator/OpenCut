@@ -532,6 +532,31 @@ try {
   check("Effect 与嵌套 Stack 往返不丢", () =>
     assert.deepEqual(effectsBack.timeline.nestedStacks, effects.timeline.nestedStacks));
 
+  // W-10 第六批：官方工具生成的 Track / Clip 级 Marker 文件
+  const nestedMarkersText = readFileSync(
+    path.resolve(HERE, "../../../../local/crates/ocx-io/tests/fixtures/third_party_otio_nested_markers.json"),
+    "utf8",
+  );
+  const nestedMarkers = JSON.parse(otio_import(nestedMarkersText));
+  check("官方 Track/Clip 级 Marker 文件可导入", () => assert.equal(nestedMarkers.ok, true));
+  check("官方 Track 级 Marker 被导入", () =>
+    assert.equal(nestedMarkers.timeline.tracks[0].markers.length, 1));
+  check("官方 Clip 级 Marker 被导入", () =>
+    assert.equal(nestedMarkers.timeline.tracks[0].clips[0].markers.length, 1));
+  const nestedMarkersOut = JSON.parse(otio_export(JSON.stringify(nestedMarkers.timeline)));
+  check("官方四层标记可回写", () => assert.equal(nestedMarkersOut.ok, true));
+  const nestedMarkersBack = JSON.parse(otio_import(nestedMarkersOut.otio));
+  check("Track/Clip 级 Marker 往返不丢", () => {
+    assert.deepEqual(
+      nestedMarkersBack.timeline.tracks[0].markers,
+      nestedMarkers.timeline.tracks[0].markers,
+    );
+    assert.deepEqual(
+      nestedMarkersBack.timeline.tracks[0].clips[0].markers,
+      nestedMarkers.timeline.tracks[0].clips[0].markers,
+    );
+  });
+
   check("未知 kind 被明确拒绝", () => {
     assert.throws(() => domain_eval(JSON.stringify({ kind: "nope" })), /不支持的 kind/);
   });

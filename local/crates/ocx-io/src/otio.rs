@@ -64,6 +64,9 @@ pub struct EditTrack {
     pub name: String,
     pub kind: String,
     pub clips: Vec<EditClip>,
+    /// W-10 第六批：Track 级标记，原样往返。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub markers: Vec<EditMarker>,
 }
 
 /// 一个片段；`is_gap` 区分 OTIO 的 Gap 与 Clip。
@@ -102,6 +105,9 @@ pub struct EditClip {
     /// 保留完整 JSON、不解释语义，导出时原样写回。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<Value>,
+    /// W-10 第六批：Clip 级标记，原样往返。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub markers: Vec<EditMarker>,
 }
 
 /**
@@ -145,6 +151,15 @@ pub fn decision_key(timeline: &EditTimeline) -> String {
     );
     for track in &timeline.tracks {
         key.push_str(&format!("|{}:{}:{}", track.id, track.name, track.kind));
+        for marker in &track.markers {
+            key.push_str(&format!(
+                "|tm:{}:{}:{}:{}",
+                marker.name,
+                marker.color.as_deref().unwrap_or(""),
+                marker.start_ticks,
+                marker.duration_ticks
+            ));
+        }
         for clip in &track.clips {
             key.push_str(&format!(
                 "|{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
@@ -164,6 +179,15 @@ pub fn decision_key(timeline: &EditTimeline) -> String {
                 key.push_str(&format!(
                     "|e:{}",
                     serde_json::to_string(&clip.effects).unwrap_or_default()
+                ));
+            }
+            for marker in &clip.markers {
+                key.push_str(&format!(
+                    "|cm:{}:{}:{}:{}",
+                    marker.name,
+                    marker.color.as_deref().unwrap_or(""),
+                    marker.start_ticks,
+                    marker.duration_ticks
                 ));
             }
         }
@@ -236,6 +260,35 @@ fn read_media_url(clip: &Value) -> Option<String> {
 }
 
 /**
+ * 把任意层级的 OTIO Marker 数组归一化为内部标记视图（W-10 第六批）。
+ * Timeline 顶层 / Stack / Track / Clip 四处共用同一解析规则。
+ * @param values `markers` 数组（缺失时为 None）
+ * @returns {Result<Vec<EditMarker>, IoError>} 归一化标记
+ */
+fn read_markers(values: Option<&Vec<Value>>) -> Result<Vec<EditMarker>, IoError> {
+    let mut markers = Vec::new();
+    let Some(items) = values else {
+        return Ok(markers);
+    };
+    for marker_value in items {
+        let marker_schema = marker_value["OTIO_SCHEMA"].as_str().unwrap_or("");
+        if !marker_schema.is_empty() && !is_supported_otio_schema(marker_schema) {
+            return Err(IoError::UnsupportedOtioSchema);
+        }
+        let (start_value, marker_rate) =
+            read_rational(&marker_value["marked_range"]["start_time"])?;
+        let (duration_value, _) = read_rational(&marker_value["marked_range"]["duration"])?;
+        markers.push(EditMarker {
+            name: marker_value["name"].as_str().unwrap_or("").to_string(),
+            color: marker_value["color"].as_str().map(str::to_string),
+            start_ticks: rational_to_ticks(start_value, marker_rate)?,
+            duration_ticks: rational_to_ticks(duration_value, marker_rate)?,
+        });
+    }
+    Ok(markers)
+}
+
+/**
  * 导入 OTIO JSON 为内部时间轴。
  * @param json_text OTIO 文档
  * @returns {Result<EditTimeline, IoError>} 归一化视图
@@ -273,47 +326,9 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
     let mut nested_stacks: Vec<EditNestedStack> = Vec::new();
     let mut rate: Option<f64> = None;
 
-    // W-10 第四批：解析 Timeline 顶层与 Stack（官方 markers 挂在 Composition 上）级标记；
-    // Track/Clip 级标记记 warning
-    let mut markers = Vec::new();
-    let mut marker_values: Vec<&Value> = Vec::new();
-    if let Some(items) = root["markers"].as_array() {
-        marker_values.extend(items.iter());
-    }
-    if let Some(items) = stack["markers"].as_array() {
-        marker_values.extend(items.iter());
-    }
-    for marker_value in marker_values {
-        let marker_schema = marker_value["OTIO_SCHEMA"].as_str().unwrap_or("");
-        if !marker_schema.is_empty() && !is_supported_otio_schema(marker_schema) {
-            return Err(IoError::UnsupportedOtioSchema);
-        }
-        let (start_value, marker_rate) =
-            read_rational(&marker_value["marked_range"]["start_time"])?;
-        let (duration_value, _) = read_rational(&marker_value["marked_range"]["duration"])?;
-        markers.push(EditMarker {
-            name: marker_value["name"].as_str().unwrap_or("").to_string(),
-            color: marker_value["color"].as_str().map(str::to_string),
-            start_ticks: rational_to_ticks(start_value, marker_rate)?,
-            duration_ticks: rational_to_ticks(duration_value, marker_rate)?,
-        });
-    }
-    let has_nested_markers = track_values.iter().any(|track| {
-        track["markers"]
-            .as_array()
-            .is_some_and(|items| !items.is_empty())
-    }) || track_values.iter().any(|track| {
-        track["children"].as_array().is_some_and(|items| {
-            items.iter().any(|item| {
-                item["markers"]
-                    .as_array()
-                    .is_some_and(|inner| !inner.is_empty())
-            })
-        })
-    });
-    if has_nested_markers {
-        warnings.push("Track/Clip 级 Marker 暂不解析，仅导入 Timeline/Stack 级".to_string());
-    }
+    // W-10 第六批：Timeline 顶层 / Stack / Track / Clip 四层 markers 统一解析，不再丢决策
+    let mut markers = read_markers(root["markers"].as_array())?;
+    markers.extend(read_markers(stack["markers"].as_array())?);
 
     for (track_index, track_value) in track_values.iter().enumerate() {
         let track_schema = track_value["OTIO_SCHEMA"].as_str().unwrap_or("");
@@ -342,6 +357,7 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
             warnings.push(format!("轨道 {track_id} 缺少 kind，默认 Video"));
             kind = "Video".to_string();
         }
+        let track_markers = read_markers(track_value["markers"].as_array())?;
         let clip_values = track_value["children"]
             .as_array()
             .ok_or(IoError::MissingTracks)?;
@@ -387,6 +403,7 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
             } else {
                 clip_name.clone()
             };
+            let clip_markers = read_markers(clip_value["markers"].as_array())?;
             // W-10 第五批：effects 保留原始节点，白名单外的效果明确拒绝
             let effects = clip_value["effects"]
                 .as_array()
@@ -414,6 +431,7 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
                 out_offset_ticks,
                 transition_type: clip_value["transition_type"].as_str().map(str::to_string),
                 effects,
+                markers: clip_markers,
             });
             cursor = cursor.saturating_add(duration_ticks);
         }
@@ -422,6 +440,7 @@ pub fn import_otio(json_text: &str) -> Result<EditTimeline, IoError> {
             name: track_name,
             kind,
             clips,
+            markers: track_markers,
         });
     }
     if tracks.is_empty() {
@@ -469,6 +488,39 @@ fn merge_nested_children(track_nodes: Vec<Value>, nested_stacks: &[EditNestedSta
 }
 
 /**
+ * 把内部标记视图写回官方 `Marker.2` 节点（W-10 第六批，四层共用）。
+ * @param markers 内部标记集合
+ * @param rate 时间轴帧率
+ * @returns {Result<Vec<Value>, IoError>} OTIO markers 数组
+ */
+fn marker_nodes(markers: &[EditMarker], rate: f64) -> Result<Vec<Value>, IoError> {
+    let mut nodes = Vec::with_capacity(markers.len());
+    for marker in markers {
+        let start_value = ticks_to_rational_value(marker.start_ticks, rate)?;
+        let duration_value = ticks_to_rational_value(marker.duration_ticks, rate)?;
+        nodes.push(json!({
+            "OTIO_SCHEMA": MARKER_SCHEMA,
+            "name": marker.name,
+            "color": marker.color,
+            "marked_range": {
+                "OTIO_SCHEMA": TIME_RANGE_SCHEMA,
+                "start_time": {
+                    "OTIO_SCHEMA": RATIONAL_TIME_SCHEMA,
+                    "value": start_value,
+                    "rate": rate
+                },
+                "duration": {
+                    "OTIO_SCHEMA": RATIONAL_TIME_SCHEMA,
+                    "value": duration_value,
+                    "rate": rate
+                }
+            }
+        }));
+    }
+    Ok(nodes)
+}
+
+/**
  * 导出内部时间轴为 OTIO JSON（合法子集）。
  * @param timeline 内部时间轴
  * @returns {Result<String, IoError>} OTIO 文档
@@ -481,7 +533,7 @@ pub fn export_otio(timeline: &EditTimeline) -> Result<String, IoError> {
     for track in &timeline.tracks {
         let mut clip_nodes = Vec::with_capacity(track.clips.len());
         for clip in &track.clips {
-            let node = if clip.is_transition {
+            let mut node = if clip.is_transition {
                 // Transition 没有 source_range，时长 = in_offset + out_offset
                 let in_value = ticks_to_rational_value(clip.in_offset_ticks, timeline.rate)?;
                 let out_value = ticks_to_rational_value(clip.out_offset_ticks, timeline.rate)?;
@@ -544,39 +596,22 @@ pub fn export_otio(timeline: &EditTimeline) -> Result<String, IoError> {
                 }
                 node
             };
+            if !clip.markers.is_empty() {
+                node["markers"] = json!(marker_nodes(&clip.markers, timeline.rate)?);
+            }
             clip_nodes.push(node);
         }
+        let track_markers = marker_nodes(&track.markers, timeline.rate)?;
         track_nodes.push(json!({
             "OTIO_SCHEMA": TRACK_SCHEMA,
             "name": track.name,
             "kind": track.kind,
+            "markers": track_markers,
             "children": clip_nodes
         }));
     }
     let children = merge_nested_children(track_nodes, &timeline.nested_stacks);
-    let mut marker_nodes = Vec::with_capacity(timeline.markers.len());
-    for marker in &timeline.markers {
-        let start_value = ticks_to_rational_value(marker.start_ticks, timeline.rate)?;
-        let duration_value = ticks_to_rational_value(marker.duration_ticks, timeline.rate)?;
-        marker_nodes.push(json!({
-            "OTIO_SCHEMA": MARKER_SCHEMA,
-            "name": marker.name,
-            "color": marker.color,
-            "marked_range": {
-                "OTIO_SCHEMA": TIME_RANGE_SCHEMA,
-                "start_time": {
-                    "OTIO_SCHEMA": RATIONAL_TIME_SCHEMA,
-                    "value": start_value,
-                    "rate": timeline.rate
-                },
-                "duration": {
-                    "OTIO_SCHEMA": RATIONAL_TIME_SCHEMA,
-                    "value": duration_value,
-                    "rate": timeline.rate
-                }
-            }
-        }));
-    }
+    let stack_markers = marker_nodes(&timeline.markers, timeline.rate)?;
     let root = json!({
         "OTIO_SCHEMA": TIMELINE_SCHEMA,
         "name": timeline.name,
@@ -590,7 +625,7 @@ pub fn export_otio(timeline: &EditTimeline) -> Result<String, IoError> {
             "OTIO_SCHEMA": STACK_SCHEMA,
             "name": "tracks",
             // 官方 OTIO 的 markers 挂在 Composition（Stack）上，不是 Timeline 顶层
-            "markers": marker_nodes,
+            "markers": stack_markers,
             "children": children
         }
     });

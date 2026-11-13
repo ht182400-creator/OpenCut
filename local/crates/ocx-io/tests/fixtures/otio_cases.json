@@ -394,6 +394,42 @@
         "trackCount": 1, "clipCount": 1, "warnings": 1, "nestedStackCount": 1, "nestedIndex": 1,
         "firstClip": { "name": "c1", "startTicks": 0, "durationTicks": 120000, "sourceStartTicks": 0, "isGap": false, "mediaUrl": "" }
       }
+    },
+    {
+      "id": "T20",
+      "name": "Track 与 Clip 级 Marker 往返",
+      "input": {
+        "OTIO_SCHEMA": "Timeline.1", "name": "with-nested-markers",
+        "metadata": { "opencut": { "schemaVersion": 1 } },
+        "tracks": { "OTIO_SCHEMA": "Stack.1", "children": [
+          { "OTIO_SCHEMA": "Track.1", "name": "V1", "kind": "Video",
+            "markers": [
+              { "OTIO_SCHEMA": "Marker.2", "name": "track-mark", "color": "RED",
+                "marked_range": { "OTIO_SCHEMA": "TimeRange.1",
+                  "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 10, "rate": 30 },
+                  "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 5, "rate": 30 } } }
+            ],
+            "children": [
+              { "OTIO_SCHEMA": "Clip.1", "name": "c1",
+                "source_range": { "OTIO_SCHEMA": "TimeRange.1",
+                  "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 30 },
+                  "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 30, "rate": 30 } },
+                "markers": [
+                  { "OTIO_SCHEMA": "Marker.2", "name": "clip-mark", "color": "BLUE",
+                    "marked_range": { "OTIO_SCHEMA": "TimeRange.1",
+                      "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 30 },
+                      "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 5, "rate": 30 } } }
+                ] }
+            ] }
+        ] }
+      },
+      "expected": {
+        "ok": true, "name": "with-nested-markers", "schemaVersion": 1, "rate": 30,
+        "trackCount": 1, "clipCount": 1, "warnings": 0,
+        "trackMarkers": [ { "name": "track-mark", "color": "RED", "startTicks": 40000, "durationTicks": 20000 } ],
+        "clipMarkers": [ { "name": "clip-mark", "color": "BLUE", "startTicks": 0, "durationTicks": 20000 } ],
+        "firstClip": { "name": "c1", "startTicks": 0, "durationTicks": 120000, "sourceStartTicks": 0, "isGap": false, "mediaUrl": "" }
+      }
     }
   ]
 }

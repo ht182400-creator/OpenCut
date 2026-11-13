@@ -113,6 +113,26 @@ async function main() {
   check("Effect 与嵌套 Stack 往返一致", () =>
     assert.deepEqual(effectsReimported.timeline.nestedStacks, effects.timeline.nestedStacks));
 
+  // 1d. 官方工具生成的 Track / Clip 级 Marker 文件（静态，不需要 Python）
+  const nestedMarkersFixture = readFileSync(
+    path.join(HERE, "fixtures/third_party_otio_nested_markers.json"),
+    "utf8",
+  );
+  const nestedMarkers = JSON.parse(otio_import(nestedMarkersFixture));
+  check("官方四层标记文件导入成功", () => assert.equal(nestedMarkers.ok, true));
+  check("官方 Track 级 Marker 保留", () =>
+    assert.equal(nestedMarkers.timeline.tracks[0].markers.length, 1));
+  check("官方 Clip 级 Marker 保留", () =>
+    assert.equal(nestedMarkers.timeline.tracks[0].clips[0].markers.length, 1));
+  const nestedMarkersExported = JSON.parse(otio_export(JSON.stringify(nestedMarkers.timeline)));
+  check("官方四层标记文件可回写", () => assert.equal(nestedMarkersExported.ok, true));
+  const nestedMarkersReimported = JSON.parse(otio_import(nestedMarkersExported.otio));
+  check("四层标记往返一致", () =>
+    assert.deepEqual(
+      nestedMarkersReimported.timeline.tracks[0].markers,
+      nestedMarkers.timeline.tracks[0].markers,
+    ));
+
   // 2. 动态：官方工具生成 → 我们读写 → 官方工具再校验
   const probe = spawnSync("python", [PYTHON_SCRIPT, "probe"], {
     encoding: "utf8",
@@ -189,6 +209,23 @@ async function main() {
         assert.deepEqual(after3.clips, before3.clips));
       check("嵌套 Stack 逐项一致", () =>
         assert.deepEqual(after3.nested, before3.nested));
+
+      // W-10 第六批：官方生成含 Track / Clip 级 Marker 的文件
+      const source4 = path.join(directory, "source4.otio");
+      const roundtrip4 = path.join(directory, "roundtrip4.otio");
+      runPython("make4", source4);
+      const fromOfficial4 = JSON.parse(otio_import(readFileSync(source4, "utf8")));
+      check("官方 make4 生成文件可导入", () => assert.equal(fromOfficial4.ok, true));
+      const reexport4 = JSON.parse(otio_export(JSON.stringify(fromOfficial4.timeline)));
+      writeFileSync(roundtrip4, reexport4.otio);
+      const before4 = runPython("validate", source4);
+      const after4 = runPython("validate", roundtrip4);
+      check("官方工具能读回 Track/Clip 标记导出文件", () =>
+        assert.equal(after4.name, before4.name));
+      check("Clip 级标记逐项一致", () =>
+        assert.deepEqual(after4.clips, before4.clips));
+      check("Track 级标记逐项一致", () =>
+        assert.deepEqual(after4.track_markers, before4.track_markers));
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

@@ -31,6 +31,7 @@ fn new_clip(name: &str, duration_ticks: i64, source_start_ticks: i64, is_gap: bo
         out_offset_ticks: 0,
         transition_type: None,
         effects: vec![],
+        markers: vec![],
     }
 }
 
@@ -45,6 +46,7 @@ fn timeline(clips: Vec<EditClip>, rate: f64) -> EditTimeline {
             name: "V1".to_string(),
             kind: "Video".to_string(),
             clips,
+            markers: vec![],
         }],
         markers: vec![],
         nested_stacks: vec![],
@@ -343,5 +345,31 @@ fn unsupported_effect_schema_is_rejected() {
     assert_eq!(
         import_otio(&text).unwrap_err().code(),
         "UNSUPPORTED_OTIO_SCHEMA"
+    );
+}
+
+/** W-10 第六批：官方 Track / Clip 级 Marker 文件，四层标记往返不丢。 */
+#[test]
+fn official_track_and_clip_markers_roundtrip() {
+    let official = include_str!("fixtures/third_party_otio_nested_markers.json");
+    let imported = import_otio(official).unwrap();
+    assert_eq!(imported.name, "third-party-nested-markers");
+    assert_eq!(imported.tracks[0].markers.len(), 1);
+    assert_eq!(imported.tracks[0].markers[0].name, "track-mark");
+    assert_eq!(imported.tracks[0].clips[0].markers.len(), 1);
+    assert_eq!(imported.tracks[0].clips[0].markers[0].name, "clip-mark");
+    let exported = export_otio(&imported).unwrap();
+    let root: serde_json::Value = serde_json::from_str(&exported).unwrap();
+    assert_eq!(
+        root["tracks"]["children"][0]["markers"][0]["OTIO_SCHEMA"].as_str(),
+        Some("Marker.2")
+    );
+    assert_eq!(
+        root["tracks"]["children"][0]["children"][0]["markers"][0]["name"].as_str(),
+        Some("clip-mark")
+    );
+    assert_eq!(
+        decision_key(&imported),
+        decision_key(&import_otio(&exported).unwrap())
     );
 }

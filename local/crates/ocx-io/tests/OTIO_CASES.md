@@ -35,6 +35,7 @@ Rust golden master 逐字段比对导入结果，并对**每个成功用例**额
 | T17 | Timeline 顶层 `Marker.1`（0 + 60 帧 @30） | 导入 1 个标记（0 + 240,000 ticks、GREEN），导出写到 Stack 级 `Marker.2`，往返指纹一致 |
 | T18 | Clip 带 `LinearTimeWarp.1` 效果 | 保留 1 个 effect 原始节点，导出原样写回，往返指纹一致 |
 | T19 | Stack children 含嵌套 `Stack.1`（位置 1） | 只导入 1 条可编辑轨道，嵌套节点按 index=1 保留并记 1 条 warning；导出还原到原位置，往返指纹一致 |
+| T20 | Track 与 Clip 各带 1 个 `Marker.2` | 四层标记统一解析（不再丢、不再记 warning），导出分别写回 Track / Clip 的 `markers`，往返指纹一致 |
 
 ## W-10 第四批：官方 Transition / Marker
 
@@ -51,7 +52,14 @@ Rust golden master 逐字段比对导入结果，并对**每个成功用例**额
 - 两类原始节点都进入 `decision_key`（canonical JSON 序列化），因此往返不变量能真正检测到「静默丢弃」。
 - T10 负例在第五批从 `Effect.1` 改为 `FakeType.1`（因 Effect 系列已进入白名单）；`unit.rs` 的白名单断言同步。
 - 静态 fixture `fixtures/third_party_otio_effects.json` 由 `third_party_roundtrip.py make3` 生成；`summary()` 输出每个片段的 effects 与嵌套 Stack 结构，动态链路「官方 make3 → 我们 import/export → 官方 validate」逐项比对（合计 33/33）。
-- 诚实边界：嵌套 Stack 内部片段不在 `EditTimeline.tracks` 中可编辑；Track / Clip 级 Marker 仍未解析。
+- 诚实边界：嵌套 Stack 内部片段不在 `EditTimeline.tracks` 中可编辑（Track / Clip 级 Marker 已由第六批补完）。
+
+## W-10 第六批：四层 Marker 与官方 AV1 导出
+
+- `read_markers` / `marker_nodes` 两个 helper 供 Timeline 顶层、Stack、Track、Clip 四处共用；`EditTrack.markers` / `EditClip.markers` 保存归一化标记，导入不再对 Track/Clip 级记 warning，导出按层级写回 `Marker.2`。
+- 四层标记全部进入 `decision_key`（Track 用 `tm:` 前缀、Clip 用 `cm:` 前缀），往返不变量能检测任一层的静默丢弃。
+- 静态 fixture `fixtures/third_party_otio_nested_markers.json` 由 `third_party_roundtrip.py make4` 生成（5,775 字节）；`summary()` 输出 `track_markers` 与每个 clip 的 `markers`，动态链路「官方 make4 → 我们 import/export → 官方 validate」逐项比对（合计 42/42）。
+- 同期在 Web 导出侧补 **AV1 WebM**：`webm-av1` 容器用 `V_AV1` + `av01.0.04M.08` + Opus，与 VP9 WebM 共用编码循环；真实浏览器导出 10 帧验证 EBML 头与 `<video>` 解码。属 W-07 第四批，详见 `roadmap/README.md`。
 
 ## additive-only 约定
 

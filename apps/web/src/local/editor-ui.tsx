@@ -191,7 +191,7 @@ export function ToolbarSection(props: {
       )}
       {props.exportState.status === 'done' && props.exportState.url && (
         <a href={props.exportState.url} download={props.exportState.filename ?? 'opencut-export.mp4'} style={{ color: '#7dd3fc', fontSize: 13 }}>
-          下载 {props.exportState.filename?.endsWith('.webm') ? 'WebM' : 'MP4'}（{props.exportState.message} · {props.exportState.bytes} 字节）
+          下载 {props.exportState.filename?.includes('-av1') ? 'AV1 WebM' : props.exportState.filename?.endsWith('.webm') ? 'WebM' : 'MP4'}（{props.exportState.message} · {props.exportState.bytes} 字节）
         </a>
       )}
       {props.exportState.status === 'error' && (

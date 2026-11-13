@@ -126,6 +126,70 @@ fn golden_cases_match() {
                 }
             }
 
+            // W-10 第六批：Track / Clip 级标记逐项比对
+            if let Some(expected_markers) = expected.get("trackMarkers") {
+                let list = expected_markers.as_array().expect("trackMarkers 应为数组");
+                assert_eq!(
+                    timeline.tracks[0].markers.len(),
+                    list.len(),
+                    "{id} trackMarkers 数"
+                );
+                for (index, item) in list.iter().enumerate() {
+                    let marker = &timeline.tracks[0].markers[index];
+                    assert_eq!(
+                        marker.name,
+                        item["name"].as_str().unwrap(),
+                        "{id} trackMark name"
+                    );
+                    assert_eq!(
+                        marker.color.as_deref().unwrap_or(""),
+                        item["color"].as_str().unwrap_or(""),
+                        "{id} trackMark color"
+                    );
+                    assert_eq!(
+                        marker.start_ticks,
+                        item["startTicks"].as_i64().unwrap(),
+                        "{id} trackMark startTicks"
+                    );
+                    assert_eq!(
+                        marker.duration_ticks,
+                        item["durationTicks"].as_i64().unwrap(),
+                        "{id} trackMark durationTicks"
+                    );
+                }
+            }
+            if let Some(expected_markers) = expected.get("clipMarkers") {
+                let list = expected_markers.as_array().expect("clipMarkers 应为数组");
+                assert_eq!(
+                    timeline.tracks[0].clips[0].markers.len(),
+                    list.len(),
+                    "{id} clipMarkers 数"
+                );
+                for (index, item) in list.iter().enumerate() {
+                    let marker = &timeline.tracks[0].clips[0].markers[index];
+                    assert_eq!(
+                        marker.name,
+                        item["name"].as_str().unwrap(),
+                        "{id} clipMark name"
+                    );
+                    assert_eq!(
+                        marker.color.as_deref().unwrap_or(""),
+                        item["color"].as_str().unwrap_or(""),
+                        "{id} clipMark color"
+                    );
+                    assert_eq!(
+                        marker.start_ticks,
+                        item["startTicks"].as_i64().unwrap(),
+                        "{id} clipMark startTicks"
+                    );
+                    assert_eq!(
+                        marker.duration_ticks,
+                        item["durationTicks"].as_i64().unwrap(),
+                        "{id} clipMark durationTicks"
+                    );
+                }
+            }
+
             // W-10 第五批：effects 与嵌套 Stack 逐项比对
             if let Some(count) = expected["effectsCount"].as_u64() {
                 assert_eq!(

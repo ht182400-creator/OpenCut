@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AV1_VIDEO_CODEC,
   DEFAULT_EXPORT_BITRATE,
   EXPORT_CODEC,
   KEY_FRAME_INTERVAL,
   WEBM_AUDIO_BITRATE,
   WEBM_AUDIO_CODEC,
   WEBM_VIDEO_CODEC,
+  exportProjectToAv1WebM,
   exportProjectToMp4,
   exportProjectToWebM,
   isExportSupported,
@@ -52,8 +54,13 @@ describe('export 纯函数', () => {
     expect(await isOpusEncodingSupported()).toBe(false);
   });
 
-  it('两种容器在无 WebCodecs 环境都给出中文降级提示', async () => {
+  it('AV1 容器 codec 常量固定', () => {
+    expect(AV1_VIDEO_CODEC).toBe('av01.0.04M.08');
+  });
+
+  it('三种容器在无 WebCodecs 环境都给出中文降级提示', async () => {
     await expect(exportProjectToMp4(options)).rejects.toThrow(/不支持 WebCodecs 导出/);
     await expect(exportProjectToWebM(options)).rejects.toThrow(/不支持 WebCodecs 导出/);
+    await expect(exportProjectToAv1WebM(options)).rejects.toThrow(/不支持 WebCodecs 导出/);
   });
 });
