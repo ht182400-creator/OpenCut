@@ -74,6 +74,17 @@
 | W-13 | **第一批已完成（MCP server）** | 新 `apps/local-mcp/server.mjs`：MCP over stdio（JSON-RPC 2.0，newline-delimited）**手写实现、零第三方依赖**，core 能力经真实 WASM 产物调用（与浏览器同一份 core）；工具集 `ocx.*` 共 8 个（capabilities、project.read/write、otio.import/export、render.frame/batch/status）。DoD 两条实测：`tools/list` → `ocx.otio.import` → `ocx.otio.export` **完成一次导出**且可再导入；`ocx.render.batch` 3 帧长任务 → `ocx.render.status` 轮询至 done，且批量帧指纹与单帧一致。`server.test.mjs` **17/17**（协议分发、工具异常、spawn 真实进程的 stdio 端到端）。**第二批（Headless CLI）**：新 `apps/local-cli`（`ocx-cli` bin + lib，workspace members 显式加入）：`frame` / `batch` / `project-info` 三个子命令，帧产物为 PPM（P6，RGB8，零压缩零依赖），指纹与 `RenderFrame::checksum()` 同算法；`server.test.mjs` 的 `ocx.render.frame` 增加 `fnvChecksum`（FNV-1a，与 ocx-render 同算法）实现**跨栈像素一致性**——Rust 原生 CLI 与 WASM core 对同一帧产出相同指纹（`cli.rs` / `cli_project.rs` 5 项 + MCP **18/18**）。**剩余**：脚本标签页 UI |
 | W-14 及以后 | 未开始 | — |
 
+## core 阶段结论（2026-11-14，用户指示「core 先告一段落，未完成的标记，然后启动经典版 UI 同步」）
+
+- **已达标**：W-01~W-11 全部 DoD、W-12 两批（契约 + 原生 WASM 运行时）、W-13 两批（MCP server + Headless CLI 跨栈像素一致）。
+- **暂停（非完成，恢复时从本表继续）**：
+  - W-12：Rust 侧插件运行时（wasmi）、WIT 组件模型、声明式权限；
+  - W-13：Headless CLI 的音频/PNG 编码与脚本标签页 UI；
+  - 小项：快照导出/回溯列表 UI、导出进度条 UI、Firefox 音频兼容回归、AV1 之外的导出增强；
+  - W-14 桌面 GPUI spike（依赖 H01 阻塞决策）、W-15 移动端评估。
+- **基线**：三端 `main`；10 crate 全绿、官方 OTIO 往返 42/42、MCP 18/18、vitest 115/115、看板 73/73、兼容 45/45。
+- **UI 阶段约定**：每批结束跑全套回归，UI 改动不回退 core 契约与测试；core 暂停项在 UI 阶段被阻塞时按原表恢复。
+
 > **H03 已关闭**（2026-11-08）：用户授权后由助手实际安装并跑通全部验证。系统另有一套独立 Rust 1.96，需把 `~/.cargo/bin` 置于 PATH 最前使 rustup 项目级 override 生效；根目录没有 `package.json`，依赖须在两个 app 目录分别安装；`moon ci` 默认 base 为 `master`，本仓库为 `main`。完整记录见 [`H03-toolchain-bootstrap.md`](H03-toolchain-bootstrap.md) §6。
 > **H03 完全关闭、无遗留**：moon 2.3.3 官方预编译包也经 `api.github.com` asset 端点下载并校验，按 `manifest.json`（无 BOM UTF-8）注册后 `proto use` 秒级完成；`moon.exe` 与 npm 版 SHA-256 交叉校验一致。**`MOON_TOOLCHAIN_FORCE_GLOBALS` 已不再需要**，不设旁路时 `moon ci` 与三端冒烟全通过。详见 `H03-toolchain-bootstrap.md` §4–§5。
 
