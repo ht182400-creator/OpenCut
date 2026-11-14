@@ -88,6 +88,8 @@
 
 ## 经典版 UI 同步（三批计划，2026-11-14 启动）
 
+> 三批属于「信息架构同步与去 demo 化」，**不是经典版 UI 全部移植**。用户于 2026-11-14 明确指示转入 **像素级 1:1 复刻**，独立进度台账见 [UI_REPLICA_PLAN.md](UI_REPLICA_PLAN.md)（批 0 基线固化已完成，后续批次按该文档推进）。
+
 | 批次 | 范围 | 状态 |
 | --- | --- | --- |
 | 第一批 | 布局与去调试化：顶栏 + 左素材库 + 中大预览 + 右属性 + 底部时间轴；诊断信息收进折叠区；全部原功能保留 | **已完成**（`TopBar` / `MediaPanel` / `PropertiesPanel` / `DiagnosticsPanel`，删除平铺 `ToolbarSection` 与 `ProjectSummary`，时间轴去掉导入对照；浏览器截图验收，修复 `trimEnd` 映射缺口；vitest 115/115、tsc 0、`vite build` 0） |

@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
+import '../local/classic-ui/theme.css'
 import { buildTimelineAudio, isAacEncodingSupported, type PcmAudio } from '../local/audio'
 import { useClipHistory } from '../local/clip-history'
 import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
@@ -590,7 +591,7 @@ function Editor() {
   const selectedElement = elements.find((element) => element.id === selectedId) ?? null
 
   return (
-    <main style={SURFACE_STYLE}>
+    <main style={SURFACE_STYLE} className="classic-ui-root">
       <TopBar
         projectName={session?.project.name ?? '未加载'}
         projectVersion={session?.project.version ?? 0}

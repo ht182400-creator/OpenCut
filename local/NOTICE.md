@@ -72,3 +72,5 @@
 **追加（W-13 第一批）**：`apps/local-mcp` 的 MCP 协议实现（initialize / tools/list / tools/call，JSON-RPC 2.0 over stdio）为本地新写实现，未使用 MCP 官方 SDK 或第三方框架；工具实现仅调用本仓库 core 的 WASM 产物，`ocx.render.*` 的 SHA-256 指纹使用 Node 内置 `crypto`。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-13 第二批）**：`apps/local-cli` 的参数解析、PPM（P6）编码与 FNV 指纹输出均为本地新写实现（PPM 为 Netpbm 公开格式），未引入图像编码库或 CLI 框架；帧渲染复用本仓库 `ocx-render` 的同一实现，与 WASM core 像素一致。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（经典版 UI 像素级 1:1 改造 · 批 0）**：用户于 2026-11-14 明确指示进行像素级 1:1 改造，因此本阶段起允许复制经典版 `E:\AI_Studio\opencut-classic` 的样式值、图标与字体资源，此前「零 UI 依赖 / 不拷贝经典版前端代码」的隔离策略在 UI 视觉层相应调整（组件逻辑仍为本地重写，不拷贝 Next.js 服务端与状态库实现）。批 0 从 `apps/web/src/app/globals.css` 复制了 `:root` / `.dark` / `.panel` / `.dark .panel` 的 CSS 变量值、`@theme inline` 的圆角/字号/断点 token，以及 `scrollbar-*` utility 的等价实现，存放于 `apps/web/src/local/classic-ui/theme.css`；`tokens.ts` 记录 `PANEL_CONFIG` 与 `EditorLayout` 的尺寸值。经典版为 MIT 许可（见该目录 `LICENSE`），其 MIT © 2025-2026 声明由本文件继续保留；后续每批复制的资源在本节逐项登记。字体使用本工程已安装的 `@fontsource-variable/inter`（OFL），未复制经典版 `public/fonts/` 图集（留待文字元素批次处理）。
