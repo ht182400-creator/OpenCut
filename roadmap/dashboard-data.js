@@ -57,15 +57,15 @@ const HOTSPOTS = [
   { id: "H11", title: "经典版 31 版项目迁移兼容", priority: "P1", milestone: "M4", status: "已完成", action: "【2026-11-14 校准】W-05 第五批写回闭环：read_classic_project + write_classic_project 按 id 合并、保留未知字段，project_write.rs 7 项 + Node WASM 契约验证读→改→写→再读" },
   { id: "H12", title: "4K 预览性能（代理/缓存/快照）", priority: "P2", milestone: "M4", status: "已完成", action: "【2026-11-14 校准】归属由 M6 修正为 M4（W-09 属媒体与导出闭环阶段）：三级缓存/代理 MP4/版本快照可跨刷新恢复；真实 3840×2160 素材 30 帧 scrub 峰值 0.9ms < 16ms 阈值达标" },
   { id: "H13", title: "上游落地六项能力导致双实现收敛（L3）", priority: "P1", milestone: "全程", status: "进行中", action: "按 README.md §7.9 做命名空间隔离、upstream-mirror、能力台账与 merge-tree 预演" },
-  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "已完成", action: "【2026-11-14 校准】基石已落地（10 crate + editor-adapter 适配层 + MCP/插件/Headless CLI），标题所述风险解除；core 阶段收尾（剩余项暂停非完成）：W-05 五批 + W-07 四批 + W-08 六批 + W-09 四批 + W-10 六批 + W-11 一批 + W-12 两批 + W-13 两批落地经典版项目读写闭环、三容器导出、剪辑闭环、4K scrub、官方 OTIO 往返、契约冻结、插件 host 与原生 WASM 运行时、MCP server 与 Headless CLI（跨栈像素一致）；暂停项见 PRIORITY「core 阶段结论」，转经典版 UI 同步（第一批布局去调试化、第二批时间轴产品化已完成：标尺/播放头/波形/缩放/吸附，浏览器交互截图验收）" },
+  { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "已完成", action: "【2026-11-14 校准】基石已落地（10 crate + editor-adapter 适配层 + MCP/插件/Headless CLI），标题所述风险解除；core 阶段收尾（剩余项暂停非完成）：W-05 五批 + W-07 四批 + W-08 六批 + W-09 四批 + W-10 六批 + W-11 一批 + W-12 两批 + W-13 两批落地经典版项目读写闭环、三容器导出、剪辑闭环、4K scrub、官方 OTIO 往返、契约冻结、插件 host 与原生 WASM 运行时、MCP server 与 Headless CLI（跨栈像素一致）；暂停项见 PRIORITY「core 阶段结论」，转经典版 UI 同步（三批已全部完成：布局去调试化、时间轴产品化、快捷键/属性编辑/项目快照/导出设置，浏览器交互截图验收）" },
   { id: "H15", title: "移动端可打开同一项目 JSON 未验证", priority: "P1", milestone: "M6", status: "未开始", action: "【2026-11-14 新增】W-15 移动端评估（UniFFI / flutter_rust_bridge 原型）完全未开始；core 阶段结论标为暂停，不得由 H12 的已完成状态误推导 M6 完成" },
   { id: "H16", title: "headless PNG 与桌面输出一致性未验证", priority: "P1", milestone: "M3", status: "未开始", action: "【2026-11-14 新增】Headless CLI 目前只输出 PPM（P6，零编码库），PNG/音频导出与桌面 GPUI 像素一致帧未做；M3 因此保持部分完成" },
   { id: "H17", title: "Rust core 迁入与跨栈像素一致", priority: "P0", milestone: "M1", status: "已完成", action: "【2026-11-14 新增】10 个隔离 crate 编译/测试全绿，WASM 绑定与浏览器共用 core，Headless CLI（Rust 原生）与 WASM 同帧同 FNV 指纹（MCP 18/18）；M1 剩余阻塞仅 H01 的 GPU 决策" },
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r42";
-const DATA_UPDATED_AT = "2026-11-14 16:30";
+const DATA_VERSION = "2026-11-08-r43";
+const DATA_UPDATED_AT = "2026-11-14 17:20";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**

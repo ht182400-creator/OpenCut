@@ -15,6 +15,7 @@ import {
   TOPBAR_STYLE,
   WORKSPACE_STYLE,
   DiagnosticsPanel,
+  ExportSettingsPanel,
   MediaPanel,
   PreviewSection,
   PropertiesPanel,
@@ -22,6 +23,7 @@ import {
   TopBar,
   blankFrame,
   type ApplyResponse,
+  type ClipPatch,
   type CoreElement,
   type ExportState,
   type FramePlanView,
@@ -36,6 +38,18 @@ import {
   isExportSupported,
   isOpusEncodingSupported,
 } from '../local/export'
+import {
+  DEFAULT_EXPORT_SETTINGS,
+  buildExportProfile,
+  exportFilename,
+  type ExportSettings,
+} from '../local/export-settings'
+import { matchShortcut } from '../local/editor-shortcuts'
+import {
+  createSnapshot,
+  parseSnapshot,
+  snapshotToJson,
+} from '../local/project-snapshot'
 import { formatBenchmark, measureFrameCost } from '../local/scrub-benchmark'
 import {
   MAX_DECODE_FRAMES,
@@ -99,6 +113,8 @@ function Editor() {
     status: 'idle', done: 0, total: 0, message: '', url: null, bytes: 0,
   })
   const [sourceName, setSourceName] = useState('内置示例项目')
+  const [exportSettings, setExportSettings] = useState<ExportSettings>(DEFAULT_EXPORT_SETTINGS)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   /** 撤销/重做恢复的片段重新应用帧计划；历史由 M6 快照驱动。 */
   const clipHistory = useClipHistory((clips) => {
     setElements(clips as CoreElement[])
@@ -110,6 +126,7 @@ function Editor() {
   const projectFileRef = useRef<HTMLInputElement>(null)
   const videoFileRef = useRef<HTMLInputElement>(null)
   const otioFileRef = useRef<HTMLInputElement>(null)
+  const snapshotFileRef = useRef<HTMLInputElement>(null)
 
   /** 刷新内存与持久化缓存统计展示。 */
   const refreshCacheInfo = async () => {
@@ -235,6 +252,69 @@ function Editor() {
     setFrameIndex(Math.min(frameIndex, frameCount - 1))
   }
 
+  /** UI 第三批：属性面板提交，时间与时长仍交给 core 的约束函数处理。 */
+  const applyPropertyPatch = (patch: ClipPatch) => {
+    if (!selectedId) return
+    applyClipEdit('属性未变化或超出时间轴约束', (clips, ctx) => {
+      const current = clips.find((item) => item.id === ctx.clipId)
+      if (!current) return clips
+      let next = clips
+      if (patch.startTime !== undefined && patch.startTime !== current.startTime) {
+        next = moveClipClamped(next, ctx.clipId, patch.startTime)
+      }
+      if (patch.duration !== undefined && patch.duration !== current.duration) {
+        next = resizeClipEdge(next, ctx.clipId, 'right', patch.duration - current.duration, ctx.ticksPerFrame)
+      }
+      if (patch.trimStart !== undefined || patch.trimEnd !== undefined) {
+        next = next.map((item) => item.id === ctx.clipId
+          ? { ...item, trimStart: patch.trimStart ?? item.trimStart, trimEnd: patch.trimEnd ?? item.trimEnd }
+          : item)
+      }
+      return next
+    }, selectedId, '编辑属性')
+  }
+
+  /** UI 第三批：把当前剪辑决策保存为 OpenCut 工作区快照 JSON。 */
+  const handleSaveSnapshot = () => {
+    if (!session) return
+    const snapshot = createSnapshot({
+      name: session.project.name,
+      fps: session.fps,
+      ticksPerFrame: session.ticksPerFrame,
+      ticksPerSecond: TICKS_PER_SECOND,
+      frameCount,
+      elements,
+      savedAt: new Date().toISOString(),
+    })
+    const url = URL.createObjectURL(new Blob([snapshotToJson(snapshot)], { type: 'application/json' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'opencut-project.json'
+    anchor.click()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+    setErrorText(null)
+  }
+
+  /** UI 第三批：加载快照并恢复工作区（校验失败给中文提示，不改动现状）。 */
+  const handleLoadSnapshot = async (file: File | undefined) => {
+    if (!file || !session) return
+    const parsed = parseSnapshot(await file.text())
+    if (!parsed.ok) {
+      setErrorText(`项目快照不兼容：${parsed.error}`)
+      return
+    }
+    const restored: CoreElement[] = parsed.snapshot.elements.map((item) => ({ ...item }))
+    setElements(restored)
+    clipHistory.record(restored, '加载项目快照')
+    setSelectedId(null)
+    setAdjustments([])
+    setPlaying(false)
+    setFrameIndex(0)
+    setFrameCount(plannedFrameCount(restored, session.adapter, session.profile))
+    setSourceName(parsed.snapshot.name)
+    setErrorText(null)
+  }
+
   /** 生成当前帧像素：按片段 trimStart 取代理帧，交给 core 合成。 */
   const frameSource = (index: number): Uint8Array => {
     if (!session) throw new Error('会话尚未就绪')
@@ -290,9 +370,63 @@ function Editor() {
     return () => window.clearInterval(timer)
   }, [playing, frameCount, session])
 
+  /** UI 第三批：非修饰键快捷键；输入框聚焦与 Ctrl/Meta/Alt 组合由匹配层跳过。 */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const action = matchShortcut({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        target: event.target as HTMLElement | null,
+      })
+      if (!action) return
+      event.preventDefault()
+      switch (action) {
+        case 'togglePlay':
+          setPlaying((value) => !value)
+          break
+        case 'prevFrame':
+          setPlaying(false)
+          setFrameIndex((value) => Math.max(0, value - 1))
+          break
+        case 'nextFrame':
+          setPlaying(false)
+          setFrameIndex((value) => Math.min(frameCount - 1, value + 1))
+          break
+        case 'firstFrame':
+          setPlaying(false)
+          setFrameIndex(0)
+          break
+        case 'lastFrame':
+          setPlaying(false)
+          setFrameIndex(Math.max(0, frameCount - 1))
+          break
+        case 'deleteSelected':
+          deleteSelected()
+          break
+        case 'splitAtPlayhead':
+          applyClipEdit('播放头不在选中片段内部，无法分割',
+            (cs, ctx) => splitClipAt(cs, ctx.clipId, ctx.playhead))
+          break
+        case 'trimIn':
+          applyClipEdit('播放头不在选中片段内部，无法设置入点',
+            (cs, ctx) => trimClipInAt(cs, ctx.clipId, ctx.playhead))
+          break
+        case 'trimOut':
+          applyClipEdit('播放头不在选中片段内部，无法设置出点',
+            (cs, ctx) => trimClipOutAt(cs, ctx.clipId, ctx.playhead))
+          break
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  })
+
   /** 真实导出：同一帧源/音源编码为 MP4（H.264+AAC）或 WebM（VP9/AV1 + Opus）。 */
-  const handleExport = async (container: 'mp4' | 'webm' | 'webm-av1' = 'mp4') => {
+  const handleExport = async () => {
     if (!session) return
+    const container = exportSettings.container
     if (!isExportSupported()) {
       setExportState({ status: 'error', done: 0, total: 0, message: '当前浏览器不支持 WebCodecs 导出', url: null, bytes: 0 })
       return
@@ -301,7 +435,7 @@ function Editor() {
     setExportState({ status: 'running', done: 0, total: frameCount, message: '', url: null, bytes: 0 })
     try {
       let audioSource: PcmAudio | undefined
-      if (media?.audio && await (container !== 'mp4' ? isOpusEncodingSupported() : isAacEncodingSupported())) {
+      if (exportSettings.includeAudio && media?.audio && await (container !== 'mp4' ? isOpusEncodingSupported() : isAacEncodingSupported())) {
         audioSource = buildTimelineAudio({
           clips: elements,
           frameCount,
@@ -316,7 +450,7 @@ function Editor() {
       const result = await exporter({
         width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT,
         fps: session.fps, frameCount, ticksPerFrame: session.ticksPerFrame,
-        profile: session.profile, params: DEMO_PARAMS,
+        profile: buildExportProfile(session.profile, exportSettings), params: DEMO_PARAMS,
         frameSource,
         audioSource,
         onProgress: (done, total) => setExportState((previous) => ({ ...previous, done, total })),
@@ -324,8 +458,7 @@ function Editor() {
       setExportState({
         status: 'done', done: result.frameCount, total: frameCount,
         message: `已导出 ${result.frameCount} 帧 · ${result.durationSeconds.toFixed(2)}s${result.hasAudio ? (container !== 'mp4' ? ' · 含 Opus 音轨' : ' · 含 AAC 音轨') : ''}`,
-        filename: container === 'mp4' ? 'opencut-export.mp4'
-          : container === 'webm-av1' ? 'opencut-export-av1.webm' : 'opencut-export.webm',
+        filename: exportFilename(exportSettings),
         url: URL.createObjectURL(result.blob), bytes: result.bytes,
       })
     } catch (error) {
@@ -466,14 +599,25 @@ function Editor() {
         actions={[
           { label: '撤销', disabled: !clipHistory.canUndo, onClick: clipHistory.undo },
           { label: '重做', disabled: !clipHistory.canRedo, onClick: clipHistory.redo },
+          { label: '保存项目', disabled: !session, onClick: handleSaveSnapshot },
+          { label: '加载快照', disabled: !session, onClick: () => snapshotFileRef.current?.click() },
         ]}
-        exportActions={[
-          { label: '导出 MP4', disabled: !session || exportState.status === 'running', onClick: () => void handleExport('mp4') },
-          { label: '导出 WebM', disabled: !session || exportState.status === 'running', onClick: () => void handleExport('webm') },
-          { label: '导出 AV1 WebM', disabled: !session || exportState.status === 'running', onClick: () => void handleExport('webm-av1') },
-        ]}
+        onExport={() => void handleExport()}
+        exportDisabled={!session || exportState.status === 'running'}
+        onToggleSettings={() => setSettingsOpen((value) => !value)}
+        settingsOpen={settingsOpen}
         exportState={exportState}
         otioUrl={otioUrl}
+      />
+      <input ref={snapshotFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
+        onChange={(event) => void handleLoadSnapshot(event.target.files?.[0])} />
+      <ExportSettingsPanel
+        open={settingsOpen}
+        settings={exportSettings}
+        onChange={setExportSettings}
+        onExport={() => void handleExport()}
+        exportDisabled={!session || exportState.status === 'running'}
+        resolution={`${PREVIEW_WIDTH}×${PREVIEW_HEIGHT}`}
       />
 
       {!session && !errorText && <div style={{ ...PANEL_STYLE, color: TEXT_MAIN }}>正在加载项目与 Rust core WASM…</div>}
@@ -501,7 +645,7 @@ function Editor() {
               onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
               timecode={`帧 ${frameIndex + 1}/${frameCount} · ${(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s · 片段 ${activeClip}`}
             />
-            <PropertiesPanel selected={selectedElement} />
+            <PropertiesPanel selected={selectedElement} onChange={applyPropertyPatch} />
           </div>
 
           <TimelineSection

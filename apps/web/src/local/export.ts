@@ -94,6 +94,18 @@ export function validateExportOptions(options: {
   return null;
 }
 
+/**
+ * 从导出 profile 读取 UI 设置的视频码率；非法值返回 null 让调用方回退默认值。
+ * @param profile 传给 core 的导出配置
+ * @returns {number | null} 正整数码率（bps）
+ */
+export function profileBitrate(profile: unknown): number | null {
+  if (!profile || typeof profile !== 'object') return null;
+  const value = (profile as Record<string, unknown>).videoBitrateBps;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+  return Math.max(1, Math.round(value));
+}
+
 /** 当前环境是否具备视频导出能力。 */
 export function isExportSupported(): boolean {
   const scope = globalThis as unknown as Record<string, unknown>;
@@ -312,7 +324,8 @@ async function runExport(
       codec: container === 'mp4' ? options.codec ?? config.videoCodec : config.videoCodec,
       width: options.width,
       height: options.height,
-      bitrate: DEFAULT_EXPORT_BITRATE,
+      // UI 第三批：导出设置面板可覆盖码率；profile 非法时回退默认值
+      bitrate: profileBitrate(options.profile) ?? DEFAULT_EXPORT_BITRATE,
       framerate: options.fps,
       ...config.videoExtra,
     });

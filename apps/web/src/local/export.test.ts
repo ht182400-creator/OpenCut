@@ -11,6 +11,7 @@ import {
   exportProjectToAv1WebM,
   exportProjectToMp4,
   exportProjectToWebM,
+  profileBitrate,
   isExportSupported,
   isOpusEncodingSupported,
   validateExportOptions,
@@ -56,6 +57,14 @@ describe('export 纯函数', () => {
 
   it('AV1 容器 codec 常量固定', () => {
     expect(AV1_VIDEO_CODEC).toBe('av01.0.04M.08');
+  });
+
+  it('导出设置的码率可覆盖且非法值回退', () => {
+    expect(profileBitrate({ videoBitrateBps: 2_500_000 })).toBe(2_500_000);
+    expect(profileBitrate({ videoBitrateBps: 1234.6 })).toBe(1235);
+    expect(profileBitrate({ videoBitrateBps: -1 })).toBeNull();
+    expect(profileBitrate(null)).toBeNull();
+    expect(profileBitrate({})).toBeNull();
   });
 
   it('三种容器在无 WebCodecs 环境都给出中文降级提示', async () => {

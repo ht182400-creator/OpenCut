@@ -8,7 +8,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react'
 
+import { SHORTCUT_HELP } from './editor-shortcuts'
 import type { DiscoverResult, EditorAdapter, ProjectView } from './editor-adapter'
+import { CONTAINER_LABELS } from './export-settings'
+import type { ExportContainerChoice, ExportSettings } from './export-settings'
 import type { TimelineClip } from './timeline'
 import type { WebCodecsSupport } from './webcodecs'
 
@@ -103,7 +106,10 @@ export function TopBar(props: {
   sceneCount: number
   trackCount: number
   actions: ToolbarAction[]
-  exportActions: ToolbarAction[]
+  onExport: () => void
+  exportDisabled?: boolean
+  onToggleSettings: () => void
+  settingsOpen: boolean
   exportState: ExportState
   otioUrl: string | null
 }) {
@@ -118,11 +124,10 @@ export function TopBar(props: {
         <button key={action.label} type="button" style={BUTTON_STYLE}
           onClick={action.onClick} disabled={action.disabled}>{action.label}</button>
       ))}
-      {props.exportActions.map((action) => (
-        <button key={action.label} type="button"
-          style={{ ...BUTTON_STYLE, background: '#1d4ed8', borderColor: '#3b82f6' }}
-          onClick={action.onClick} disabled={action.disabled}>{action.label}</button>
-      ))}
+      <button type="button" style={BUTTON_STYLE}
+        onClick={props.onToggleSettings}>{props.settingsOpen ? '收起设置' : '导出设置'}</button>
+      <button type="button" style={{ ...BUTTON_STYLE, background: '#1d4ed8', borderColor: '#3b82f6' }}
+        onClick={props.onExport} disabled={props.exportDisabled}>导出</button>
       {props.exportState.status === 'running' && (
         <span style={{ color: TEXT_MUTED, fontSize: 13 }}>编码中 {props.exportState.done}/{props.exportState.total}</span>
       )}
@@ -190,31 +195,139 @@ export function MediaPanel(props: {
   )
 }
 
-/** 右栏属性检查器：选中片段的只读属性（编辑能力后置批次）。 */
-export function PropertiesPanel(props: { selected: CoreElement | null }) {
+/** 属性面板可编辑的片段字段（ticks）。 */
+export interface ClipPatch {
+  startTime?: number
+  duration?: number
+  trimStart?: number
+  trimEnd?: number
+}
+
+const EDITABLE_FIELDS: Array<{ key: keyof ClipPatch; label: string }> = [
+  { key: 'startTime', label: '开始 (ticks)' },
+  { key: 'duration', label: '时长 (ticks)' },
+  { key: 'trimStart', label: '入点 (ticks)' },
+  { key: 'trimEnd', label: '出点 (ticks)' },
+]
+
+const INPUT_STYLE: CSSProperties = {
+  width: '100%', boxSizing: 'border-box', background: '#0b1220', color: TEXT_MAIN,
+  border: '1px solid #475569', borderRadius: 4, padding: '4px 6px', fontSize: 12,
+}
+
+function draftOf(selected: CoreElement | null): Record<keyof ClipPatch, string> {
+  return {
+    startTime: String(selected?.startTime ?? 0),
+    duration: String(selected?.duration ?? 0),
+    trimStart: String(selected?.trimStart ?? 0),
+    trimEnd: String(selected?.trimEnd ?? 0),
+  }
+}
+
+/** 右栏属性检查器：选中片段的可编辑属性（UI 第三批）。 */
+export function PropertiesPanel(props: {
+  selected: CoreElement | null
+  onChange?: (patch: ClipPatch) => void
+}) {
   const selected = props.selected
+  const [draft, setDraft] = useState<Record<keyof ClipPatch, string>>(() => draftOf(selected))
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    setDraft(draftOf(selected))
+    setError(null)
+  }, [selected])
   return (
     <section style={COLUMN_STYLE}>
       <h2 style={{ fontSize: 15, margin: '0 0 10px', color: TEXT_MAIN }}>属性</h2>
       {!selected && <p style={{ fontSize: 13, color: TEXT_MUTED, margin: 0 }}>在时间轴点击片段查看属性。</p>}
       {selected && (
-        <table style={{ fontSize: 13, color: TEXT_MAIN, borderCollapse: 'collapse', width: '100%' }}>
-          <tbody>
-            {([
-              ['id', selected.id],
-              ['开始 (ticks)', String(selected.startTime)],
-              ['时长 (ticks)', String(selected.duration)],
-              ['入点 (ticks)', String(selected.trimStart)],
-              ['出点 (ticks)', String(selected.trimEnd)],
-            ] as const).map(([key, value]) => (
-              <tr key={key}>
-                <td style={{ padding: '3px 8px 3px 0', color: TEXT_MUTED }}>{key}</td>
-                <td style={{ padding: 3 }}>{value}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <>
+          <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 8px' }}>id：{selected.id}</p>
+          <table style={{ fontSize: 13, color: TEXT_MAIN, borderCollapse: 'collapse', width: '100%' }}>
+            <tbody>
+              {EDITABLE_FIELDS.map(({ key, label }) => (
+                <tr key={key}>
+                  <td style={{ padding: '3px 8px 3px 0', color: TEXT_MUTED, whiteSpace: 'nowrap' }}>{label}</td>
+                  <td style={{ padding: 3, width: '55%' }}>
+                    <input type="number" min={0} step={1000} aria-label={label} value={draft[key]}
+                      style={INPUT_STYLE}
+                      onChange={(event) => setDraft((previous) => ({ ...previous, [key]: event.target.value }))} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {error && <p style={{ fontSize: 12, color: '#fca5a5', margin: '8px 0 0' }}>{error}</p>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button type="button" style={BUTTON_STYLE} disabled={!props.onChange} onClick={() => {
+              const patch: ClipPatch = {}
+              for (const { key } of EDITABLE_FIELDS) {
+                const value = Number(draft[key])
+                if (!Number.isFinite(value) || value < 0) {
+                  setError('字段必须是非负数字')
+                  return
+                }
+                patch[key] = Math.round(value)
+              }
+              setError(null)
+              props.onChange?.(patch)
+            }}>应用修改</button>
+            <button type="button" style={BUTTON_STYLE} onClick={() => { setDraft(draftOf(selected)); setError(null) }}>重置</button>
+          </div>
+        </>
       )}
+    </section>
+  )
+}
+
+/** 导出设置面板（UI 第三批）：容器、音轨、码率与快捷键说明。 */
+export function ExportSettingsPanel(props: {
+  open: boolean
+  settings: ExportSettings
+  onChange: (settings: ExportSettings) => void
+  onExport: () => void
+  exportDisabled?: boolean
+  resolution: string
+}) {
+  if (!props.open) return null
+  const settings = props.settings
+  return (
+    <section style={{ ...PANEL_STYLE, marginTop: 8 }}>
+      <h2 style={{ fontSize: 15, margin: '0 0 10px', color: TEXT_MAIN }}>导出设置</h2>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          容器
+          <select aria-label="导出容器" value={settings.container}
+            style={{ ...INPUT_STYLE, width: 'auto' }}
+            onChange={(event) => props.onChange({
+              ...settings, container: event.target.value as ExportContainerChoice,
+            })}>
+            {(Object.keys(CONTAINER_LABELS) as ExportContainerChoice[]).map((key) => (
+              <option key={key} value={key}>{CONTAINER_LABELS[key]}</option>
+            ))}
+          </select>
+        </label>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input type="checkbox" checked={settings.includeAudio}
+            onChange={(event) => props.onChange({ ...settings, includeAudio: event.target.checked })} />
+          包含音轨
+        </label>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          码率 (bps)
+          <input type="number" min={1} step={100000} aria-label="导出码率"
+            value={settings.bitrateBps}
+            style={{ ...INPUT_STYLE, width: 110 }}
+            onChange={(event) => props.onChange({
+              ...settings, bitrateBps: Math.max(1, Number(event.target.value) || 1),
+            })} />
+        </label>
+        <span style={{ color: TEXT_MUTED, fontSize: 12 }}>
+          分辨率 {props.resolution}（由 core 帧源固定，暂不可改）
+        </span>
+        <button type="button" style={{ ...BUTTON_STYLE, background: '#1d4ed8', borderColor: '#3b82f6' }}
+          onClick={props.onExport} disabled={props.exportDisabled}>开始导出</button>
+      </div>
+      <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '10px 0 0' }}>快捷键：{SHORTCUT_HELP}</p>
     </section>
   )
 }
