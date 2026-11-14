@@ -142,12 +142,23 @@ function checksum(pixels) {
   return createHash('sha256').update(pixels).digest('hex');
 }
 
+/** FNV-1a 指纹：与 `RenderFrame::checksum()`（ocx-render）同算法，用于跨栈像素对比。 */
+function fnvChecksum(pixels) {
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of pixels) {
+    hash ^= BigInt(byte);
+    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return `0x${hash.toString(16).padStart(16, '0')}`;
+}
+
 /** 调用 core 合成一帧并转成摘要。 */
 function renderFrame(args) {
   const pixels = render_frame_rgba(JSON.stringify(args));
   return {
     size: pixels.length,
     sha256: checksum(pixels),
+    fnvChecksum: fnvChecksum(pixels),
     rgbaBase64: Buffer.from(pixels).toString('base64'),
   };
 }

@@ -4,8 +4,9 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -203,6 +204,25 @@ const state = createState();
     arguments: { frameIndex: 2, timeTicks: 8000, durationTicks: 4000, profile: PROFILE, params: PARAMS },
   }));
   check('批量渲染帧指纹与单帧一致', () => assert.equal(job.checksums[2], single.sha256));
+
+  // W-13 第二批：Headless CLI（Rust 原生）与 WASM core 的跨栈像素一致性
+  const cliDir = mkdtempSync(path.join(os.tmpdir(), 'ocx-mcp-cli-'));
+  const cliProfile = path.join(cliDir, 'profile.json');
+  const cliParams = path.join(cliDir, 'params.json');
+  writeFileSync(cliProfile, JSON.stringify(PROFILE));
+  writeFileSync(cliParams, JSON.stringify(PARAMS));
+  const cliRun = spawnSync('cargo', [
+    'run', '-q', '-p', 'ocx-cli', '--', 'frame',
+    '--profile', cliProfile,
+    '--params', cliParams,
+    '--frame-index', '0', '--time-ticks', '0', '--duration-ticks', '4000',
+    '--out', cliDir, '--name', 'clip',
+  ], { encoding: 'utf8', cwd: path.resolve(HERE, '../..'), timeout: 120000 });
+  check('Headless CLI 与 WASM core 像素指纹一致', () => {
+    assert.equal(cliRun.status, 0, cliRun.stderr);
+    const summary = JSON.parse(cliRun.stdout);
+    assert.equal(summary.checksum, first.fnvChecksum);
+  });
 }
 {
   const response = await call(state, 'tools/call', { name: 'ocx.render.status', arguments: { jobId: 'job-404' } });

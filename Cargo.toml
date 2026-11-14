@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   'apps/desktop',
+  'apps/local-cli',
   # 'crates/*',
   'local/crates/*',
 ]
