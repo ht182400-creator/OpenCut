@@ -16,7 +16,7 @@ const ANSI_RED = "\u001b[31m";
 const ANSI_GREEN = "\u001b[32m";
 const ANSI_RESET = "\u001b[0m";
 const EXPECTED_MILESTONES = 7;
-const EXPECTED_HOTSPOTS = 14;
+const EXPECTED_HOTSPOTS = 17;
 const EXPECTED_QUESTIONS = 8;
 const LOG_LINES = [];
 let PASS_COUNT = 0;
@@ -182,22 +182,30 @@ function main() {
     assertEqual("导入导出不再写入里程碑状态", ioSource.includes("state.milestones"), false);
     assertEqual("状态版本已升级到 2", api.STATE_VERSION, 2);
 
-    // 3. 完成度计算（M0 有 4 个热点：H03/H06/H10/H14，其中 H03/H10 已完成）
-    assertNear("M0 完成度", api.milestoneProgress("M0"), 1 / 2);
-    assertNear("M1 完成度", api.milestoneProgress("M1"), 0);
+    // 3. 完成度计算（2026-11-14 校准：M0 四个热点中 H03/H10/H14 已完成，H06 进行中）
+    assertNear("M0 完成度", api.milestoneProgress("M0"), 3 / 4);
+    // M1 三个热点：H01 阻塞、H05 未开始、H17 已完成（Rust core 迁入）
+    assertNear("M1 完成度", api.milestoneProgress("M1"), 1 / 3);
     assertNear("无关联热点里程碑完成度", api.milestoneProgress("M999"), 0);
 
     // 3b. 自动推导：改热点状态 → 里程碑立即变化，不存在人工覆盖路径
     const m0 = api.milestoneSummary("M0");
     assertEqual("M0 关联热点数", m0.total, 4);
-    assertEqual("M0 已完成热点数", m0.done, 2);
-    assertEqual("M0 热点百分比", m0.percent, 50);
+    assertEqual("M0 已完成热点数", m0.done, 3);
+    assertEqual("M0 热点百分比", m0.percent, 75);
     assertEqual("M0 推导状态", m0.status, "进行中");
     assertEqual("M0 汇总不含 manual", Object.prototype.hasOwnProperty.call(m0, "manual"), false);
     assertEqual("M0 汇总不含 conflict", Object.prototype.hasOwnProperty.call(m0, "conflict"), false);
     assertEqual("M1 推导状态", api.derivedMilestoneStatus("M1"), "阻塞");
-    // M6 仅关联 H12；W-09 四批闭合 H12 后，M6 由热点推导为「已完成」
-    assertEqual("M6 推导状态", api.derivedMilestoneStatus("M6"), "已完成");
+    // 2026-11-14 校准：H12 归属由 M6 修正为 M4；M6 只关联新增的 H15（移动端未开始）
+    assertEqual("M6 推导状态", api.derivedMilestoneStatus("M6"), "未开始");
+    assertNear("M6 完成度", api.milestoneProgress("M6"), 0);
+    // M2/M4/M5 已达到 DoD，关联热点全部完成
+    assertEqual("M2 推导状态", api.derivedMilestoneStatus("M2"), "已完成");
+    assertEqual("M4 推导状态", api.derivedMilestoneStatus("M4"), "已完成");
+    assertEqual("M5 推导状态", api.derivedMilestoneStatus("M5"), "已完成");
+    // M3 仍有 H16（headless PNG / 桌面像素一致）未完成
+    assertEqual("M3 推导状态", api.derivedMilestoneStatus("M3"), "进行中");
     const hotspotState = api.getState().hotspots;
     for (const id of ["H03", "H06", "H10", "H14"]) hotspotState[id] = "已完成";
     assertEqual("热点全完成后 M0 变已完成", api.statusOf("milestones", "M0"), "已完成");
@@ -213,14 +221,14 @@ function main() {
     // 直接验证决策台账 DOM 已更新，避免「数据改了但页面没渲染」的回归
     assertEqual("决策台账渲染卡片数", env.elements["question-list"].children.length, EXPECTED_QUESTIONS);
     assertEqual("统计显示已决 2 项", env.elements["question-stats"].textContent.includes("已决 2"), true);
-    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r41"), true);
+    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r42"), true);
     const svgTexts = [];
     const collectText = (node, target) => {
       if (node && typeof node.textContent === "string" && node.textContent) target.push(node.textContent);
       for (const child of (node && node.children) || []) collectText(child, target);
     };
     collectText(env.elements["flow-svg"], svgTexts);
-    assertEqual("流程图节点直接显示百分比", svgTexts.some((text) => text.includes("50%")), true);
+    assertEqual("流程图节点显示校准后的 M0 百分比", svgTexts.some((text) => text.includes("75%")), true);
     assertEqual("流程图 tooltip 说明自动推导", svgTexts.some((text) => text.includes("自动推导")), true);
     assertEqual("流程图 tooltip 说明不可覆盖", svgTexts.some((text) => text.includes("不可手动覆盖")), true);
     const cardTexts = [];
