@@ -10,11 +10,16 @@ import {
   PREVIEW_HEIGHT,
   PREVIEW_WIDTH,
   SCRUB_THRESHOLD_MS,
+  SURFACE_STYLE,
   TEXT_MAIN,
+  TOPBAR_STYLE,
+  WORKSPACE_STYLE,
+  DiagnosticsPanel,
+  MediaPanel,
   PreviewSection,
-  ProjectSummary,
+  PropertiesPanel,
   TimelineSection,
-  ToolbarSection,
+  TopBar,
   blankFrame,
   type ApplyResponse,
   type CoreElement,
@@ -128,6 +133,7 @@ function Editor() {
         startTime: element.startTime,
         duration: element.duration,
         trimStart: element.trimStart,
+        trimEnd: element.trimEnd,
       }))
       if (mainElements.length === 0) throw new Error('项目中没有可编辑的主轨片段')
 
@@ -448,38 +454,26 @@ function Editor() {
   }
 
   const activeClip = clipAtTime(elements, frameIndex * (session?.ticksPerFrame ?? 0))?.id ?? (session ? '空档' : '—')
+  const selectedElement = elements.find((element) => element.id === selectedId) ?? null
 
   return (
-    <main style={{ maxWidth: 880, margin: '32px auto', padding: '0 16px', color: '#0f172a' }}>
-      <h1 style={{ fontSize: 24, marginBottom: 4 }}>Editor · Web-first 编辑器</h1>
-      <p style={{ color: '#475569', fontSize: 13, marginBottom: 18 }}>导入项目或真实音视频，删除、分割、裁剪入出点、平移片段，逐帧预览并导出带 AAC 音轨的 MP4；代理帧三级缓存与单帧耗时量化由 W-09 提供，Rust core（WASM）负责合成与出帧。</p>
-
-      <ToolbarSection
-        projectFileRef={projectFileRef}
-        videoFileRef={videoFileRef}
-        otioFileRef={otioFileRef}
-        onDropFile={(file) => void readFile(file)}
-        onOtioFile={(file) => void handleOtioImport(file)}
-        sourceName={sourceName}
-        mediaStatus={mediaStatus}
-        cacheInfo={cacheInfo}
-        historyLabel={clipHistory.label}
-        benchmarkInfo={benchmarkInfo}
-        proxyUrl={proxyUrl}
-        otioUrl={otioUrl}
-        exportState={exportState}
+    <main style={SURFACE_STYLE}>
+      <TopBar
+        projectName={session?.project.name ?? '未加载'}
+        projectVersion={session?.project.version ?? 0}
+        sceneCount={session?.project.sceneCount ?? 0}
+        trackCount={session?.projectTrackCount ?? 0}
         actions={[
-          { label: '生成演示素材', onClick: () => void handleDemoClip() },
-          { label: '清除帧缓存', onClick: () => void handleClearCache() },
-          { label: '导出代理文件', disabled: !media, onClick: () => void handleProxyExport() },
-          { label: '导出 OTIO', disabled: !session, onClick: () => void handleOtioExport() },
-          { label: '4K scrub 基准', disabled: !session, onClick: () => void handleBenchmark() },
           { label: '撤销', disabled: !clipHistory.canUndo, onClick: clipHistory.undo },
           { label: '重做', disabled: !clipHistory.canRedo, onClick: clipHistory.redo },
+        ]}
+        exportActions={[
           { label: '导出 MP4', disabled: !session || exportState.status === 'running', onClick: () => void handleExport('mp4') },
           { label: '导出 WebM', disabled: !session || exportState.status === 'running', onClick: () => void handleExport('webm') },
           { label: '导出 AV1 WebM', disabled: !session || exportState.status === 'running', onClick: () => void handleExport('webm-av1') },
         ]}
+        exportState={exportState}
+        otioUrl={otioUrl}
       />
 
       {!session && !errorText && <div style={{ ...PANEL_STYLE, color: TEXT_MAIN }}>正在加载项目与 Rust core WASM…</div>}
@@ -487,10 +481,30 @@ function Editor() {
 
       {session && (
         <>
-          <ProjectSummary session={session} trackCount={session.projectTrackCount} />
+          <div style={WORKSPACE_STYLE}>
+            <MediaPanel
+              projectFileRef={projectFileRef}
+              videoFileRef={videoFileRef}
+              otioFileRef={otioFileRef}
+              onDropFile={(file) => void readFile(file)}
+              onOtioFile={(file) => void handleOtioImport(file)}
+              onDemo={() => void handleDemoClip()}
+              sourceName={sourceName}
+              mediaStatus={mediaStatus}
+            />
+            <PreviewSection
+              canvasRef={canvasRef}
+              playing={playing}
+              onTogglePlay={() => setPlaying((value) => !value)}
+              frameIndex={frameIndex}
+              frameCount={frameCount}
+              onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
+              timecode={`帧 ${frameIndex + 1}/${frameCount} · ${(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s · 片段 ${activeClip}`}
+            />
+            <PropertiesPanel selected={selectedElement} />
+          </div>
 
           <TimelineSection
-            originalElements={originalElements}
             elements={elements}
             selectedId={selectedId}
             onSelect={setSelectedId}
@@ -513,14 +527,16 @@ function Editor() {
             ]}
           />
 
-          <PreviewSection
-            canvasRef={canvasRef}
-            playing={playing}
-            onTogglePlay={() => setPlaying((value) => !value)}
-            frameIndex={frameIndex}
-            frameCount={frameCount}
-            onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
-            footer={`帧 ${frameIndex + 1}/${frameCount} · ${(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s · 片段 ${activeClip} · 帧耗时 ${frameCost.toFixed(2)}ms（阈值 ${SCRUB_THRESHOLD_MS}ms ${frameCost <= SCRUB_THRESHOLD_MS ? '达标' : '超标'}）`}
+          <DiagnosticsPanel
+            items={[
+              { label: '代理帧缓存', value: cacheInfo },
+              { label: '剪辑历史', value: clipHistory.label },
+              { label: '4K scrub 基准', value: benchmarkInfo || '未运行' },
+              { label: '帧耗时', value: `${frameCost.toFixed(2)}ms（阈值 ${SCRUB_THRESHOLD_MS}ms ${frameCost <= SCRUB_THRESHOLD_MS ? '达标' : '超标'}）` },
+              { label: 'core', value: `API ${session.info.apiVersion} / ${session.info.backendId} · WebCodecs ${session.codecs.available ? '可用' : '不可用'}` },
+              { label: '兼容提示', value: `${session.project.warnings.length} 条` },
+            ]}
+            proxyUrl={proxyUrl}
           />
         </>
       )}

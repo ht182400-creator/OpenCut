@@ -85,6 +85,14 @@
 - **基线**：三端 `main`；10 crate 全绿、官方 OTIO 往返 42/42、MCP 18/18、vitest 115/115、看板 73/73、兼容 45/45。
 - **UI 阶段约定**：每批结束跑全套回归，UI 改动不回退 core 契约与测试；core 暂停项在 UI 阶段被阻塞时按原表恢复。
 
+## 经典版 UI 同步（三批计划，2026-11-14 启动）
+
+| 批次 | 范围 | 状态 |
+| --- | --- | --- |
+| 第一批 | 布局与去调试化：顶栏 + 左素材库 + 中大预览 + 右属性 + 底部时间轴；诊断信息收进折叠区；全部原功能保留 | **已完成**（`TopBar` / `MediaPanel` / `PropertiesPanel` / `DiagnosticsPanel`，删除平铺 `ToolbarSection` 与 `ProjectSummary`，时间轴去掉导入对照；浏览器截图验收，修复 `trimEnd` 映射缺口；vitest 115/115、tsc 0、`vite build` 0） |
+| 第二批 | 时间轴产品化：时间标尺、可点击/可拖动播放头、片段波形与时长标签、缩放、吸附 | 进行中 |
+| 第三批 | 交互与状态：快捷键、属性面板可编辑、项目保存/加载、导出设置 | 未开始 |
+
 > **H03 已关闭**（2026-11-08）：用户授权后由助手实际安装并跑通全部验证。系统另有一套独立 Rust 1.96，需把 `~/.cargo/bin` 置于 PATH 最前使 rustup 项目级 override 生效；根目录没有 `package.json`，依赖须在两个 app 目录分别安装；`moon ci` 默认 base 为 `master`，本仓库为 `main`。完整记录见 [`H03-toolchain-bootstrap.md`](H03-toolchain-bootstrap.md) §6。
 > **H03 完全关闭、无遗留**：moon 2.3.3 官方预编译包也经 `api.github.com` asset 端点下载并校验，按 `manifest.json`（无 BOM UTF-8）注册后 `proto use` 秒级完成；`moon.exe` 与 npm 版 SHA-256 交叉校验一致。**`MOON_TOOLCHAIN_FORCE_GLOBALS` 已不再需要**，不设旁路时 `moon ci` 与三端冒烟全通过。详见 `H03-toolchain-bootstrap.md` §4–§5。
 

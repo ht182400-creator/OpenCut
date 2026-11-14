@@ -1,6 +1,9 @@
 /**
- * 编辑器共享 UI 片段与配置（W-08 / W-09）：样式常量、时间轴组件与导出配置。
- * 从 `routes/editor.tsx` 抽离，保持单个代码文件不超过 500 行。
+ * 编辑器共享 UI 片段与配置（W-08 / W-09 / UI 同步第一批）。
+ *
+ * UI 同步第一批（经典版信息架构）：`TopBar`（项目 + 撤销重做 + 导出）、
+ * `MediaPanel`（左栏素材与导入）、`PropertiesPanel`（右栏选中片段属性）、
+ * `DiagnosticsPanel`（折叠的诊断与高级工具）；调试信息不再平铺在主界面。
  */
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react'
@@ -35,6 +38,35 @@ export const BUTTON_STYLE: CSSProperties = {
   cursor: 'pointer',
   display: 'inline-block',
 }
+
+/** UI 同步第一批：工作区三栏与顶栏布局。 */
+export const SURFACE_STYLE: CSSProperties = {
+  minHeight: '100vh',
+  background: '#0b1220',
+  color: TEXT_MAIN,
+  padding: '0 16px 24px',
+}
+export const TOPBAR_STYLE: CSSProperties = {
+  display: 'flex',
+  gap: 12,
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  padding: '10px 0',
+  borderBottom: '1px solid #1f2937',
+  marginBottom: 12,
+}
+export const WORKSPACE_STYLE: CSSProperties = {
+  display: 'flex',
+  gap: 12,
+  alignItems: 'stretch',
+  flexWrap: 'wrap',
+}
+export const COLUMN_STYLE: CSSProperties = {
+  ...PANEL_STYLE,
+  flex: '1 1 260px',
+  minWidth: 240,
+  marginBottom: 12,
+}
 const TRACK_STYLE: CSSProperties = {
   position: 'relative',
   height: 36,
@@ -64,6 +96,150 @@ export const DEMO_PARAMS = {
   positionY: 0.5,
 }
 
+/** 顶栏：项目名、撤销重做与导出组（含导出状态与下载链接）。 */
+export function TopBar(props: {
+  projectName: string
+  projectVersion: number
+  sceneCount: number
+  trackCount: number
+  actions: ToolbarAction[]
+  exportActions: ToolbarAction[]
+  exportState: ExportState
+  otioUrl: string | null
+}) {
+  return (
+    <header style={TOPBAR_STYLE}>
+      <strong style={{ fontSize: 17 }}>OpenCut Editor</strong>
+      <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
+        {props.projectName} · 经典版 v{props.projectVersion} · {props.sceneCount} 场景 / {props.trackCount} 轨道
+      </span>
+      <span style={{ flex: 1 }} />
+      {props.actions.map((action) => (
+        <button key={action.label} type="button" style={BUTTON_STYLE}
+          onClick={action.onClick} disabled={action.disabled}>{action.label}</button>
+      ))}
+      {props.exportActions.map((action) => (
+        <button key={action.label} type="button"
+          style={{ ...BUTTON_STYLE, background: '#1d4ed8', borderColor: '#3b82f6' }}
+          onClick={action.onClick} disabled={action.disabled}>{action.label}</button>
+      ))}
+      {props.exportState.status === 'running' && (
+        <span style={{ color: TEXT_MUTED, fontSize: 13 }}>编码中 {props.exportState.done}/{props.exportState.total}</span>
+      )}
+      {props.exportState.status === 'done' && props.exportState.url && (
+        <a href={props.exportState.url} download={props.exportState.filename ?? 'opencut-export.mp4'} style={{ color: '#7dd3fc', fontSize: 13 }}>
+          下载 {props.exportState.filename?.includes('-av1') ? 'AV1 WebM' : props.exportState.filename?.endsWith('.webm') ? 'WebM' : 'MP4'}
+        </a>
+      )}
+      {props.exportState.status === 'error' && (
+        <span style={{ color: '#fca5a5', fontSize: 13 }}>{props.exportState.message}</span>
+      )}
+      {props.otioUrl && (
+        <a href={props.otioUrl} download="opencut-timeline.otio" style={{ color: '#7dd3fc', fontSize: 13 }}>下载 OTIO</a>
+      )}
+    </header>
+  )
+}
+
+/** 左栏素材库：项目/素材/OTIO 导入、拖放与演示素材。 */
+export function MediaPanel(props: {
+  projectFileRef: RefObject<HTMLInputElement | null>
+  videoFileRef: RefObject<HTMLInputElement | null>
+  otioFileRef: RefObject<HTMLInputElement | null>
+  onDropFile: (file?: File) => void
+  onOtioFile: (file?: File) => void
+  onDemo: () => void
+  sourceName: string
+  mediaStatus: string
+}) {
+  return (
+    <section
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault()
+        props.onDropFile(event.dataTransfer.files[0])
+      }}
+      style={COLUMN_STYLE}
+    >
+      <h2 style={{ fontSize: 15, margin: '0 0 10px', color: TEXT_MAIN }}>素材</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <label style={BUTTON_STYLE}>
+          导入项目 JSON
+          <input ref={props.projectFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
+            onChange={(event) => props.onDropFile(event.target.files?.[0])} />
+        </label>
+        <label style={BUTTON_STYLE}>
+          导入视频素材
+          <input ref={props.videoFileRef} type="file" accept="video/*,.mp4,.webm" style={{ display: 'none' }}
+            onChange={(event) => props.onDropFile(event.target.files?.[0])} />
+        </label>
+        <label style={BUTTON_STYLE}>
+          导入 OTIO
+          <input ref={props.otioFileRef} type="file" accept=".otio,application/json" style={{ display: 'none' }}
+            onChange={(event) => props.onOtioFile(event.target.files?.[0])} />
+        </label>
+        <button type="button" style={BUTTON_STYLE} onClick={props.onDemo}>生成演示素材</button>
+      </div>
+      <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '10px 0 0' }}>
+        当前：{props.sourceName}
+        <br />
+        {props.mediaStatus}
+      </p>
+      <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '6px 0 0' }}>支持把视频文件拖放到本面板。</p>
+    </section>
+  )
+}
+
+/** 右栏属性检查器：选中片段的只读属性（编辑能力后置批次）。 */
+export function PropertiesPanel(props: { selected: CoreElement | null }) {
+  const selected = props.selected
+  return (
+    <section style={COLUMN_STYLE}>
+      <h2 style={{ fontSize: 15, margin: '0 0 10px', color: TEXT_MAIN }}>属性</h2>
+      {!selected && <p style={{ fontSize: 13, color: TEXT_MUTED, margin: 0 }}>在时间轴点击片段查看属性。</p>}
+      {selected && (
+        <table style={{ fontSize: 13, color: TEXT_MAIN, borderCollapse: 'collapse', width: '100%' }}>
+          <tbody>
+            {([
+              ['id', selected.id],
+              ['开始 (ticks)', String(selected.startTime)],
+              ['时长 (ticks)', String(selected.duration)],
+              ['入点 (ticks)', String(selected.trimStart)],
+              ['出点 (ticks)', String(selected.trimEnd)],
+            ] as const).map(([key, value]) => (
+              <tr key={key}>
+                <td style={{ padding: '3px 8px 3px 0', color: TEXT_MUTED }}>{key}</td>
+                <td style={{ padding: 3 }}>{value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  )
+}
+
+/** 折叠的诊断与高级工具：缓存、基准、剪辑历史、代理文件与 core 信息。 */
+export function DiagnosticsPanel(props: { items: Array<{ label: string; value: string }>; proxyUrl: string | null }) {
+  return (
+    <details style={{ ...PANEL_STYLE, padding: '10px 16px' }}>
+      <summary style={{ cursor: 'pointer', color: TEXT_MUTED, fontSize: 13 }}>诊断与高级工具</summary>
+      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {props.items.map((item) => (
+          <span key={item.label} style={{ fontSize: 12, color: TEXT_MUTED }}>
+            {item.label}：{item.value}
+          </span>
+        ))}
+        {props.proxyUrl && (
+          <a href={props.proxyUrl} download="opencut-proxy.mp4" style={{ color: '#7dd3fc', fontSize: 12 }}>
+            下载代理 MP4
+          </a>
+        )}
+      </div>
+    </details>
+  )
+}
+
 /** W-09 量化阈值：单帧预览合成耗时不超过 16ms（60fps）。 */
 export const SCRUB_THRESHOLD_MS = 16
 
@@ -75,43 +251,24 @@ export function PreviewSection(props: {
   frameIndex: number
   frameCount: number
   onSeek: (frameIndex: number) => void
-  footer: string
+  /** 时间码（帧号 + 秒），诊断信息不放这里。 */
+  timecode: string
 }) {
   return (
-    <section style={PANEL_STYLE}>
-      <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>预览与播放头</h2>
+    <section style={{ ...COLUMN_STYLE, flex: '2 1 380px' }}>
+      <h2 style={{ fontSize: 15, margin: '0 0 8px', color: TEXT_MAIN }}>预览</h2>
       <canvas ref={props.canvasRef} width={PREVIEW_WIDTH} height={PREVIEW_HEIGHT}
-        style={{ borderRadius: 6, border: '1px solid #334155', display: 'block' }} />
-      <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        style={{ borderRadius: 6, border: '1px solid #334155', display: 'block', width: '100%', maxWidth: 640, background: '#020617' }} />
+      <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="button" style={BUTTON_STYLE} onClick={props.onTogglePlay}>
           {props.playing ? '暂停' : '播放'}
         </button>
         <input type="range" min={0} max={Math.max(props.frameCount - 1, 0)}
           value={Math.min(props.frameIndex, props.frameCount - 1)}
           onChange={(event) => props.onSeek(Number(event.target.value))}
-          style={{ flex: 1, minWidth: 200 }} aria-label="播放头" />
-        <span style={{ color: TEXT_MUTED, fontSize: 13, whiteSpace: 'nowrap' }}>{props.footer}</span>
+          style={{ flex: 1, minWidth: 160 }} aria-label="播放头" />
+        <span style={{ color: TEXT_MUTED, fontSize: 13, whiteSpace: 'nowrap' }}>{props.timecode}</span>
       </div>
-    </section>
-  )
-}
-
-/** 项目信息摘要：只读展示经典版项目与 core 能力。 */
-export function ProjectSummary(props: { session: Session; trackCount: number }) {
-  const { session } = props
-  return (
-    <section style={PANEL_STYLE}>
-      <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>项目（经典版 v{session.project.version}）</h2>
-      <p style={{ fontSize: 13, margin: '4px 0', color: TEXT_MAIN }}>
-        {session.project.name} · {session.project.sceneCount} 场景 / {props.trackCount} 轨道 ·
-        兼容提示 {session.project.warnings.length} 条
-      </p>
-      <p style={{ fontSize: 13, color: TEXT_MUTED, margin: '4px 0' }}>
-        {session.project.fps.numerator}/{session.project.fps.denominator} fps ·{' '}
-        {session.project.canvas.width}×{session.project.canvas.height} ·
-        API {session.info.apiVersion} / {session.info.backendId} ·
-        WebCodecs {session.codecs.available ? '可用' : '不可用'}
-      </p>
     </section>
   )
 }
@@ -123,87 +280,8 @@ export interface ToolbarAction {
   disabled?: boolean
 }
 
-/** 工具栏：文件输入、动作按钮、状态信息与下载链接。 */
-export function ToolbarSection(props: {
-  projectFileRef: RefObject<HTMLInputElement | null>
-  videoFileRef: RefObject<HTMLInputElement | null>
-  otioFileRef: RefObject<HTMLInputElement | null>
-  onDropFile: (file?: File) => void
-  onOtioFile: (file?: File) => void
-  actions: ToolbarAction[]
-  sourceName: string
-  mediaStatus: string
-  cacheInfo: string
-  historyLabel: string
-  benchmarkInfo: string
-  proxyUrl: string | null
-  otioUrl: string | null
-  exportState: ExportState
-}) {
-  return (
-    <div
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault()
-        props.onDropFile(event.dataTransfer.files[0])
-      }}
-      style={{ ...PANEL_STYLE, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}
-    >
-      <label style={BUTTON_STYLE}>
-        导入项目 JSON
-        <input ref={props.projectFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
-          onChange={(event) => props.onDropFile(event.target.files?.[0])} />
-      </label>
-      <label style={BUTTON_STYLE}>
-        导入视频素材
-        <input ref={props.videoFileRef} type="file" accept="video/*,.mp4,.webm" style={{ display: 'none' }}
-          onChange={(event) => props.onDropFile(event.target.files?.[0])} />
-      </label>
-      {props.actions.map((action) => (
-        <button key={action.label} type="button" style={BUTTON_STYLE}
-          onClick={action.onClick} disabled={action.disabled}>
-          {action.label}
-        </button>
-      ))}
-      <label style={BUTTON_STYLE}>
-        导入 OTIO
-        <input ref={props.otioFileRef} type="file" accept=".otio,application/json" style={{ display: 'none' }}
-          onChange={(event) => props.onOtioFile(event.target.files?.[0])} />
-      </label>
-      <span style={{ color: TEXT_MUTED, fontSize: 13 }}>当前：{props.sourceName} · {props.mediaStatus}</span>
-      <span style={{ color: TEXT_MUTED, fontSize: 13 }}>{props.cacheInfo}</span>
-      <span style={{ color: TEXT_MUTED, fontSize: 13 }}>{props.historyLabel}</span>
-      {props.benchmarkInfo && (
-        <span style={{ color: '#7dd3fc', fontSize: 13 }}>4K 基准：{props.benchmarkInfo}</span>
-      )}
-      {props.proxyUrl && (
-        <a href={props.proxyUrl} download="opencut-proxy.mp4" style={{ color: '#7dd3fc', fontSize: 13 }}>
-          下载代理 MP4
-        </a>
-      )}
-      {props.otioUrl && (
-        <a href={props.otioUrl} download="opencut-timeline.otio" style={{ color: '#7dd3fc', fontSize: 13 }}>
-          下载 OTIO
-        </a>
-      )}
-      {props.exportState.status === 'running' && (
-        <span style={{ color: TEXT_MUTED, fontSize: 13 }}>编码中 {props.exportState.done}/{props.exportState.total}</span>
-      )}
-      {props.exportState.status === 'done' && props.exportState.url && (
-        <a href={props.exportState.url} download={props.exportState.filename ?? 'opencut-export.mp4'} style={{ color: '#7dd3fc', fontSize: 13 }}>
-          下载 {props.exportState.filename?.includes('-av1') ? 'AV1 WebM' : props.exportState.filename?.endsWith('.webm') ? 'WebM' : 'MP4'}（{props.exportState.message} · {props.exportState.bytes} 字节）
-        </a>
-      )}
-      {props.exportState.status === 'error' && (
-        <span style={{ color: '#fca5a5', fontSize: 13 }}>{props.exportState.message}</span>
-      )}
-    </div>
-  )
-}
-
-/** 时间轴面板：导入前/后对照、片段选中与一组剪辑动作按钮。 */
+/** 时间轴面板：片段选中、剪辑动作与涟漪建议。 */
 export function TimelineSection(props: {
-  originalElements: CoreElement[]
   elements: CoreElement[]
   selectedId: string | null
   onSelect: (id: string) => void
@@ -215,10 +293,7 @@ export function TimelineSection(props: {
 }) {
   return (
     <section style={PANEL_STYLE}>
-      <h2 style={{ fontSize: 16, marginBottom: 8, color: TEXT_MAIN }}>时间轴（点击片段选中）</h2>
-      <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 6px' }}>导入时</p>
-      <Timeline elements={props.originalElements} selectedId={null} />
-      <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '10px 0 6px' }}>当前</p>
+      <h2 style={{ fontSize: 15, margin: '0 0 8px', color: TEXT_MAIN }}>时间轴（点击片段选中，拖边缘裁剪）</h2>
       <Timeline elements={props.elements} selectedId={props.selectedId}
         onSelect={props.onSelect} onMoveClip={props.onMoveClip} onResizeClip={props.onResizeClip} />
       <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
