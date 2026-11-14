@@ -509,6 +509,11 @@ function Editor() {
             selectedId={selectedId}
             onSelect={setSelectedId}
             adjustments={adjustments}
+            frameIndex={frameIndex}
+            frameCount={frameCount}
+            ticksPerFrame={session.ticksPerFrame}
+            ticksPerSecond={TICKS_PER_SECOND}
+            onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
             onMoveClip={(id, start) => applyClipEdit('片段被相邻片段挡住，无法移动到该位置', (cs) => moveClipClamped(cs, id, start), id, '拖拽片段')}
             onResizeClip={(id, edge, delta) => applyClipEdit('片段已到时长边界', (cs) => resizeClipEdge(cs, id, edge, delta, session?.ticksPerFrame ?? 4000), id, '边缘裁剪')}
             statusText={`${selectedId ? `已选中 ${selectedId}` : '未选中片段'} · 剩余 ${elements.length} 个`}

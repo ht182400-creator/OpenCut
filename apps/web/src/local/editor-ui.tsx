@@ -280,7 +280,7 @@ export interface ToolbarAction {
   disabled?: boolean
 }
 
-/** 时间轴面板：片段选中、剪辑动作与涟漪建议。 */
+/** 时间轴面板：标尺/播放头/缩放/吸附 + 片段选中、剪辑动作与涟漪建议。 */
 export function TimelineSection(props: {
   elements: CoreElement[]
   selectedId: string | null
@@ -290,12 +290,42 @@ export function TimelineSection(props: {
   adjustments: RippleAdjustment[]
   onMoveClip?: (clipId: string, proposedStart: number) => void
   onResizeClip?: (clipId: string, edge: 'left' | 'right', deltaTicks: number) => void
+  /** UI 第二批：播放头与时间刻度所需的时间基准。 */
+  frameIndex: number
+  frameCount: number
+  ticksPerFrame: number
+  ticksPerSecond: number
+  onSeek: (frameIndex: number) => void
 }) {
+  const [zoom, setZoom] = useState(1)
+  const [snap, setSnap] = useState(true)
+  const spanTicks = Math.max(
+    ...props.elements.map((item) => item.startTime + item.duration),
+    props.frameCount * props.ticksPerFrame,
+    1,
+  )
   return (
     <section style={PANEL_STYLE}>
-      <h2 style={{ fontSize: 15, margin: '0 0 8px', color: TEXT_MAIN }}>时间轴（点击片段选中，拖边缘裁剪）</h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+        <h2 style={{ fontSize: 15, margin: 0, color: TEXT_MAIN }}>时间轴</h2>
+        <span style={{ color: '#fbbf24', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+          {formatTimecode(props.frameIndex, props.ticksPerFrame, props.ticksPerSecond)}
+        </span>
+        <span style={{ flex: 1 }} />
+        <button type="button" style={BUTTON_STYLE} onClick={() => setZoom((value) => Math.max(1, value / 2))}
+          disabled={zoom <= 1}>缩小</button>
+        <span style={{ color: TEXT_MUTED, fontSize: 12, minWidth: 34, textAlign: 'center' }}>{zoom.toFixed(1)}×</span>
+        <button type="button" style={BUTTON_STYLE} onClick={() => setZoom((value) => Math.min(8, value * 2))}
+          disabled={zoom >= 8}>放大</button>
+        <label style={{ color: TEXT_MUTED, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+          <input type="checkbox" checked={snap} onChange={(event) => setSnap(event.target.checked)} /> 吸附
+        </label>
+      </div>
       <Timeline elements={props.elements} selectedId={props.selectedId}
-        onSelect={props.onSelect} onMoveClip={props.onMoveClip} onResizeClip={props.onResizeClip} />
+        onSelect={props.onSelect} onMoveClip={props.onMoveClip} onResizeClip={props.onResizeClip}
+        zoom={zoom} snap={snap} spanTicks={spanTicks}
+        ticksPerFrame={props.ticksPerFrame} ticksPerSecond={props.ticksPerSecond}
+        frameIndex={props.frameIndex} frameCount={props.frameCount} onSeek={props.onSeek} />
       <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         {props.actions.map((action) => (
           <button key={action.label} type="button" style={BUTTON_STYLE}
@@ -382,12 +412,14 @@ export function blankFrame(): Uint8Array {
  * @returns {React.ReactElement} 时间轴
  */
 /** 拖拽中的鼠标位移记录（像素 → ticks 换算所需的上下文）。 */
-type DragMode = 'move' | 'left' | 'right'
+type DragMode = 'move' | 'left' | 'right' | 'playhead'
 
 interface ClipDrag {
   id: string
   mode: DragMode
   startX: number
+  /** 轨道左边界的屏幕坐标，供播放头拖拽换算。 */
+  left: number
   startTicks: number
   origDuration: number
   total: number
@@ -402,6 +434,50 @@ const HANDLE_STYLE: CSSProperties = {
   background: 'rgba(255,255,255,.28)',
 }
 
+/** 时间标尺主刻度：每秒一个，最多 `maxTicks` 个防止超长时间轴卡死。 */
+export function rulerTicks(spanTicks: number, ticksPerSecond: number, maxTicks = 120): number[] {
+  if (spanTicks <= 0 || ticksPerSecond <= 0) return [0]
+  const count = Math.min(Math.ceil(spanTicks / ticksPerSecond), maxTicks)
+  return Array.from({ length: count + 1 }, (_, index) => index * ticksPerSecond)
+}
+
+/**
+ * 吸附：先按帧网格量化，再在阈值内取最近的片段/时间轴边界。
+ * 关闭时只做四舍五入，保持原有连续拖拽手感。
+ */
+export function snapTicks(
+  value: number,
+  boundaries: number[],
+  ticksPerFrame: number,
+  thresholdTicks: number,
+  enabled: boolean,
+): number {
+  const rounded = Math.max(0, Math.round(value))
+  if (!enabled) return rounded
+  const grid = ticksPerFrame > 0 ? Math.round(rounded / ticksPerFrame) * ticksPerFrame : rounded
+  let best = grid
+  let bestDistance = thresholdTicks
+  for (const boundary of boundaries) {
+    const distance = Math.abs(boundary - grid)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = boundary
+    }
+  }
+  return Math.max(0, Math.round(best))
+}
+
+/** 时间码 `mm:ss.ff`（ff 为当前秒内的帧号）。 */
+export function formatTimecode(frameIndex: number, ticksPerFrame: number, ticksPerSecond: number): string {
+  const tpf = Math.max(1, ticksPerFrame)
+  const tps = Math.max(1, ticksPerSecond)
+  const ticks = Math.max(0, frameIndex) * tpf
+  const minutes = Math.floor(ticks / (60 * tps))
+  const seconds = Math.floor((ticks % (60 * tps)) / tps)
+  const frames = Math.floor((ticks % tps) / tpf)
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(frames).padStart(2, '0')}`
+}
+
 export function Timeline(props: {
   elements: CoreElement[]
   selectedId: string | null
@@ -410,15 +486,36 @@ export function Timeline(props: {
   onMoveClip?: (clipId: string, proposedStart: number) => void
   /** 提供时启用边缘裁剪；提交边缘与位移量，约束由调用方处理。 */
   onResizeClip?: (clipId: string, edge: 'left' | 'right', deltaTicks: number) => void
+  /** UI 第二批：缩放倍数、吸附、时间基准与播放头。 */
+  zoom?: number
+  snap?: boolean
+  spanTicks?: number
+  ticksPerFrame?: number
+  ticksPerSecond?: number
+  frameIndex?: number
+  frameCount?: number
+  onSeek?: (frameIndex: number) => void
 }) {
-  const total = Math.max(...props.elements.map((item) => item.startTime + item.duration), 1)
+  const total = props.spanTicks ?? Math.max(...props.elements.map((item) => item.startTime + item.duration), 1)
+  const ticksPerFrame = props.ticksPerFrame ?? 4000
+  const ticksPerSecond = props.ticksPerSecond ?? 120000
+  const zoom = props.zoom ?? 1
+  const marks = rulerTicks(total, ticksPerSecond)
+  const playheadTicks = props.frameIndex === undefined ? null : props.frameIndex * ticksPerFrame
   const trackRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<ClipDrag | null>(null)
   const moveRef = useRef(props.onMoveClip)
   const resizeRef = useRef(props.onResizeClip)
+  const seekRef = useRef(props.onSeek)
+  const elementsRef = useRef(props.elements)
+  const configRef = useRef({ total, ticksPerFrame, snap: props.snap ?? false, frameCount: props.frameCount ?? 1 })
   const [preview, setPreview] = useState<{ id: string; start: number; duration: number } | null>(null)
   moveRef.current = props.onMoveClip
   resizeRef.current = props.onResizeClip
+  seekRef.current = props.onSeek
+  elementsRef.current = props.elements
+  configRef.current = { total, ticksPerFrame, snap: props.snap ?? false, frameCount: props.frameCount ?? 1 }
 
   /** 开始一次拖拽；边缘把手会阻止冒泡以免触发整段平移。 */
   const startDrag = (event: ReactMouseEvent, element: CoreElement, mode: DragMode) => {
@@ -426,27 +523,73 @@ export function Timeline(props: {
     if (mode !== 'move' && !props.onResizeClip) return
     event.preventDefault()
     event.stopPropagation()
+    const rect = trackRef.current?.getBoundingClientRect()
     dragRef.current = {
       id: element.id, mode,
-      startX: event.clientX, startTicks: element.startTime,
+      startX: event.clientX, left: rect?.left ?? 0,
+      startTicks: element.startTime,
       origDuration: element.duration, total,
-      width: trackRef.current?.getBoundingClientRect().width ?? 1,
+      width: rect?.width ?? 1,
       proposed: element.startTime, delta: 0,
     }
+  }
+
+  /** 点击/拖动标尺定位播放头。 */
+  const seekAt = (clientX: number) => {
+    const rect = trackRef.current?.getBoundingClientRect()
+    if (!rect || !seekRef.current) return
+    const ticks = Math.max(0, ((clientX - rect.left) / rect.width) * configRef.current.total)
+    const frame = Math.round(ticks / configRef.current.ticksPerFrame)
+    seekRef.current(Math.min(frame, Math.max(0, configRef.current.frameCount - 1)))
+  }
+  const startPlayhead = (event: ReactMouseEvent) => {
+    if (!props.onSeek) return
+    event.preventDefault()
+    const rect = trackRef.current?.getBoundingClientRect()
+    dragRef.current = {
+      id: '', mode: 'playhead',
+      startX: event.clientX, left: rect?.left ?? 0,
+      startTicks: 0, origDuration: 0, total,
+      width: rect?.width ?? 1, proposed: 0, delta: 0,
+    }
+    seekAt(event.clientX)
   }
 
   useEffect(() => {
     const onMove = (event: MouseEvent) => {
       const drag = dragRef.current
       if (!drag) return
+      if (drag.mode === 'playhead') {
+        seekAt(event.clientX)
+        return
+      }
       const delta = Math.round(((event.clientX - drag.startX) / drag.width) * drag.total)
-      drag.delta = delta
+      const { ticksPerFrame: tpf, snap: snapping } = configRef.current
       if (drag.mode === 'move') {
-        drag.proposed = Math.max(0, drag.startTicks + delta)
+        const boundaries = [
+          0,
+          drag.total,
+          ...elementsRef.current
+            .filter((item) => item.id !== drag.id)
+            .flatMap((item) => [item.startTime, item.startTime + item.duration]),
+        ]
+        const threshold = Math.max(1, (8 / drag.width) * drag.total)
+        drag.proposed = snapTicks(
+          Math.max(0, drag.startTicks + delta), boundaries, tpf, threshold, snapping,
+        )
         setPreview({ id: drag.id, start: drag.proposed, duration: drag.origDuration })
       } else {
-        const shown = drag.origDuration + (drag.mode === 'right' ? delta : -delta)
-        setPreview({ id: drag.id, start: drag.startTicks, duration: Math.max(1, shown) })
+        const direction = drag.mode === 'right' ? 1 : -1
+        const raw = drag.origDuration + direction * delta
+        const shown = snapping && tpf > 0
+          ? Math.max(tpf, Math.round(raw / tpf) * tpf)
+          : Math.max(1, raw)
+        drag.delta = direction * (shown - drag.origDuration)
+        setPreview({
+          id: drag.id,
+          start: drag.mode === 'left' ? drag.startTicks + drag.origDuration - shown : drag.startTicks,
+          duration: shown,
+        })
       }
     }
     const onUp = () => {
@@ -456,8 +599,8 @@ export function Timeline(props: {
       setPreview(null)
       if (drag.mode === 'move' && drag.proposed !== drag.startTicks) {
         moveRef.current?.(drag.id, drag.proposed)
-      } else if (drag.mode !== 'move' && drag.delta !== 0) {
-        resizeRef.current?.(drag.id, drag.mode, drag.delta)
+      } else if (drag.mode === 'left' || drag.mode === 'right') {
+        if (drag.delta !== 0) resizeRef.current?.(drag.id, drag.mode, drag.delta)
       }
     }
     window.addEventListener('mousemove', onMove)
@@ -468,47 +611,99 @@ export function Timeline(props: {
     }
   }, [])
 
+  /** 缩放后播放头跑出视口时自动横向滚动到可见区域。 */
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport || playheadTicks === null || zoom <= 1) return
+    const x = (playheadTicks / total) * viewport.scrollWidth
+    if (x < viewport.scrollLeft + 20 || x > viewport.scrollLeft + viewport.clientWidth - 20) {
+      viewport.scrollLeft = Math.max(0, x - viewport.clientWidth / 2)
+    }
+  }, [playheadTicks, zoom, total])
+
   return (
-    <div ref={trackRef} style={TRACK_STYLE}>
-      {props.elements.map((element) => {
-        const shownStart = preview?.id === element.id ? preview.start : element.startTime
-        const shownDuration = preview?.id === element.id ? preview.duration : element.duration
-        return (
-          <div
-            key={element.id}
-            onClick={() => props.onSelect?.(element.id)}
-            onMouseDown={(event) => startDrag(event, element, 'move')}
-            title={`${element.id}: ${element.startTime} + ${element.duration} ticks, trim=${element.trimStart}`}
-            style={{
-              position: 'absolute',
-              left: `${(shownStart / total) * 100}%`,
-              width: `${(shownDuration / total) * 100}%`,
-              height: '100%',
-              background: element.id.includes('intro') || element.id.includes('title')
-                ? '#6366f1'
-                : '#22c55e',
-              color: '#ffffff',
-              fontSize: 12,
-              padding: '8px 6px',
-              boxSizing: 'border-box',
-              borderRight: '1px solid #111827',
-              outline: props.selectedId === element.id ? '2px solid #fbbf24' : 'none',
-              outlineOffset: -2,
-              cursor: props.onMoveClip ? (preview ? 'grabbing' : 'grab') : (props.onSelect ? 'pointer' : 'default'),
-            }}
-          >
-            {props.onResizeClip && (
-              <>
-                <div data-edge="left" title="拖动左边缘裁剪入点" style={{ ...HANDLE_STYLE, left: 0 }}
-                  onMouseDown={(event) => startDrag(event, element, 'left')} />
-                <div data-edge="right" title="拖动右边缘裁剪出点" style={{ ...HANDLE_STYLE, right: 0 }}
-                  onMouseDown={(event) => startDrag(event, element, 'right')} />
-              </>
-            )}
-            {element.id}
+    <div ref={viewportRef} style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 6, background: '#0b1220' }}>
+      <div style={{ position: 'relative', width: `${zoom * 100}%`, minWidth: '100%' }}>
+        <div onMouseDown={startPlayhead}
+          style={{ position: 'relative', height: 24, borderBottom: '1px solid #334155', cursor: 'ew-resize', userSelect: 'none' }}
+          title="点击或拖动标尺定位播放头">
+          {marks.map((tick) => (
+            <div key={tick} style={{ position: 'absolute', left: `${(tick / total) * 100}%`, top: 10, bottom: 0, borderLeft: '1px solid #64748b' }}>
+              <span style={{ position: 'absolute', left: 3, bottom: 10, fontSize: 10, color: TEXT_MUTED, whiteSpace: 'nowrap' }}>
+                {(tick / ticksPerSecond).toFixed(0)}s
+              </span>
+            </div>
+          ))}
+        </div>
+        <div ref={trackRef} style={{ ...TRACK_STYLE, height: 52, borderRadius: 0 }}>
+          {marks.map((tick) => (
+            <div key={`grid-${tick}`} style={{ position: 'absolute', left: `${(tick / total) * 100}%`, top: 0, bottom: 0, borderLeft: '1px solid rgba(148,163,184,.18)' }} />
+          ))}
+          {props.elements.map((element) => {
+            const shownStart = preview?.id === element.id ? preview.start : element.startTime
+            const shownDuration = preview?.id === element.id ? preview.duration : element.duration
+            return (
+              <div
+                key={element.id}
+                onClick={() => props.onSelect?.(element.id)}
+                onMouseDown={(event) => startDrag(event, element, 'move')}
+                title={`${element.id}: ${element.startTime} + ${element.duration} ticks, trim=${element.trimStart}`}
+                style={{
+                  position: 'absolute',
+                  left: `${(shownStart / total) * 100}%`,
+                  width: `${(shownDuration / total) * 100}%`,
+                  height: '100%',
+                  background: element.id.includes('intro') || element.id.includes('title')
+                    ? '#4f46e5'
+                    : '#15803d',
+                  color: '#ffffff',
+                  fontSize: 11,
+                  padding: '4px 6px',
+                  boxSizing: 'border-box',
+                  borderRight: '1px solid #0b1220',
+                  outline: props.selectedId === element.id ? '2px solid #fbbf24' : 'none',
+                  outlineOffset: -2,
+                  cursor: props.onMoveClip ? (preview ? 'grabbing' : 'grab') : (props.onSelect ? 'pointer' : 'default'),
+                  overflow: 'hidden',
+                }}
+              >
+                <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', gap: 4, whiteSpace: 'nowrap' }}>
+                  <span>{element.id}</span>
+                  <span style={{ opacity: 0.85 }}>{(shownDuration / ticksPerSecond).toFixed(2)}s</span>
+                </div>
+                <div style={{ position: 'absolute', left: 6, right: 6, bottom: 3, height: 14, display: 'flex', alignItems: 'flex-end', gap: 2, opacity: 0.32, pointerEvents: 'none' }}>
+                  {Array.from({ length: 16 }, (_, index) => (
+                    <span key={index} style={{
+                      flex: 1, borderRadius: 1, background: '#ffffff',
+                      height: `${25 + ((index * 17 + element.id.length * 11) % 70)}%`,
+                    }} />
+                  ))}
+                </div>
+                {props.onResizeClip && (
+                  <>
+                    <div data-edge="left" title="拖动左边缘裁剪入点" style={{ ...HANDLE_STYLE, left: 0 }}
+                      onMouseDown={(event) => startDrag(event, element, 'left')} />
+                    <div data-edge="right" title="拖动右边缘裁剪出点" style={{ ...HANDLE_STYLE, right: 0 }}
+                      onMouseDown={(event) => startDrag(event, element, 'right')} />
+                  </>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        {playheadTicks !== null && (
+          <div style={{
+            position: 'absolute', left: `${(playheadTicks / total) * 100}%`, top: 0, bottom: 0,
+            width: 2, background: '#f87171', zIndex: 6, pointerEvents: 'none',
+          }}>
+            <div style={{
+              position: 'absolute', top: 0, left: -5,
+              borderLeft: '6px solid transparent', borderRight: '6px solid transparent',
+              borderTop: '8px solid #f87171',
+            }} />
           </div>
-        )
-      })}
+        )}
+      </div>
     </div>
   )
 }
