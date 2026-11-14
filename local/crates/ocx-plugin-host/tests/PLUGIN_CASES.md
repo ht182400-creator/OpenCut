@@ -47,3 +47,11 @@
 ## 诚实边界
 
 本批**不加载真实 WASM 插件**：示例插件的处理器由 Rust 侧 `bind_handlers` 绑定到已注册项，host 能真实调用，但没有 Extism / WIT 运行时、没有插件沙箱、没有跨进程 ABI。manifest 只描述权限与注册项，插件代码本身不在仓库内。后续批次接 WIT 时，应保持本节的错误码与校验顺序不变。
+
+## W-12 第二批：原生 WASM 插件运行时
+
+- 插件实现：`local/crates/ocx-plugin-sample`（cdylib，`wasm32-unknown-unknown`，产物 116,313 字节，提交在 `apps/web/public/fixtures/sample-plugin.wasm`）。ABI：`ocx_alloc(len) → ptr`、`ocx_dealloc(ptr, len)`，以及 `effect_*` / `command_*` 导出函数 `(ptr, len) → i64`，返回值打包 `(ptr << 32) | len` 指向插件内分配的 JSON 输出。
+- 宿主：`apps/web/src/local/plugin-runtime.ts`，用浏览器与 Node **原生**的 `WebAssembly` API 加载调用，宿主不传任何导入对象——插件无法触网、无法读写文件（P02/P12 的权限校验仍由第一批 `pluginRegister` 负责）。
+- 错误映射（与 core 稳定错误码对齐）：未知 effect/command → `UNKNOWN_EFFECT` / `UNKNOWN_COMMAND`；插件返回 `{"error": ...}` → `HANDLER_FAILED`；缺 ABI 导出 → `INVALID_PLUGIN_ABI`。
+- 回归：`plugin-runtime.test.ts` 6 项（vitest 115/115），用真实产物而非 mock；Rust 侧第一批 13 项不变。
+- 诚实边界更新：跨进程沙箱由「零导入对象」提供，但声明式权限（文件/网络）、Rust 侧运行时（wasmi）与 WIT 组件模型仍后置。

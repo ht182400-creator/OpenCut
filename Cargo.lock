@@ -3589,6 +3589,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ocx-plugin-sample"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "ocx-render"
 version = "0.1.0"
 dependencies = [

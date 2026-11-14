@@ -66,3 +66,5 @@
 **追加（W-10 第六批 / W-07 第四批）**：`read_markers` / `marker_nodes` 四层标记 helper、`make4` 脚本、AV1 WebM 容器分支与 `exportProjectToAv1WebM` 均为本地新写实现；`V_AV1` / `av01.0.04M.08` 是 Matroska / AV1 的标准 codec 标识，不含第三方实现代码；`webm-muxer@5.1.4` 与既有 `mp4-muxer` 为已记录的浏览器端 muxer 依赖，本批未新增依赖。官方 `opentimelineio 0.18.1` 仍只是临时可选验证依赖（未提交、未加入项目依赖）。经典版 MIT © 2025-2026 声明仍由上文保留。
 
 **追加（W-12 第一批）**：`local/crates/ocx-plugin-host` 的 manifest 模型、稳定错误码、权限校验与处理器分派均为本地新写实现，未引入 Extism / WASI / WIT 运行时或第三方插件框架代码，也未拷贝 MCP / 经典版插件系统实现；仅复用本仓库 W-11 的能力协商纯函数。示例插件 manifest 与处理器为程序指定数据，不含第三方内容。经典版 MIT © 2025-2026 声明仍由上文保留。
+
+**追加（W-12 第二批）**：`ocx-plugin-sample` 示例插件、`(ptr,len) → i64` 内存 ABI 与 `plugin-runtime.ts` 运行时均为本地新写实现；运行时只使用 Web 标准 `WebAssembly` API（浏览器与 Node 原生提供），未引入 Extism / WASI / WIT 或任何第三方插件框架；提交的 `sample-plugin.wasm` 为本仓库源码编译产物，只含程序指定的纯计算逻辑。经典版 MIT © 2025-2026 声明仍由上文保留。
