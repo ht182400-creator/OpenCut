@@ -1,0 +1,11 @@
+{
+  "name": "@opencut/local-mcp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "OpenCut 本地 MCP server（stdio JSON-RPC，零第三方依赖）",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node server.test.mjs"
+  }
+}
