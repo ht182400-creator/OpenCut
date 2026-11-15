@@ -23,9 +23,9 @@ export const CLASSIC_PANEL_CONFIG = {
 export const CLASSIC_PANEL_LIMITS = {
   tools: { min: 15, max: 40 },
   preview: { min: 30, max: undefined },
-  properties: { min: undefined, max: undefined },
+  properties: { min: 15, max: 40 },
   mainContent: { min: 30, max: 85 },
-  timeline: { min: undefined, max: undefined },
+  timeline: { min: 15, max: 70 },
 } as const;
 
 /** 面板间隙与内边距（rem）。 */

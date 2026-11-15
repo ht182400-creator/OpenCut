@@ -41,7 +41,7 @@
 | 批次 | 范围 | 状态 | 验收证据 |
 | --- | --- | --- | --- |
 | **0 基线固化** | 本文档；`theme.css`（主题变量 1:1）、`tokens.ts`（尺寸/比例）、`tokens.test.ts`（自动比对）；`/editor` 引入主题作用域；`NOTICE.md` 记录样式/图标来源 | **已完成**（2026-11-14） | `tokens.test.ts` **10/10**，其中「与经典版 `globals.css` 逐变量比对」在源码可用时真实执行并抓出 1 处抄写偏差（`.dark --input`）；vitest **140/140**、tsc 0 错误、`vite build` 0；浏览器确认 `.classic-ui-root` 亮/暗变量生效（`--background` 亮 `hsl(0, 0%, 100%)` / 暗 `hsl(0, 0%, 5%)`、`--radius-lg: 0.82rem`、`--text-xs: 0.72rem`） |
-| 1 主框架 | 可调整三栏（垂直 mainContent/timeline + 水平 tools/preview/properties）、顶栏 1:1、面板 tab 栏、预览容器；主题切换 | 未开始 | — |
+| **1 主框架** | 可调整五面板（垂直 mainContent/timeline + 水平 tools/preview/properties）、顶栏 1:1、竖排 9 图标 tab、预览容器、亮/暗主题切换；诊断与导出设置收进 settings tab | **已完成**（2026-11-15） | `tokens.test.ts` 10/10、vitest **140/140**、tsc 0 错误、`vite build` 0；浏览器实测 header `54.39px`（3.4rem）、水平三栏 `306/612/306`（25/50/25）、垂直 `253/253`（50/50）、3 个 resize handle、9 个 tab、亮色 `--background: hsl(0, 0%, 100%)` / 暗色 `hsl(0, 0%, 5%)`、`.panel` 暗色 `hsl(0 0% 10%)`；截图 `oc-ui-r1-light2.png` / `oc-ui-r1-dark.png` / `oc-ui-r1-final.png` |
 | 2 时间轴 | 多轨（main/overlay/audio）、轨道头、ruler/tick/playhead、snap indicator、bookmarks、缩放、拖拽控制器 | 未开始 | — |
 | 3 素材面板 | media / text / stickers / sounds / captions / settings 六个 tab、素材网格、拖入时间轴 | 未开始 | — |
 | 4 属性面板 | 按元素类型的参数注册表、关键帧开关、空状态 | 未开始 | — |
@@ -81,10 +81,17 @@
 | --- | --- | --- | --- |
 | 0 | 主题变量挂在 `.classic-ui-root` 而非全局 `:root` | 当前工程首页共用同一份 `styles.css`，全局覆盖会污染首页；后代取到的变量值相同 | 视觉无差异，保留 |
 | 0 | `--font-inter` 指向 `'Inter Variable', Inter, sans-serif`，经典版由 next/font 注入 | 当前工程已装 `@fontsource-variable/inter`，无需云端字体注入 | 视觉一致；若批 8 比对发现字形差异再换同源字体文件 |
-| 0 | 本批未做经典版并排截图 | 批 0 只落地变量/尺寸基线，页面视觉未改变（现有内联样式仍覆盖主题） | **批 1 起**启动经典版 dev server 做同视口并排截图与 computed style 逐项比对；批 0 的 1:1 由源码级逐变量比对保证 |
+| 0 | 本批未做经典版并排截图 | 批 0 只落地变量/尺寸基线，页面视觉未改变（现有内联样式仍覆盖主题） | 待经典版参照环境就绪后做同视口并排截图；批 0 的 1:1 由源码级逐变量比对保证 |
+| 1 | **经典版并排截图仍未完成** | 经典版依赖 `bun@1.2.18`（本机 1.3.11，proto 版本 pin 拒绝）；用 Node 24 直跑 Next 16.2.4：Turbopack panic `VAR_MODULE_GLOBAL_ERROR`，改 webpack 模式仍 500。依赖已装（1933 包）但参照服务未就绪 | 本批改用**源码级尺寸/变量逐项比对 + 当前页面 computed style 实测**：header 54.39px、三栏 306/612/306、垂直 253/253、亮/暗变量值全部对齐。后续批次可试 `proto install bun 1.2.18` 后重启 `bun run dev`，或由用户提供可访问的经典版实例；未做成前不声称「视觉并排验收通过」 |
+| 1 | `react-resizable-panels` v4 把数字尺寸当作**像素** | 经典版 v2 的 `defaultSize={25}` 是百分比，v4 需传字符串 `"25"` | 所有面板尺寸传 `String(...)`；已实测比例 1:1 |
+| 1 | 预览画布用 `object-fit: contain` 等比居中 | 直接 `width:100%; height:auto` 会在高容器里被压扁 | 元素填充容器、内容 letterbox，与经典版一致 |
+| 1 | 面板内部细节仍为过渡形态 | 素材/属性/时间轴的内容控件沿用前三批实现，经典版对应组件由批次 2~5 逐项替换 | 明确标注占位；不把「容器 1:1」说成「面板内部 1:1」 |
+| 1 | 顶栏/按钮文案为中文，经典版为英文 | 本地化策略 | 不影响尺寸与配色；批次 8 视觉比对再决定是否改文案 |
+| 1 | 右下角棕榈树浮标 | 当前工程 TanStack devtools（开发态） | 生产构建不显示，不计入 1:1 比对 |
 
 ## 8. 变更记录
 
 | 日期 | 批次 | 提交 | 说明 |
 | --- | --- | --- | --- |
-| 2026-11-14 | 0 | 本次提交（见 `git log -1`） | 基线固化：进度文档 + 主题变量 + 尺寸 token + 自动比对回归 |
+| 2026-11-14 | 0 | 见 `git log` | 基线固化：进度文档 + 主题变量 + 尺寸 token + 自动比对回归 |
+| 2026-11-15 | 1 | 本次提交（见 `git log -1`） | 主框架：可调整五面板 + 顶栏 1:1 + 竖排 9 tab + 预览容器 + 亮/暗主题切换；并排截图因参照环境未就绪降级 |

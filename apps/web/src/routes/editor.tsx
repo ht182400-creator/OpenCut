@@ -1,6 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import '../local/classic-ui/theme.css'
+import { CLASSIC_PANEL_CONFIG, CLASSIC_PANEL_LIMITS } from '../local/classic-ui/tokens'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../components/ui/resizable'
 import { buildTimelineAudio, isAacEncodingSupported, type PcmAudio } from '../local/audio'
 import { useClipHistory } from '../local/clip-history'
 import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
@@ -13,8 +15,6 @@ import {
   SCRUB_THRESHOLD_MS,
   SURFACE_STYLE,
   TEXT_MAIN,
-  TOPBAR_STYLE,
-  WORKSPACE_STYLE,
   DiagnosticsPanel,
   ExportSettingsPanel,
   MediaPanel,
@@ -115,7 +115,8 @@ function Editor() {
   })
   const [sourceName, setSourceName] = useState('内置示例项目')
   const [exportSettings, setExportSettings] = useState<ExportSettings>(DEFAULT_EXPORT_SETTINGS)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  /** 批 1：亮/暗主题（对应经典版 ThemeToggle，作用域限定在编辑器外壳）。 */
+  const [dark, setDark] = useState(false)
   /** 撤销/重做恢复的片段重新应用帧计划；历史由 M6 快照驱动。 */
   const clipHistory = useClipHistory((clips) => {
     setElements(clips as CoreElement[])
@@ -589,9 +590,31 @@ function Editor() {
 
   const activeClip = clipAtTime(elements, frameIndex * (session?.ticksPerFrame ?? 0))?.id ?? (session ? '空档' : '—')
   const selectedElement = elements.find((element) => element.id === selectedId) ?? null
+  const diagnosticsItems = session ? [
+    { label: '代理帧缓存', value: cacheInfo },
+    { label: '剪辑历史', value: clipHistory.label },
+    { label: '4K scrub 基准', value: benchmarkInfo || '未运行' },
+    { label: '帧耗时', value: `${frameCost.toFixed(2)}ms（阈值 ${SCRUB_THRESHOLD_MS}ms ${frameCost <= SCRUB_THRESHOLD_MS ? '达标' : '超标'}）` },
+    { label: 'core', value: `API ${session.info.apiVersion} / ${session.info.backendId} · WebCodecs ${session.codecs.available ? '可用' : '不可用'}` },
+    { label: '兼容提示', value: `${session.project.warnings.length} 条` },
+  ] : []
+  /** 批 1：诊断与导出设置收进素材面板的 settings tab，主框架不再有额外区块。 */
+  const settingsContent = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8 }}>
+      <ExportSettingsPanel
+        open
+        settings={exportSettings}
+        onChange={setExportSettings}
+        onExport={() => void handleExport()}
+        exportDisabled={!session || exportState.status === 'running'}
+        resolution={`${PREVIEW_WIDTH}×${PREVIEW_HEIGHT}`}
+      />
+      <DiagnosticsPanel items={diagnosticsItems} proxyUrl={proxyUrl} />
+    </div>
+  )
 
   return (
-    <main style={SURFACE_STYLE} className="classic-ui-root">
+    <main style={SURFACE_STYLE} className={`classic-ui-root classic-shell${dark ? ' dark' : ''}`}>
       <TopBar
         projectName={session?.project.name ?? '未加载'}
         projectVersion={session?.project.version ?? 0}
@@ -605,49 +628,64 @@ function Editor() {
         ]}
         onExport={() => void handleExport()}
         exportDisabled={!session || exportState.status === 'running'}
-        onToggleSettings={() => setSettingsOpen((value) => !value)}
-        settingsOpen={settingsOpen}
+        dark={dark}
+        onToggleTheme={() => setDark((value) => !value)}
         exportState={exportState}
         otioUrl={otioUrl}
       />
       <input ref={snapshotFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
         onChange={(event) => void handleLoadSnapshot(event.target.files?.[0])} />
-      <ExportSettingsPanel
-        open={settingsOpen}
-        settings={exportSettings}
-        onChange={setExportSettings}
-        onExport={() => void handleExport()}
-        exportDisabled={!session || exportState.status === 'running'}
-        resolution={`${PREVIEW_WIDTH}×${PREVIEW_HEIGHT}`}
-      />
 
       {!session && !errorText && <div style={{ ...PANEL_STYLE, color: TEXT_MAIN }}>正在加载项目与 Rust core WASM…</div>}
       {errorText && <div style={{ ...PANEL_STYLE, color: '#fecaca' }}>{errorText}</div>}
 
       {session && (
-        <>
-          <div style={WORKSPACE_STYLE}>
-            <MediaPanel
-              projectFileRef={projectFileRef}
-              videoFileRef={videoFileRef}
-              otioFileRef={otioFileRef}
-              onDropFile={(file) => void readFile(file)}
-              onOtioFile={(file) => void handleOtioImport(file)}
-              onDemo={() => void handleDemoClip()}
-              sourceName={sourceName}
-              mediaStatus={mediaStatus}
-            />
-            <PreviewSection
-              canvasRef={canvasRef}
-              playing={playing}
-              onTogglePlay={() => setPlaying((value) => !value)}
-              frameIndex={frameIndex}
-              frameCount={frameCount}
-              onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
-              timecode={`帧 ${frameIndex + 1}/${frameCount} · ${(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s · 片段 ${activeClip}`}
-            />
-            <PropertiesPanel selected={selectedElement} onChange={applyPropertyPatch} />
-          </div>
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <ResizablePanelGroup className="classic-split" data-orientation="vertical" orientation="vertical">
+            {/* v4 把数字当作像素，百分比必须传字符串（经典版 PanelGroup 的 defaultSize 语义）。 */}
+            <ResizablePanel className="classic-split-main"
+              defaultSize={String(CLASSIC_PANEL_CONFIG.mainContent)}
+              minSize={String(CLASSIC_PANEL_LIMITS.mainContent.min)}
+              maxSize={String(CLASSIC_PANEL_LIMITS.mainContent.max)}>
+              <ResizablePanelGroup className="classic-split" data-orientation="horizontal" orientation="horizontal">
+                <ResizablePanel defaultSize={String(CLASSIC_PANEL_CONFIG.tools)}
+                  minSize={String(CLASSIC_PANEL_LIMITS.tools.min)} maxSize={String(CLASSIC_PANEL_LIMITS.tools.max)}>
+                  <MediaPanel
+                    projectFileRef={projectFileRef}
+                    videoFileRef={videoFileRef}
+                    otioFileRef={otioFileRef}
+                    onDropFile={(file) => void readFile(file)}
+                    onOtioFile={(file) => void handleOtioImport(file)}
+                    onDemo={() => void handleDemoClip()}
+                    sourceName={sourceName}
+                    mediaStatus={mediaStatus}
+                    settingsContent={settingsContent}
+                  />
+                </ResizablePanel>
+                <ResizableHandle withHandle />
+                <ResizablePanel defaultSize={String(CLASSIC_PANEL_CONFIG.preview)}
+                  minSize={String(CLASSIC_PANEL_LIMITS.preview.min)}>
+                  <PreviewSection
+                    canvasRef={canvasRef}
+                    playing={playing}
+                    onTogglePlay={() => setPlaying((value) => !value)}
+                    frameIndex={frameIndex}
+                    frameCount={frameCount}
+                    onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
+                    timecode={`帧 ${frameIndex + 1}/${frameCount} · ${(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s · 片段 ${activeClip}`}
+                  />
+                </ResizablePanel>
+                <ResizableHandle withHandle />
+                <ResizablePanel defaultSize={String(CLASSIC_PANEL_CONFIG.properties)}
+                  minSize={String(CLASSIC_PANEL_LIMITS.properties.min)} maxSize={String(CLASSIC_PANEL_LIMITS.properties.max)}>
+                  <PropertiesPanel selected={selectedElement} onChange={applyPropertyPatch} />
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel className="classic-split-timeline"
+              defaultSize={String(CLASSIC_PANEL_CONFIG.timeline)}
+              minSize={String(CLASSIC_PANEL_LIMITS.timeline.min)} maxSize={String(CLASSIC_PANEL_LIMITS.timeline.max)}>
 
           <TimelineSection
             elements={elements}
@@ -676,19 +714,9 @@ function Editor() {
                 onClick: () => applyClipEdit('片段无法再右移', (cs, ctx) => moveClipBy(cs, ctx.clipId, ctx.ticksPerFrame)) },
             ]}
           />
-
-          <DiagnosticsPanel
-            items={[
-              { label: '代理帧缓存', value: cacheInfo },
-              { label: '剪辑历史', value: clipHistory.label },
-              { label: '4K scrub 基准', value: benchmarkInfo || '未运行' },
-              { label: '帧耗时', value: `${frameCost.toFixed(2)}ms（阈值 ${SCRUB_THRESHOLD_MS}ms ${frameCost <= SCRUB_THRESHOLD_MS ? '达标' : '超标'}）` },
-              { label: 'core', value: `API ${session.info.apiVersion} / ${session.info.backendId} · WebCodecs ${session.codecs.available ? '可用' : '不可用'}` },
-              { label: '兼容提示', value: `${session.project.warnings.length} 条` },
-            ]}
-            proxyUrl={proxyUrl}
-          />
-        </>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
       )}
     </main>
   )

@@ -6,7 +6,7 @@
  * `DiagnosticsPanel`（折叠的诊断与高级工具）；调试信息不再平铺在主界面。
  */
 import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from 'react'
 
 import { SHORTCUT_HELP } from './editor-shortcuts'
 import type { DiscoverResult, EditorAdapter, ProjectView } from './editor-adapter'
@@ -19,61 +19,54 @@ import type { WebCodecsSupport } from './webcodecs'
 export const PREVIEW_WIDTH = 320
 export const PREVIEW_HEIGHT = 180
 
-/** 深色面板内的主文字色 / 次要文字色。 */
-export const TEXT_MAIN = '#e5e7eb'
-export const TEXT_MUTED = '#94a3b8'
+/** 主文字色 / 次要文字色：批 1 起改由经典版主题变量驱动。 */
+export const TEXT_MAIN = 'var(--foreground)'
+export const TEXT_MUTED = 'var(--muted-foreground)'
 
 export const PANEL_STYLE: CSSProperties = {
-  background: '#111827',
-  border: '1px solid #334155',
-  borderRadius: 8,
-  padding: 16,
-  marginBottom: 12,
+  background: 'var(--background)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  padding: 12,
   color: TEXT_MAIN,
 }
 export const BUTTON_STYLE: CSSProperties = {
-  background: '#334155',
+  background: 'transparent',
   color: TEXT_MAIN,
-  border: '1px solid #475569',
-  borderRadius: 6,
-  padding: '7px 12px',
-  fontSize: 13,
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  padding: '4px 8px',
+  fontSize: 'var(--text-sm)',
   cursor: 'pointer',
   display: 'inline-block',
 }
 
-/** UI 同步第一批：工作区三栏与顶栏布局。 */
+/** 批 1：外壳改由 .classic-shell / .classic-header / .classic-split 控制，这里只保留兼容值。 */
 export const SURFACE_STYLE: CSSProperties = {
   minHeight: '100vh',
-  background: '#0b1220',
+  background: 'var(--background)',
   color: TEXT_MAIN,
-  padding: '0 16px 24px',
+  padding: 0,
 }
 export const TOPBAR_STYLE: CSSProperties = {
   display: 'flex',
-  gap: 12,
+  gap: 8,
   alignItems: 'center',
-  flexWrap: 'wrap',
-  padding: '10px 0',
-  borderBottom: '1px solid #1f2937',
-  marginBottom: 12,
+  background: 'var(--background)',
 }
 export const WORKSPACE_STYLE: CSSProperties = {
   display: 'flex',
-  gap: 12,
+  gap: 8,
   alignItems: 'stretch',
-  flexWrap: 'wrap',
 }
 export const COLUMN_STYLE: CSSProperties = {
   ...PANEL_STYLE,
-  flex: '1 1 260px',
-  minWidth: 240,
-  marginBottom: 12,
+  minWidth: 0,
 }
 const TRACK_STYLE: CSSProperties = {
   position: 'relative',
   height: 36,
-  background: '#1f2937',
+  background: 'var(--background)',
   borderRadius: 6,
   overflow: 'hidden',
 }
@@ -105,48 +98,96 @@ export function TopBar(props: {
   projectVersion: number
   sceneCount: number
   trackCount: number
+  /** 项目下拉菜单项（经典版 ProjectDropdown 的位置）。 */
   actions: ToolbarAction[]
   onExport: () => void
   exportDisabled?: boolean
-  onToggleSettings: () => void
-  settingsOpen: boolean
+  /** 批 1：亮/暗主题切换（对应经典版 ThemeToggle）。 */
+  dark: boolean
+  onToggleTheme: () => void
   exportState: ExportState
   otioUrl: string | null
 }) {
+  const [menuOpen, setMenuOpen] = useState(false)
   return (
-    <header style={TOPBAR_STYLE}>
-      <strong style={{ fontSize: 17 }}>OpenCut Editor</strong>
-      <span style={{ color: TEXT_MUTED, fontSize: 13 }}>
-        {props.projectName} · 经典版 v{props.projectVersion} · {props.sceneCount} 场景 / {props.trackCount} 轨道
-      </span>
-      <span style={{ flex: 1 }} />
-      {props.actions.map((action) => (
-        <button key={action.label} type="button" style={BUTTON_STYLE}
-          onClick={action.onClick} disabled={action.disabled}>{action.label}</button>
-      ))}
-      <button type="button" style={BUTTON_STYLE}
-        onClick={props.onToggleSettings}>{props.settingsOpen ? '收起设置' : '导出设置'}</button>
-      <button type="button" style={{ ...BUTTON_STYLE, background: '#1d4ed8', borderColor: '#3b82f6' }}
-        onClick={props.onExport} disabled={props.exportDisabled}>导出</button>
+    <header className="classic-header" data-testid="classic-header">
+      <div className="classic-header-left" style={{ position: 'relative' }}>
+        <button type="button" className="classic-header-title" title="项目菜单"
+          onClick={() => setMenuOpen((value) => !value)}>{props.projectName}</button>
+        {menuOpen && (
+          <div className="classic-menu" onMouseLeave={() => setMenuOpen(false)}>
+            {props.actions.map((action) => (
+              <button key={action.label} type="button" className="classic-menu-item"
+                disabled={action.disabled}
+                onClick={() => { action.onClick(); setMenuOpen(false) }}>{action.label}</button>
+            ))}
+          </div>
+        )}
+        <span className="classic-header-meta">
+          经典版 v{props.projectVersion} · {props.sceneCount} 场景 / {props.trackCount} 轨道
+        </span>
+      </div>
+      <nav className="classic-header-nav">
+        <button type="button" className="classic-button" title="切换亮/暗主题"
+          onClick={props.onToggleTheme}>{props.dark ? '亮色' : '暗色'}</button>
+        <button type="button" className="classic-button" data-variant="primary"
+          onClick={props.onExport} disabled={props.exportDisabled}>导出</button>
       {props.exportState.status === 'running' && (
         <span style={{ color: TEXT_MUTED, fontSize: 13 }}>编码中 {props.exportState.done}/{props.exportState.total}</span>
       )}
       {props.exportState.status === 'done' && props.exportState.url && (
-        <a href={props.exportState.url} download={props.exportState.filename ?? 'opencut-export.mp4'} style={{ color: '#7dd3fc', fontSize: 13 }}>
+        <a href={props.exportState.url} download={props.exportState.filename ?? 'opencut-export.mp4'} style={{ color: 'var(--primary)', fontSize: 'var(--text-xs)' }}>
           下载 {props.exportState.filename?.includes('-av1') ? 'AV1 WebM' : props.exportState.filename?.endsWith('.webm') ? 'WebM' : 'MP4'}
         </a>
       )}
       {props.exportState.status === 'error' && (
-        <span style={{ color: '#fca5a5', fontSize: 13 }}>{props.exportState.message}</span>
+        <span style={{ color: 'var(--destructive)', fontSize: 'var(--text-xs)' }}>{props.exportState.message}</span>
       )}
       {props.otioUrl && (
-        <a href={props.otioUrl} download="opencut-timeline.otio" style={{ color: '#7dd3fc', fontSize: 13 }}>下载 OTIO</a>
+        <a href={props.otioUrl} download="opencut-timeline.otio" style={{ color: 'var(--primary)', fontSize: 'var(--text-xs)' }}>下载 OTIO</a>
       )}
+      </nav>
     </header>
   )
 }
 
 /** 左栏素材库：项目/素材/OTIO 导入、拖放与演示素材。 */
+/** 经典版素材面板的九个竖排 tab（与 assets/index.tsx 的 viewMap 顺序一致）。 */
+export const CLASSIC_ASSET_TABS = [
+  { key: 'media', label: '素材', icon: 'film' },
+  { key: 'sounds', label: '声音', icon: 'music' },
+  { key: 'text', label: '文字', icon: 'type' },
+  { key: 'stickers', label: '贴纸', icon: 'smile' },
+  { key: 'effects', label: '效果', icon: 'sparkles' },
+  { key: 'transitions', label: '转场', icon: 'layers' },
+  { key: 'captions', label: '字幕', icon: 'message' },
+  { key: 'adjustment', label: '调整', icon: 'sliders' },
+  { key: 'settings', label: '设置', icon: 'settings' },
+] as const
+
+/** 用纯 SVG path 画经典版同位置图标（避免依赖版本差异，形状与 lucide 一致）。 */
+function TabIcon({ name }: { name: string }) {
+  const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  const paths: Record<string, string> = {
+    film: 'M4 4h16v16H4z M8 4v16 M16 4v16 M4 9h4 M4 15h4 M16 9h4 M16 15h4',
+    music: 'M9 18V5l12-2v13 M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0 M21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
+    type: 'M4 7V4h16v3 M9 20h6 M12 4v16',
+    smile: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M8 14s1.5 2 4 2 4-2 4-2 M9 9h.01 M15 9h.01',
+    sparkles: 'M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z M19 15l.8 1.8L22 18l-2.2 1.2L19 21l-.8-1.8L16 18l2.2-1.2z',
+    layers: 'M12 3l9 5-9 5-9-5z M3 13l9 5 9-5 M3 17l9 5 9-5',
+    message: 'M4 4h16v12H8l-4 4z M8 9h8 M8 12h5',
+    sliders: 'M4 7h10 M18 7h2 M4 17h2 M10 17h10 M14 5v4 M6 15v4',
+    settings: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M12 8v4l3 2',
+  }
+  return (
+    <svg {...common} aria-hidden="true">
+      {(paths[name] ?? paths.film).split(' M').map((segment, index) => (
+        <path key={index} d={index === 0 ? segment : `M${segment}`} />
+      ))}
+    </svg>
+  )
+}
+
 export function MediaPanel(props: {
   projectFileRef: RefObject<HTMLInputElement | null>
   videoFileRef: RefObject<HTMLInputElement | null>
@@ -156,41 +197,59 @@ export function MediaPanel(props: {
   onDemo: () => void
   sourceName: string
   mediaStatus: string
+  /** 批 1：诊断与导出设置收纳到 settings tab，避免主框架多出非 1:1 区块。 */
+  settingsContent?: ReactNode
 }) {
+  const [activeTab, setActiveTab] = useState<string>('media')
   return (
     <section
+      className="panel classic-panel classic-panel-row"
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault()
         props.onDropFile(event.dataTransfer.files[0])
       }}
-      style={COLUMN_STYLE}
     >
-      <h2 style={{ fontSize: 15, margin: '0 0 10px', color: TEXT_MAIN }}>素材</h2>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <label style={BUTTON_STYLE}>
-          导入项目 JSON
-          <input ref={props.projectFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
-            onChange={(event) => props.onDropFile(event.target.files?.[0])} />
-        </label>
-        <label style={BUTTON_STYLE}>
-          导入视频素材
-          <input ref={props.videoFileRef} type="file" accept="video/*,.mp4,.webm" style={{ display: 'none' }}
-            onChange={(event) => props.onDropFile(event.target.files?.[0])} />
-        </label>
-        <label style={BUTTON_STYLE}>
-          导入 OTIO
-          <input ref={props.otioFileRef} type="file" accept=".otio,application/json" style={{ display: 'none' }}
-            onChange={(event) => props.onOtioFile(event.target.files?.[0])} />
-        </label>
-        <button type="button" style={BUTTON_STYLE} onClick={props.onDemo}>生成演示素材</button>
+      <div className="classic-tabbar" role="tablist" aria-label="素材面板">
+        {CLASSIC_ASSET_TABS.map((tab) => (
+          <button key={tab.key} type="button" className="classic-tab" role="tab"
+            aria-selected={activeTab === tab.key} data-active={activeTab === tab.key}
+            title={tab.label} aria-label={tab.label}
+            onClick={() => setActiveTab(tab.key)}>
+            <TabIcon name={tab.icon} />
+          </button>
+        ))}
       </div>
-      <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '10px 0 0' }}>
-        当前：{props.sourceName}
-        <br />
-        {props.mediaStatus}
-      </p>
-      <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '6px 0 0' }}>支持把视频文件拖放到本面板。</p>
+      <div className="classic-tab-separator" />
+      <div className="classic-panel-content" role="tabpanel">
+        {activeTab === 'media' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8 }}>
+            <label className="classic-button" style={{ textAlign: 'center' }}>
+              导入项目 JSON
+              <input ref={props.projectFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
+                onChange={(event) => props.onDropFile(event.target.files?.[0])} />
+            </label>
+            <label className="classic-button" style={{ textAlign: 'center' }}>
+              导入视频素材
+              <input ref={props.videoFileRef} type="file" accept="video/*,.mp4,.webm" style={{ display: 'none' }}
+                onChange={(event) => props.onDropFile(event.target.files?.[0])} />
+            </label>
+            <label className="classic-button" style={{ textAlign: 'center' }}>
+              导入 OTIO
+              <input ref={props.otioFileRef} type="file" accept=".otio,application/json" style={{ display: 'none' }}
+                onChange={(event) => props.onOtioFile(event.target.files?.[0])} />
+            </label>
+            <button type="button" className="classic-button" onClick={props.onDemo}>生成演示素材</button>
+            <p className="classic-placeholder">当前：{props.sourceName}<br />{props.mediaStatus}</p>
+          </div>
+        )}
+        {activeTab === 'settings' && props.settingsContent}
+        {activeTab !== 'media' && activeTab !== 'settings' && (
+          <p className="classic-placeholder">
+            {CLASSIC_ASSET_TABS.find((tab) => tab.key === activeTab)?.label} 视图：批次 3（素材）/ 4（属性）实现，当前为占位。
+          </p>
+        )}
+      </div>
     </section>
   )
 }
@@ -211,7 +270,7 @@ const EDITABLE_FIELDS: Array<{ key: keyof ClipPatch; label: string }> = [
 ]
 
 const INPUT_STYLE: CSSProperties = {
-  width: '100%', boxSizing: 'border-box', background: '#0b1220', color: TEXT_MAIN,
+  width: '100%', boxSizing: 'border-box', background: 'var(--input)', color: TEXT_MAIN,
   border: '1px solid #475569', borderRadius: 4, padding: '4px 6px', fontSize: 12,
 }
 
@@ -237,8 +296,8 @@ export function PropertiesPanel(props: {
     setError(null)
   }, [selected])
   return (
-    <section style={COLUMN_STYLE}>
-      <h2 style={{ fontSize: 15, margin: '0 0 10px', color: TEXT_MAIN }}>属性</h2>
+    <section className="panel classic-panel" style={{ display: 'block', padding: 8, overflow: 'auto' }} data-testid="classic-properties">
+      <div className="classic-panel-heading" style={{ margin: '-8px -8px 8px' }}>属性</div>
       {!selected && <p style={{ fontSize: 13, color: TEXT_MUTED, margin: 0 }}>在时间轴点击片段查看属性。</p>}
       {selected && (
         <>
@@ -368,19 +427,20 @@ export function PreviewSection(props: {
   timecode: string
 }) {
   return (
-    <section style={{ ...COLUMN_STYLE, flex: '2 1 380px' }}>
-      <h2 style={{ fontSize: 15, margin: '0 0 8px', color: TEXT_MAIN }}>预览</h2>
-      <canvas ref={props.canvasRef} width={PREVIEW_WIDTH} height={PREVIEW_HEIGHT}
-        style={{ borderRadius: 6, border: '1px solid #334155', display: 'block', width: '100%', maxWidth: 640, background: '#020617' }} />
-      <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button type="button" style={BUTTON_STYLE} onClick={props.onTogglePlay}>
+    <section className="panel classic-panel" data-testid="classic-preview">
+      <div className="classic-preview-stage">
+        <canvas ref={props.canvasRef} width={PREVIEW_WIDTH} height={PREVIEW_HEIGHT}
+          style={{ width: '100%', height: '100%', objectFit: 'contain', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: '#000' }} />
+      </div>
+      <div className="classic-preview-controls">
+        <button type="button" className="classic-button" onClick={props.onTogglePlay}>
           {props.playing ? '暂停' : '播放'}
         </button>
         <input type="range" min={0} max={Math.max(props.frameCount - 1, 0)}
           value={Math.min(props.frameIndex, props.frameCount - 1)}
           onChange={(event) => props.onSeek(Number(event.target.value))}
-          style={{ flex: 1, minWidth: 160 }} aria-label="播放头" />
-        <span style={{ color: TEXT_MUTED, fontSize: 13, whiteSpace: 'nowrap' }}>{props.timecode}</span>
+          style={{ flex: 1, minWidth: 80 }} aria-label="播放头" />
+        <span style={{ whiteSpace: 'nowrap' }}>{props.timecode}</span>
       </div>
     </section>
   )
@@ -418,9 +478,9 @@ export function TimelineSection(props: {
     1,
   )
   return (
-    <section style={PANEL_STYLE}>
+    <section className="panel classic-panel" style={{ display: 'block', padding: 8, overflow: 'auto' }} data-testid="classic-timeline">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-        <h2 style={{ fontSize: 15, margin: 0, color: TEXT_MAIN }}>时间轴</h2>
+        <div className="classic-panel-heading" style={{ border: 'none', padding: 0, margin: 0 }}>时间轴</div>
         <span style={{ color: '#fbbf24', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
           {formatTimecode(props.frameIndex, props.ticksPerFrame, props.ticksPerSecond)}
         </span>
@@ -735,14 +795,14 @@ export function Timeline(props: {
   }, [playheadTicks, zoom, total])
 
   return (
-    <div ref={viewportRef} style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 6, background: '#0b1220' }}>
+    <div ref={viewportRef} style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--background)' }}>
       <div style={{ position: 'relative', width: `${zoom * 100}%`, minWidth: '100%' }}>
         <div onMouseDown={startPlayhead}
-          style={{ position: 'relative', height: 24, borderBottom: '1px solid #334155', cursor: 'ew-resize', userSelect: 'none' }}
+          style={{ position: 'relative', height: 24, borderBottom: '1px solid var(--border)', cursor: 'ew-resize', userSelect: 'none' }}
           title="点击或拖动标尺定位播放头">
           {marks.map((tick) => (
-            <div key={tick} style={{ position: 'absolute', left: `${(tick / total) * 100}%`, top: 10, bottom: 0, borderLeft: '1px solid #64748b' }}>
-              <span style={{ position: 'absolute', left: 3, bottom: 10, fontSize: 10, color: TEXT_MUTED, whiteSpace: 'nowrap' }}>
+            <div key={tick} style={{ position: 'absolute', left: `${(tick / total) * 100}%`, top: 10, bottom: 0, borderLeft: '1px solid var(--border)' }}>
+              <span style={{ position: 'absolute', left: 3, bottom: 10, fontSize: 'var(--text-xs)', color: TEXT_MUTED, whiteSpace: 'nowrap' }}>
                 {(tick / ticksPerSecond).toFixed(0)}s
               </span>
             </div>
@@ -750,7 +810,7 @@ export function Timeline(props: {
         </div>
         <div ref={trackRef} style={{ ...TRACK_STYLE, height: 52, borderRadius: 0 }}>
           {marks.map((tick) => (
-            <div key={`grid-${tick}`} style={{ position: 'absolute', left: `${(tick / total) * 100}%`, top: 0, bottom: 0, borderLeft: '1px solid rgba(148,163,184,.18)' }} />
+            <div key={`grid-${tick}`} style={{ position: 'absolute', left: `${(tick / total) * 100}%`, top: 0, bottom: 0, borderLeft: '1px solid var(--border)' }} />
           ))}
           {props.elements.map((element) => {
             const shownStart = preview?.id === element.id ? preview.start : element.startTime

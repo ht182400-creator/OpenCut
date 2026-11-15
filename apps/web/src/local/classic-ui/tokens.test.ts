@@ -45,7 +45,9 @@ describe('经典版 UI 1:1 基线 · 尺寸 token（批 0）', () => {
   it('面板尺寸约束与 EditorLayout 一致', () => {
     expect(CLASSIC_PANEL_LIMITS.tools).toEqual({ min: 15, max: 40 });
     expect(CLASSIC_PANEL_LIMITS.preview.min).toBe(30);
+    expect(CLASSIC_PANEL_LIMITS.properties).toEqual({ min: 15, max: 40 });
     expect(CLASSIC_PANEL_LIMITS.mainContent).toEqual({ min: 30, max: 85 });
+    expect(CLASSIC_PANEL_LIMITS.timeline).toEqual({ min: 15, max: 70 });
   });
 
   it('间隙、顶栏、圆角、字号、断点逐项一致', () => {
