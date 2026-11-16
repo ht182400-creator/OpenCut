@@ -48,6 +48,7 @@ import { AssetsPanel } from '../local/classic-ui/assets-panel'
 import type { AssetDragPayload, AssetItem } from '../local/classic-ui/assets-panel'
 import { PropertiesPanel } from '../local/classic-ui/properties-panel'
 import { PreviewSection } from '../local/classic-ui/preview-section'
+import { ShortcutsDialog } from '../local/classic-ui/shortcuts-dialog'
 import {
   createSnapshot,
   parseSnapshot,
@@ -148,6 +149,8 @@ function Editor() {
   const [exportSettings, setExportSettings] = useState<ExportSettings>(DEFAULT_EXPORT_SETTINGS)
   /** 批 1：亮/暗主题（对应经典版 ThemeToggle，作用域限定在编辑器外壳）。 */
   const [dark, setDark] = useState(false)
+  /** 批 6：快捷键帮助对话框开关（经典版项目菜单 Shortcuts 入口）。 */
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   /** 撤销/重做恢复的片段重新应用帧计划；历史由 M6 快照驱动。 */
   const clipHistory = useClipHistory((clips) => {
     setElements(clips as CoreElement[])
@@ -693,6 +696,7 @@ function Editor() {
           { label: '重做', disabled: !clipHistory.canRedo, onClick: clipHistory.redo },
           { label: '保存项目', disabled: !session, onClick: handleSaveSnapshot },
           { label: '加载快照', disabled: !session, onClick: () => snapshotFileRef.current?.click() },
+          { label: 'Shortcuts', onClick: () => setShortcutsOpen(true) },
         ]}
         onExport={() => void handleExport()}
         exportDisabled={!session || exportState.status === 'running'}
@@ -703,6 +707,7 @@ function Editor() {
       />
       <input ref={snapshotFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
         onChange={(event) => void handleLoadSnapshot(event.target.files?.[0])} />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       {!session && !errorText && <div style={{ ...PANEL_STYLE, color: TEXT_MAIN }}>正在加载项目与 Rust core WASM…</div>}
       {errorText && <div style={{ ...PANEL_STYLE, color: '#fecaca' }}>{errorText}</div>}
