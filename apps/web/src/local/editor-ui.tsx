@@ -2,10 +2,11 @@
  * 编辑器共享 UI 片段与配置（W-08 / W-09 / UI 同步第一批）。
  *
  * UI 同步第一批（经典版信息架构）：`TopBar`（项目 + 导出）、
- * `PropertiesPanel`（右栏选中片段属性）、`DiagnosticsPanel`（诊断与高级工具）、
- * `PreviewSection`（预览画布）；素材面板自批 3 起位于 `classic-ui/assets-panel.tsx`。
+ * `DiagnosticsPanel`（诊断与高级工具）、`PreviewSection`（预览画布）；
+ * 素材面板自批 3 起位于 `classic-ui/assets-panel.tsx`，属性面板自批 4 起位于
+ * `classic-ui/properties-panel.tsx`（本文件仅保留二者共用的 `ClipPatch` 数据契约）。
  */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { CSSProperties, RefObject } from 'react'
 
 import { SHORTCUT_HELP } from './editor-shortcuts'
@@ -151,81 +152,10 @@ export interface ClipPatch {
   trimEnd?: number
 }
 
-const EDITABLE_FIELDS: Array<{ key: keyof ClipPatch; label: string }> = [
-  { key: 'startTime', label: '开始 (ticks)' },
-  { key: 'duration', label: '时长 (ticks)' },
-  { key: 'trimStart', label: '入点 (ticks)' },
-  { key: 'trimEnd', label: '出点 (ticks)' },
-]
-
+/** 通用输入控件样式（ExportSettingsPanel 仍在使用）。 */
 const INPUT_STYLE: CSSProperties = {
   width: '100%', boxSizing: 'border-box', background: 'var(--input)', color: TEXT_MAIN,
   border: '1px solid #475569', borderRadius: 4, padding: '4px 6px', fontSize: 12,
-}
-
-function draftOf(selected: CoreElement | null): Record<keyof ClipPatch, string> {
-  return {
-    startTime: String(selected?.startTime ?? 0),
-    duration: String(selected?.duration ?? 0),
-    trimStart: String(selected?.trimStart ?? 0),
-    trimEnd: String(selected?.trimEnd ?? 0),
-  }
-}
-
-/** 右栏属性检查器：选中片段的可编辑属性（UI 第三批）。 */
-export function PropertiesPanel(props: {
-  selected: CoreElement | null
-  onChange?: (patch: ClipPatch) => void
-}) {
-  const selected = props.selected
-  const [draft, setDraft] = useState<Record<keyof ClipPatch, string>>(() => draftOf(selected))
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    setDraft(draftOf(selected))
-    setError(null)
-  }, [selected])
-  return (
-    <section className="panel classic-panel" style={{ display: 'block', padding: 8, overflow: 'auto' }} data-testid="classic-properties">
-      <div className="classic-panel-heading" style={{ margin: '-8px -8px 8px' }}>属性</div>
-      {!selected && <p style={{ fontSize: 13, color: TEXT_MUTED, margin: 0 }}>在时间轴点击片段查看属性。</p>}
-      {selected && (
-        <>
-          <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 8px' }}>id：{selected.id}</p>
-          <table style={{ fontSize: 13, color: TEXT_MAIN, borderCollapse: 'collapse', width: '100%' }}>
-            <tbody>
-              {EDITABLE_FIELDS.map(({ key, label }) => (
-                <tr key={key}>
-                  <td style={{ padding: '3px 8px 3px 0', color: TEXT_MUTED, whiteSpace: 'nowrap' }}>{label}</td>
-                  <td style={{ padding: 3, width: '55%' }}>
-                    <input type="number" min={0} step={1000} aria-label={label} value={draft[key]}
-                      style={INPUT_STYLE}
-                      onChange={(event) => setDraft((previous) => ({ ...previous, [key]: event.target.value }))} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {error && <p style={{ fontSize: 12, color: '#fca5a5', margin: '8px 0 0' }}>{error}</p>}
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button type="button" style={BUTTON_STYLE} disabled={!props.onChange} onClick={() => {
-              const patch: ClipPatch = {}
-              for (const { key } of EDITABLE_FIELDS) {
-                const value = Number(draft[key])
-                if (!Number.isFinite(value) || value < 0) {
-                  setError('字段必须是非负数字')
-                  return
-                }
-                patch[key] = Math.round(value)
-              }
-              setError(null)
-              props.onChange?.(patch)
-            }}>应用修改</button>
-            <button type="button" style={BUTTON_STYLE} onClick={() => { setDraft(draftOf(selected)); setError(null) }}>重置</button>
-          </div>
-        </>
-      )}
-    </section>
-  )
 }
 
 /** 导出设置面板（UI 第三批）：容器、音轨、码率与快捷键说明。 */

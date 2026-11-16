@@ -18,7 +18,6 @@ import {
   DiagnosticsPanel,
   ExportSettingsPanel,
   PreviewSection,
-  PropertiesPanel,
   TopBar,
   blankFrame,
   type ApplyResponse,
@@ -48,6 +47,7 @@ import { ClassicTimeline } from '../local/classic-ui/timeline'
 import type { ClassicTimelineTrack, TimelineAction } from '../local/classic-ui/timeline'
 import { AssetsPanel } from '../local/classic-ui/assets-panel'
 import type { AssetDragPayload, AssetItem } from '../local/classic-ui/assets-panel'
+import { PropertiesPanel } from '../local/classic-ui/properties-panel'
 import {
   createSnapshot,
   parseSnapshot,
