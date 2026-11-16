@@ -20,7 +20,6 @@ import {
   MediaPanel,
   PreviewSection,
   PropertiesPanel,
-  TimelineSection,
   TopBar,
   blankFrame,
   type ApplyResponse,
@@ -46,6 +45,8 @@ import {
   type ExportSettings,
 } from '../local/export-settings'
 import { matchShortcut } from '../local/editor-shortcuts'
+import { ClassicTimeline } from '../local/classic-ui/timeline'
+import type { ClassicTimelineTrack, TimelineAction } from '../local/classic-ui/timeline'
 import {
   createSnapshot,
   parseSnapshot,
@@ -87,6 +88,31 @@ export const Route = createFileRoute('/editor')({ component: Editor })
 const PROJECT_FIXTURE_URL = '/fixtures/classic-project-v31.json'
 
 /**
+ * 从经典版项目视图提取时间轴三轨（顺序：overlay → main → audio，与 core 一致）。
+ * 各轨元素转为编辑器通用的片段结构；main 轨的可编辑状态由页面另行覆盖。
+ * @param project 项目只读视图
+ * @returns {ClassicTimelineTrack[]} 按经典版顺序排列的轨道
+ */
+function buildTimelineTracks(
+  project: import('../local/editor-adapter').ProjectView,
+): ClassicTimelineTrack[] {
+  const scene = project.scenes.find((item) => item.id === project.currentSceneId)
+    ?? project.scenes[0]
+  if (!scene) return []
+  return scene.tracks.map((track) => ({
+    id: track.id,
+    trackType: track.trackType,
+    label: track.trackType === 'video' ? '主轨' : track.trackType === 'audio' ? '音频' : track.id,
+    elements: track.elements.map((element) => ({
+      id: element.id,
+      startTime: element.startTime,
+      duration: element.duration,
+      trimStart: element.trimStart,
+    })),
+  }))
+}
+
+/**
  * Web-first 编辑器：导入项目 JSON 与真实音视频素材 → 删除/分割片段 →
  * 逐帧预览（三级代理缓存 + 片段 trimStart 映射）→ 带 AAC 音轨导出 MP4，
  * 并支持 OTIO 交换格式双向导入导出（W-10）。
@@ -98,6 +124,8 @@ function Editor() {
   const [errorText, setErrorText] = useState<string | null>(null)
   const [originalElements, setOriginalElements] = useState<CoreElement[]>([])
   const [elements, setElements] = useState<CoreElement[]>([])
+  /** 批 2：经典版三轨（overlay/main/audio）视图；main 轨元素在渲染时用可编辑 elements 覆盖。 */
+  const [projectTracks, setProjectTracks] = useState<ClassicTimelineTrack[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [adjustments, setAdjustments] = useState<RippleAdjustment[]>([])
   const [frameIndex, setFrameIndex] = useState(0)
@@ -170,6 +198,7 @@ function Editor() {
       })
       setOriginalElements(mainElements)
       setElements(activeClips)
+      setProjectTracks(buildTimelineTracks(project))
       setMediaStatus(activeClips === mainElements ? '未加载素材' : '已恢复上次编辑会话（可撤销）')
       setAdjustments([])
       setSelectedId(null)
@@ -613,6 +642,30 @@ function Editor() {
     </div>
   )
 
+  /**
+   * 批 2：渲染用三轨视图。main 轨始终用可编辑 elements 覆盖，保证删除/分割/拖拽后时间轴同步；
+   * overlay/audio 轨为只读展示（core 编辑 API 仍只覆盖主轨，见 UI_REPLICA_PLAN 边界）。
+   */
+  const timelineTracks: ClassicTimelineTrack[] = projectTracks.length > 0
+    ? projectTracks.map((track) => track.trackType === 'video' && track.id === 'main'
+      ? { ...track, elements }
+      : track)
+    : [{ id: 'main', trackType: 'video', label: '主轨', elements }]
+
+  const timelineActions: TimelineAction[] = [
+    { label: '删除选中片段', icon: 'trash', disabled: !selectedId || elements.length < 2, onClick: deleteSelected },
+    { label: '在播放头分割', icon: 'scissor', disabled: !selectedId,
+      onClick: () => applyClipEdit('播放头不在选中片段内部，无法分割', (cs, ctx) => splitClipAt(cs, ctx.clipId, ctx.playhead)) },
+    { label: '入点设到播放头', icon: 'alignLeft', disabled: !selectedId,
+      onClick: () => applyClipEdit('播放头不在选中片段内部，无法设置入点', (cs, ctx) => trimClipInAt(cs, ctx.clipId, ctx.playhead)) },
+    { label: '出点设到播放头', icon: 'alignRight', disabled: !selectedId,
+      onClick: () => applyClipEdit('播放头不在选中片段内部，无法设置出点', (cs, ctx) => trimClipOutAt(cs, ctx.clipId, ctx.playhead)) },
+    { label: '左移一帧', icon: 'move', disabled: !selectedId,
+      onClick: () => applyClipEdit('片段已在时间轴起点', (cs, ctx) => moveClipBy(cs, ctx.clipId, -ctx.ticksPerFrame)) },
+    { label: '右移一帧', icon: 'duplicate', disabled: !selectedId,
+      onClick: () => applyClipEdit('片段无法再右移', (cs, ctx) => moveClipBy(cs, ctx.clipId, ctx.ticksPerFrame)) },
+  ]
+
   return (
     <main style={SURFACE_STYLE} className={`classic-ui-root classic-shell${dark ? ' dark' : ''}`}>
       <TopBar
@@ -687,8 +740,10 @@ function Editor() {
               defaultSize={String(CLASSIC_PANEL_CONFIG.timeline)}
               minSize={String(CLASSIC_PANEL_LIMITS.timeline.min)} maxSize={String(CLASSIC_PANEL_LIMITS.timeline.max)}>
 
-          <TimelineSection
-            elements={elements}
+          <ClassicTimeline
+            tracks={timelineTracks}
+            mainTrackId="main"
+            sceneName={session.project.scenes.find((item) => item.id === session.project.currentSceneId)?.name ?? '主场景'}
             selectedId={selectedId}
             onSelect={setSelectedId}
             adjustments={adjustments}
@@ -696,23 +751,12 @@ function Editor() {
             frameCount={frameCount}
             ticksPerFrame={session.ticksPerFrame}
             ticksPerSecond={TICKS_PER_SECOND}
+            fps={session.fps}
             onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
             onMoveClip={(id, start) => applyClipEdit('片段被相邻片段挡住，无法移动到该位置', (cs) => moveClipClamped(cs, id, start), id, '拖拽片段')}
             onResizeClip={(id, edge, delta) => applyClipEdit('片段已到时长边界', (cs) => resizeClipEdge(cs, id, edge, delta, session?.ticksPerFrame ?? 4000), id, '边缘裁剪')}
             statusText={`${selectedId ? `已选中 ${selectedId}` : '未选中片段'} · 剩余 ${elements.length} 个`}
-            actions={[
-              { label: '删除选中片段', disabled: !selectedId || elements.length < 2, onClick: deleteSelected },
-              { label: '在播放头分割', disabled: !selectedId,
-                onClick: () => applyClipEdit('播放头不在选中片段内部，无法分割', (cs, ctx) => splitClipAt(cs, ctx.clipId, ctx.playhead)) },
-              { label: '入点设到播放头', disabled: !selectedId,
-                onClick: () => applyClipEdit('播放头不在选中片段内部，无法设置入点', (cs, ctx) => trimClipInAt(cs, ctx.clipId, ctx.playhead)) },
-              { label: '出点设到播放头', disabled: !selectedId,
-                onClick: () => applyClipEdit('播放头不在选中片段内部，无法设置出点', (cs, ctx) => trimClipOutAt(cs, ctx.clipId, ctx.playhead)) },
-              { label: '左移一帧', disabled: !selectedId,
-                onClick: () => applyClipEdit('片段已在时间轴起点', (cs, ctx) => moveClipBy(cs, ctx.clipId, -ctx.ticksPerFrame)) },
-              { label: '右移一帧', disabled: !selectedId,
-                onClick: () => applyClipEdit('片段无法再右移', (cs, ctx) => moveClipBy(cs, ctx.clipId, ctx.ticksPerFrame)) },
-            ]}
+            actions={timelineActions}
           />
             </ResizablePanel>
           </ResizablePanelGroup>

@@ -42,7 +42,7 @@
 | --- | --- | --- | --- |
 | **0 基线固化** | 本文档；`theme.css`（主题变量 1:1）、`tokens.ts`（尺寸/比例）、`tokens.test.ts`（自动比对）；`/editor` 引入主题作用域；`NOTICE.md` 记录样式/图标来源 | **已完成**（2026-11-14） | `tokens.test.ts` **10/10**，其中「与经典版 `globals.css` 逐变量比对」在源码可用时真实执行并抓出 1 处抄写偏差（`.dark --input`）；vitest **140/140**、tsc 0 错误、`vite build` 0；浏览器确认 `.classic-ui-root` 亮/暗变量生效（`--background` 亮 `hsl(0, 0%, 100%)` / 暗 `hsl(0, 0%, 5%)`、`--radius-lg: 0.82rem`、`--text-xs: 0.72rem`） |
 | **1 主框架** | 可调整五面板（垂直 mainContent/timeline + 水平 tools/preview/properties）、顶栏 1:1、竖排 9 图标 tab、预览容器、亮/暗主题切换；诊断与导出设置收进 settings tab | **已完成**（2026-11-15） | `tokens.test.ts` 10/10、vitest **140/140**、tsc 0 错误、`vite build` 0；浏览器实测 header `54.39px`（3.4rem）、水平三栏 `306/612/306`（25/50/25）、垂直 `253/253`（50/50）、3 个 resize handle、9 个 tab、亮色 `--background: hsl(0, 0%, 100%)` / 暗色 `hsl(0, 0%, 5%)`、`.panel` 暗色 `hsl(0 0% 10%)`；截图 `oc-ui-r1-light2.png` / `oc-ui-r1-dark.png` / `oc-ui-r1-final.png` |
-| 2 时间轴 | 多轨（main/overlay/audio）、轨道头、ruler/tick/playhead、snap indicator、bookmarks、缩放、拖拽控制器 | 未开始 | — |
+| **2 时间轴** | 多轨（main/overlay/audio）、轨道头、ruler/tick/playhead、snap indicator、bookmarks、缩放、拖拽控制器 | **已完成**（2026-11-16） | `timeline-tokens.test.ts` **14/14**（尺寸/层级/配色/缩放/标尺纯函数，源码可用时与经典版逐项比对通过）；vitest **154/154**、`vite build` client+SSR 0 错误；浏览器 computed style：toolbar 40px、labels 112px、ruler 22px、bookmarks 16px、text 轨元素 `rgb(93,186,160)`=`#5DBAA0`、audio 轨 `rgb(143,93,186)`=#8F5DBA、video 轨高 65px/audio 50px、playhead 宽 2px z=30；三轨片段 title-a/clip-intro/clip-body/audio-bed 全部渲染；点击片段联动属性面板、点击标尺 seek（`00:00.00`→`00:02.29`）、放大按钮 zoom `0`→`0.11`；截图 `roadmap/oc-ui-r2-timeline.png`。核心编辑（move/resize/split/trim）仍只作用 main 轨，overlay/audio 为只读展示（见 §4 与 §7） |
 | 3 素材面板 | media / text / stickers / sounds / captions / settings 六个 tab、素材网格、拖入时间轴 | 未开始 | — |
 | 4 属性面板 | 按元素类型的参数注册表、关键帧开关、空状态 | 未开始 | — |
 | 5 预览交互 | 选框、变换手柄、对齐参考线、画布缩放、overlay 控制 | 未开始 | — |
@@ -88,10 +88,16 @@
 | 1 | 面板内部细节仍为过渡形态 | 素材/属性/时间轴的内容控件沿用前三批实现，经典版对应组件由批次 2~5 逐项替换 | 明确标注占位；不把「容器 1:1」说成「面板内部 1:1」 |
 | 1 | 顶栏/按钮文案为中文，经典版为英文 | 本地化策略 | 不影响尺寸与配色；批次 8 视觉比对再决定是否改文案 |
 | 1 | 右下角棕榈树浮标 | 当前工程 TanStack devtools（开发态） | 生产构建不显示，不计入 1:1 比对 |
+| 2 | video 轨片段为纯色占位（无帧缩略图平铺） | 经典版视频片段用 `thumbnailUrl` 横向平铺；当前 core 只输出合成帧，不提供按片段的帧缩略图（属批 7 core 扩展） | 用主题 `--muted` 底色 + 片段 id 文本占位，不伪装为经典版缩略图；结构/尺寸/选中描边仍 1:1 |
+| 2 | overlay/audio 轨为只读展示，核心编辑只作用 main 轨 | core 的 `rippleAdjustments`/`rippleApply`/`split`/`trim` 契约只覆盖主轨，多轨编辑须批 7 扩 core | 轨道头静音/隐藏为本地视觉状态（ProjectView 未暴露 muted/hidden 字段）；拖拽/resize 仅 main 轨生效，其余轨点击可选中查看但不提交编辑 |
+| 2 | bookmarks 行渲染为空（16px 行 + 工具栏占位按钮） | 经典版书签数据来自 `scene.bookmarks`，当前 `ProjectView` 归一化视图未暴露该字段（属批 7 core 扩展） | 保留 16px 标尺下方书签行与工具栏按钮位置，视觉 1:1；数据接入留待批 7 |
+| 2 | 片段/播放头拖拽用像素→ticks 换算，未引入经典版 snap/ripple 全套 hook | 经典版用 zustand + 多个交互 hook（box-select、edge-auto-scroll、graph editor），本工程保持本地重写且 core 契约不变；吸附用既有 `snapTicks` 纯函数复用 | 拖拽、边缘裁剪、标尺 seek、ctrl+wheel 缩放、shift+wheel 横滚已接通核心行为；box-select/graph editor/ripple 开关为批 6/7 范围，未伪装为已完成 |
+| 2 | 全量 tsc 有 13 个 HEAD 基线既有错误 | `git show HEAD` 验证：`calendar.tsx`/`scroll-area.tsx`/`spinner.tsx` 与 `editor.tsx`/`editor-ui.tsx` 的未使用变量、`trimEnd`/`SnapshotElement` 类型不匹配在批 2 前即存在，与本次改动无关 | 本次改动文件（timeline.tsx/timeline-tokens.ts/测试/theme.css）tsc 0 错误；vitest 154/154 与 vite build（client+SSR）均通过；基线错误不在本批范围，如实登记 |
 
 ## 8. 变更记录
 
 | 日期 | 批次 | 提交 | 说明 |
 | --- | --- | --- | --- |
 | 2026-11-14 | 0 | 见 `git log` | 基线固化：进度文档 + 主题变量 + 尺寸 token + 自动比对回归 |
-| 2026-11-15 | 1 | 本次提交（见 `git log -1`） | 主框架：可调整五面板 + 顶栏 1:1 + 竖排 9 tab + 预览容器 + 亮/暗主题切换；并排截图因参照环境未就绪降级 |
+| 2026-11-15 | 1 | 见 `git log` | 主框架：可调整五面板 + 顶栏 1:1 + 竖排 9 tab + 预览容器 + 亮/暗主题切换；并排截图因参照环境未就绪降级 |
+| 2026-11-16 | 2 | 本次提交（见 `git log -1`） | 时间轴：三轨（overlay/main/audio）+ 轨道头（静音/隐藏/类型图标）+ ruler/tick（经典版间隔算法）+ 播放头 + snap 指示线 + 书签行 + 缩放（按钮/滑块/ctrl-wheel）+ 拖拽/边缘裁剪/seek；`timeline-tokens.ts` 固化经典版尺寸并 14/14 自动比对；vitest 154/154、build 0；浏览器 computed style 与交互验收通过 |
