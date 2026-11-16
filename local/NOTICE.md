@@ -90,3 +90,5 @@
 **追加（core 扩展 · 批 7.1 元素类型字段保真）**：本批只改 Rust core 数据模型（`ocx-domain`），未复制经典版任何样式值、字体或图标资源。`ElementView` 新增的 name/mediaId/content/params 字段名与语义来自经典版项目 JSON schema（fixture `classic-project-v31.json` 中已有这些字段），`ElementType::Caption` 与 text 轨映射沿用经典版元素类型语义。经典版 MIT © 2025-2026 声明继续保留。
 
 **追加（core 扩展 · 批 7.2 可变分辨率）**：本批为 TS 侧分辨率可配置的本地新写实现（`resolution.ts` 预设与纯函数、`editor-ui.tsx`/`editor.tsx`/`preview-section.tsx` 的宽高贯穿、`blankFrame` 与 canvas 参数化、Settings tab 分辨率下拉），未复制经典版任何样式值、字体或图标资源，也未引入第三方依赖。三档预设（320×180/640×360/1280×720）为本工程按 16:9 与 WebCodecs 正偶数约束自行选定；core 的宽高参数化（`composite_frame`/`render_frame`）沿用本仓库既有实现，未改动 Rust 代码与 WASM 产物。经典版 MIT © 2025-2026 声明继续保留。
+
+**追加（core 扩展 · 批 7.3 波形抽样）**：`ocx-render/src/waveform.rs` 的 PCM→峰值纯函数、WASM `waveform_peaks_from_pcm`、TS `mixdownToMono` 与时间轴 `.classic-timeline-waveform` 竖条渲染均为本地新写实现，未复制经典版任何样式值、字体或图标资源，也未引入第三方依赖；波形条样式为本工程自行设计（白色半透明竖条、按峰值映射高度），非经典版波形组件拷贝。PCM 经浏览器 Web Audio 解码为本仓库自有 `PcmAudio` 数据，降混与峰值算法为确定性自实现。经典版 MIT © 2025-2026 声明继续保留。

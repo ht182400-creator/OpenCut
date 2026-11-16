@@ -97,6 +97,12 @@ export interface CoreCompositeRequest {
   params: unknown;
 }
 
+/** 波形抽样请求（批 7.3）：PCM 样本单独以 Float32Array 传，参数走 JSON。 */
+export interface CoreWaveformRequest {
+  /** 峰值条数（1~4096），缺省 16。 */
+  bins?: number;
+}
+
 /** 经典版项目只读视图的元素。 */
 export interface ProjectElementView {
   id: string;
@@ -235,6 +241,24 @@ export function validateCompositeRequest(
 }
 
 /**
+ * 校验波形抽样请求（bins 为可选正整数，范围 1~4096）。
+ * @param request 待校验的未知输入
+ * @returns {void}
+ */
+export function validateWaveformRequest(request: unknown): asserts request is CoreWaveformRequest {
+  if (request === undefined || request === null) return;
+  if (typeof request !== 'object') {
+    throw new Error('波形请求必须是对象；请检查调用参数后重试。');
+  }
+  const bins = (request as Record<string, unknown>).bins;
+  if (bins !== undefined && (
+    typeof bins !== 'number' || !Number.isInteger(bins) || bins < 1 || bins > 4096
+  )) {
+    throw new Error('波形峰值条数必须是 1 到 4096 的整数；请检查后重试。');
+  }
+}
+
+/**
  * 把 core 抛出的异常整理成用户可理解的中文提示。
  * @param error 未知异常
  * @returns {string} 友好错误文案
@@ -281,6 +305,8 @@ export interface EditorAdapter {
   renderFrameRgba(request: CoreFrameRequest): Uint8Array;
   /** 把浏览器解码的底图与 core 图层合成，得到最终帧像素。 */
   compositeFrameRgba(basePixels: Uint8Array, request: CoreCompositeRequest): Uint8Array;
+  /** 批 7.3：把单声道 PCM 抽样成固定条数峰值（0~255），供时间轴绘制真实波形。 */
+  waveformPeaksFromPcm(pcmSamples: Float32Array, request: CoreWaveformRequest): Uint8Array;
   /** 读取经典版项目 JSON（只读）。 */
   readClassicProject(projectJson: string): ProjectResult;
   /** 写回经典版项目 JSON（按 id 合并、保留未知字段）。 */
@@ -327,6 +353,13 @@ export async function createEditorAdapter(): Promise<EditorAdapter> {
         ): Uint8Array => {
           validateCompositeRequest(request);
           return glue.composite_frame_rgba(basePixels, JSON.stringify(request));
+        },
+        waveformPeaksFromPcm: (
+          pcmSamples: Float32Array,
+          request: CoreWaveformRequest,
+        ): Uint8Array => {
+          validateWaveformRequest(request);
+          return glue.waveform_peaks_from_pcm(pcmSamples, JSON.stringify(request));
         },
         readClassicProject: (projectJson: string): ProjectResult =>
           JSON.parse(glue.read_classic_project(projectJson)) as ProjectResult,

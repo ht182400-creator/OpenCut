@@ -10,6 +10,7 @@
 pub mod frame;
 pub mod plan;
 pub mod profile;
+pub mod waveform;
 
 /// 跨语言浮点比较容差（秒）；帧时长由整数 ticks 推导，误差仅来自 f64 表示。
 pub const TOLERANCE_SECONDS: f64 = 1e-9;
@@ -24,4 +25,8 @@ pub use profile::{
     Codec, Container, ExportProfile, FrameRateSpec, MAX_AUDIO_CHANNELS, MAX_FRAME_DIMENSION,
     MAX_VIDEO_BITRATE_BPS, MIN_VIDEO_BITRATE_BPS, ProfileError, SUPPORTED_AUDIO_SAMPLE_RATES,
     validate_export_profile,
+};
+pub use waveform::{
+    DEFAULT_WAVEFORM_BINS, MAX_PCM_SAMPLES, MAX_WAVEFORM_BINS, WaveformError, WaveformParams,
+    waveform_peaks,
 };

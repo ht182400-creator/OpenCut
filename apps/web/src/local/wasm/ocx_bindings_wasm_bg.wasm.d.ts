@@ -14,6 +14,7 @@ export const plugin_register: (a: number, b: number, c: number, d: number) => [n
 export const read_classic_project: (a: number, b: number) => [number, number, number, number];
 export const render_frame_rgba: (a: number, b: number) => [number, number, number, number];
 export const schema_version: () => [number, number];
+export const waveform_peaks_from_pcm: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const write_classic_project: (a: number, b: number) => [number, number, number, number];
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;

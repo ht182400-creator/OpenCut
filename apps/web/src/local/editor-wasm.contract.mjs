@@ -25,6 +25,7 @@ import init, {
   render_frame_rgba,
   schema_version,
   write_classic_project,
+  waveform_peaks_from_pcm,
 } from "./wasm/ocx_bindings_wasm.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -419,6 +420,41 @@ try {
       ),
     );
   }
+
+  // 批 7.3：真实 PCM → 峰值波形（Uint8Array 直传，避免 JSON 膨胀）
+  const pcm16 = new Float32Array([0, 0.25, -0.5, 1, -1, 0.5]);
+  const wave16 = waveform_peaks_from_pcm(pcm16, JSON.stringify({ params: { bins: 4 } }));
+  check("波形返回 Uint8Array 且条数正确", () => {
+    assert.equal(wave16 instanceof Uint8Array, true);
+    assert.equal(wave16.length, 4);
+  });
+  check("波形峰值落在 0~255", () =>
+    assert.equal(Array.from(wave16).every((peak) => peak >= 0 && peak <= 255), true),
+  );
+  // 6 样本分 4 bin：bin0=[0], bin1=[0.25,-0.5], bin2=[1], bin3=[-1,0.5]
+  // 各取绝对值最大：0→0, 0.5→128, 1→255, 1→255
+  check("波形峰值检测取区间最大绝对值", () =>
+    assert.deepEqual(Array.from(wave16), [0, 128, 255, 255]),
+  );
+  const waveDefault = waveform_peaks_from_pcm(pcm16, JSON.stringify({}));
+  check("波形缺省 bins 为 16", () => assert.equal(waveDefault.length, 16));
+  check("波形 bins=0 被明确拒绝", () =>
+    assert.throws(
+      () => waveform_peaks_from_pcm(pcm16, JSON.stringify({ params: { bins: 0 } })),
+      /INVALID_WAVEFORM_BINS|生成波形/,
+    ),
+  );
+  check("波形空 PCM 被明确拒绝", () =>
+    assert.throws(
+      () => waveform_peaks_from_pcm(new Float32Array(0), JSON.stringify({ params: { bins: 4 } })),
+      /EMPTY_PCM|生成波形/,
+    ),
+  );
+  const waveNonFinite = waveform_peaks_from_pcm(
+    new Float32Array([Number.NaN, Number.POSITIVE_INFINITY, 0, 0]),
+    JSON.stringify({ params: { bins: 2 } }),
+  );
+  check("波形非有限样本按静音处理", () => assert.deepEqual(Array.from(waveNonFinite), [0, 0]));
 
   // W-05 第五批：经典版项目 JSON 无损写回（真实 WASM 产物）
   const classicProject = readFileSync(path.resolve(HERE, "../../public/fixtures/classic-project-v31.json"), "utf8");

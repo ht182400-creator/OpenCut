@@ -147,6 +147,8 @@ export function ClassicTimeline(props: {
   onSeek: (frameIndex: number) => void
   onMoveClip?: (clipId: string, proposedStart: number) => void
   onResizeClip?: (clipId: string, edge: 'left' | 'right', deltaTicks: number) => void
+  /** 批 7.3：元素 id → 真实峰值数组（0~255）；缺省时对 audio 轨渲染占位线。 */
+  waveforms?: ReadonlyMap<string, Uint8Array>
 }) {
   const [zoomLevel, setZoomLevel] = useState(1)
   const [snapping, setSnapping] = useState(true)
@@ -526,6 +528,18 @@ export function ClassicTimeline(props: {
                           }}
                           onClick={() => props.onSelect(element.id)}
                           onMouseDown={(event) => startDrag(event, element, 'move', readOnly)}>
+                          {(() => {
+                            const peaks = props.waveforms?.get(element.id)
+                            if (!peaks || peaks.length === 0) return null
+                            return (
+                              <span className="classic-timeline-waveform" aria-hidden="true">
+                                {Array.from(peaks, (peak, index) => (
+                                  <i key={index}
+                                    style={{ height: `${Math.max(2, Math.round(peak / 255 * 100))}%` }} />
+                                ))}
+                              </span>
+                            )
+                          })()}
                           <span className="classic-timeline-element-name">{element.id}</span>
                           {isSelected && !readOnly && (
                             <>

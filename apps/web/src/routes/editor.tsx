@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import '../local/classic-ui/theme.css'
 import { CLASSIC_PANEL_CONFIG, CLASSIC_PANEL_LIMITS } from '../local/classic-ui/tokens'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../components/ui/resizable'
-import { buildTimelineAudio, isAacEncodingSupported, type PcmAudio } from '../local/audio'
+import { buildTimelineAudio, isAacEncodingSupported, mixdownToMono, type PcmAudio } from '../local/audio'
 import { useClipHistory } from '../local/clip-history'
 import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
 import {
@@ -136,6 +136,35 @@ function Editor() {
   const [playing, setPlaying] = useState(false)
   const [media, setMedia] = useState<DecodedMedia | null>(null)
   const [mediaStatus, setMediaStatus] = useState('未加载素材')
+  /** 批 7.3：元素 id → 真实 PCM 峰值数组，供时间轴绘制波形。 */
+  const [waveforms, setWaveforms] = useState<ReadonlyMap<string, Uint8Array>>(() => new Map())
+
+  /**
+   * 批 7.3：素材音轨加载后，用 core 把真实 PCM 抽样成峰值，绑定到当前场景的音频/主轨元素。
+   * 多声道先降混为单声道；core 抽样失败或非 PCM 素材则清空波形并给出友好提示。
+   */
+  useEffect(() => {
+    if (!session || !media?.audio) {
+      setWaveforms(new Map())
+      return
+    }
+    try {
+      const mono = mixdownToMono(media.audio)
+      const peaks = session.adapter.waveformPeaksFromPcm(mono, { bins: 16 })
+      const scene = session.project.scenes.find((item) => item.id === session.project.currentSceneId)
+        ?? session.project.scenes[0]
+      const bindings = new Map<string, Uint8Array>()
+      for (const track of scene?.tracks ?? []) {
+        if (track.trackType === 'audio' || track.id === 'main') {
+          for (const element of track.elements) bindings.set(element.id, peaks)
+        }
+      }
+      setWaveforms(bindings)
+    } catch (error) {
+      setWaveforms(new Map())
+      setErrorText(`波形抽样失败：${formatCoreError(error)}`)
+    }
+  }, [session, media])
   /** 批 3：素材面板网格数据；导入视频后追加，供 112px 卡片网格展示。 */
   const [assets, setAssets] = useState<AssetItem[]>([])
   const [cacheInfo, setCacheInfo] = useState('代理缓存 0 份')
@@ -801,6 +830,7 @@ function Editor() {
             tracks={timelineTracks}
             mainTrackId="main"
             sceneName={session.project.scenes.find((item) => item.id === session.project.currentSceneId)?.name ?? '主场景'}
+            waveforms={waveforms}
             selectedId={selectedId}
             onSelect={setSelectedId}
             adjustments={adjustments}

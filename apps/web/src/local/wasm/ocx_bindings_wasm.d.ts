@@ -83,6 +83,14 @@ export function render_frame_rgba(request_json: string): Uint8Array;
 export function schema_version(): string;
 
 /**
+ * 把浏览器解码的单声道 PCM 抽样成固定条数峰值（批 7.3，供时间轴绘制真实波形）。
+ *
+ * `pcm_samples` 以 `Float32Array` 直接传入（避免 JSON 膨胀），`request_json` 仅含
+ * `params`（峰值条数等）。返回长度为条数的 `Uint8Array`（0~255），错误带中文提示。
+ */
+export function waveform_peaks_from_pcm(pcm_samples: Float32Array | number[], request_json: string): Uint8Array;
+
+/**
  * 写回经典版项目 JSON（W-05 第五批）：按 id 合并视图、保留未知字段。
  */
 export function write_classic_project(request_json: string): string;
@@ -104,6 +112,7 @@ export interface InitOutput {
     readonly read_classic_project: (a: number, b: number) => [number, number, number, number];
     readonly render_frame_rgba: (a: number, b: number) => [number, number, number, number];
     readonly schema_version: () => [number, number];
+    readonly waveform_peaks_from_pcm: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly write_classic_project: (a: number, b: number) => [number, number, number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

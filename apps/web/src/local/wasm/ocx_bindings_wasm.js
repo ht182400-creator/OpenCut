@@ -336,6 +336,36 @@ export function schema_version() {
 }
 
 /**
+ * 把浏览器解码的单声道 PCM 抽样成固定条数峰值（批 7.3，供时间轴绘制真实波形）。
+ *
+ * `pcm_samples` 以 `Float32Array` 直接传入（避免 JSON 膨胀），`request_json` 仅含
+ * `params`（峰值条数等）。返回长度为条数的 `Uint8Array`（0~255），错误带中文提示。
+ * @param {Float32Array | number[]} pcm_samples
+ * @param {string} request_json
+ * @returns {Uint8Array}
+ */
+export function waveform_peaks_from_pcm(pcm_samples, request_json) {
+    let ptr0, len0, ptr1, len1;
+    try {
+        ptr0 = passArrayF32ToWasm0(pcm_samples, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passStringToWasm0(request_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        len1 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr1) { wasm.__wbindgen_free(ptr1, len1 * 1, 1); }
+        if (ptr0) { wasm.__wbindgen_free(ptr0, len0 * 4, 4); }
+        throw e;
+    }
+    const ret = wasm.waveform_peaks_from_pcm(ptr0, len0, ptr1, len1);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v3;
+}
+
+/**
  * 写回经典版项目 JSON（W-05 第五批）：按 id 合并视图、保留未知字段。
  * @param {string} request_json
  * @returns {string}
@@ -388,6 +418,14 @@ function getArrayU8FromWasm0(ptr, len) {
     return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
 }
 
+let cachedFloat32ArrayMemory0 = null;
+function getFloat32ArrayMemory0() {
+    if (cachedFloat32ArrayMemory0 === null || cachedFloat32ArrayMemory0.byteLength === 0) {
+        cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
+    }
+    return cachedFloat32ArrayMemory0;
+}
+
 function getStringFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return decodeText(getUint8ArrayMemory0().subarray(ptr, ptr + len));
@@ -404,6 +442,13 @@ function getUint8ArrayMemory0() {
 function passArray8ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 1, 1) >>> 0;
     getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArrayF32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getFloat32ArrayMemory0().set(arg, ptr / 4);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }
@@ -485,6 +530,7 @@ function __wbg_finalize_init(instance, module) {
     wasmInstance = instance;
     wasm = instance.exports;
     wasmModule = module;
+    cachedFloat32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

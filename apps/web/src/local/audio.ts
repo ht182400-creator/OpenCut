@@ -195,6 +195,27 @@ export function createToneAudio(durationSeconds: number, sampleRate = AUDIO_SAMP
   };
 }
 
+/**
+ * 把 planar 多声道降混为单声道（批 7.3）：取各声道同位置样本绝对值的最大值并保留符号，
+ * 这样任一声道的峰值都能在波形上体现；空声道数组返回空 Float32Array。
+ * @param audio 解码后的 planar PCM
+ * @returns 单声道 Float32Array
+ */
+export function mixdownToMono(audio: PcmAudio): Float32Array {
+  if (audio.channels.length === 0) return new Float32Array(0);
+  const length = audio.channels[0].length;
+  const mono = new Float32Array(length);
+  for (let index = 0; index < length; index += 1) {
+    let peak = 0;
+    for (const channel of audio.channels) {
+      const value = channel[index] ?? 0;
+      if (Math.abs(value) > Math.abs(peak)) peak = value;
+    }
+    mono[index] = peak;
+  }
+  return mono;
+}
+
 /** 构建时间轴音频的选项。 */
 export interface TimelineAudioOptions {
   clips: TimelineClip[];

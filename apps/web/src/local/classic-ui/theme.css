@@ -523,6 +523,26 @@
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
   pointer-events: none;
 }
+/* 批 7.3：音频片段真实波形（峰值竖条），铺在片段背景上、名称之下。 */
+.classic-timeline-waveform {
+  position: absolute;
+  left: 0.25rem;
+  right: 0.25rem;
+  top: 0.625rem;
+  bottom: 0.125rem;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  pointer-events: none;
+  opacity: 0.85;
+}
+.classic-timeline-waveform i {
+  flex: 1 1 0;
+  min-width: 1px;
+  max-width: 4px;
+  background: rgb(255 255 255 / 0.85);
+  border-radius: 1px;
+}
 .classic-timeline-handle {
   position: absolute;
   top: 0;

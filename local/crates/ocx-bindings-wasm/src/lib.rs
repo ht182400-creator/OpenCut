@@ -22,8 +22,8 @@ use ocx_editor_api::{
 };
 use ocx_io::{EditTimeline, export_otio, import_otio};
 use ocx_render::{
-    ExportProfile, FrameParams, build_frame_plan, composite_frame, render_frame,
-    validate_export_profile,
+    ExportProfile, FrameParams, WaveformParams, build_frame_plan, composite_frame, render_frame,
+    validate_export_profile, waveform_peaks,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -253,6 +253,29 @@ pub fn composite_frame_rgba(base_pixels: &[u8], request_json: &str) -> Result<Ve
     )
     .map_err(|error| js_error("合成预览帧", error))?;
     Ok(frame.pixels_rgba)
+}
+
+/// 把浏览器解码的单声道 PCM 抽样成固定条数峰值（批 7.3，供时间轴绘制真实波形）。
+///
+/// `pcm_samples` 以 `Float32Array` 直接传入（避免 JSON 膨胀），`request_json` 仅含
+/// `params`（峰值条数等）。返回长度为条数的 `Uint8Array`（0~255），错误带中文提示。
+#[wasm_bindgen]
+pub fn waveform_peaks_from_pcm(
+    pcm_samples: &[f32],
+    request_json: &str,
+) -> Result<Vec<u8>, JsValue> {
+    let request: Value =
+        serde_json::from_str(request_json).map_err(|error| js_error("解析波形请求 JSON", error))?;
+    let params: WaveformParams = request
+        .get("params")
+        .map_or_else(
+            || Ok(WaveformParams::default()),
+            |value| serde_json::from_value(value.clone()),
+        )
+        .map_err(|error| js_error("解析波形参数", error))?;
+    let peaks =
+        waveform_peaks(pcm_samples, &params).map_err(|error| js_error("生成波形", error))?;
+    Ok(peaks)
 }
 
 /// 通道类型探测（供前端在提交请求前校验 fallback 类型，避免无谓的 WASM 调用）。

@@ -8,6 +8,7 @@ import {
   buildTimelineAudio,
   createToneAudio,
   cumulativeSamples,
+  mixdownToMono,
   planarChunk,
   samplesForFrame,
   type PcmAudio,
@@ -102,5 +103,50 @@ describe('演示音源与时间轴重排', () => {
       ...baseOptions, clips: [], sourceAudio: createToneAudio(2),
     });
     expect(audio.channels[0].every((sample) => sample === 0)).toBe(true);
+  });
+});
+
+/** 批 7.3：多声道降混为单声道，供 core 波形抽样。 */
+describe('mixdownToMono 波形降混', () => {
+  it('取各声道同位置绝对值最大的样本并保留符号', () => {
+    const audio: PcmAudio = {
+      channels: [
+        new Float32Array([0.1, -0.8, 0.3]),
+        new Float32Array([0.5, 0.2, -0.6]),
+      ],
+      sampleRate: 48000,
+      durationSeconds: 1,
+    };
+    const mono = Array.from(mixdownToMono(audio));
+    expect(mono).toHaveLength(3);
+    expect(mono[0]).toBeCloseTo(0.5, 6);
+    expect(mono[1]).toBeCloseTo(-0.8, 6);
+    expect(mono[2]).toBeCloseTo(-0.6, 6);
+  });
+
+  it('单声道输入原样返回（值相等）', () => {
+    const audio: PcmAudio = {
+      channels: [new Float32Array([0, 0.25, -0.5, 1])],
+      sampleRate: 48000,
+      durationSeconds: 1,
+    };
+    expect(Array.from(mixdownToMono(audio))).toEqual([0, 0.25, -0.5, 1]);
+  });
+
+  it('边界：空声道数组返回空 Float32Array', () => {
+    const audio: PcmAudio = { channels: [], sampleRate: 48000, durationSeconds: 0 };
+    expect(mixdownToMono(audio).length).toBe(0);
+  });
+
+  it('边界：长度不等的声道按 0 处理缺失样本', () => {
+    const audio: PcmAudio = {
+      channels: [new Float32Array([0.9, 0.1]), new Float32Array([0.2])],
+      sampleRate: 48000,
+      durationSeconds: 1,
+    };
+    const mono = Array.from(mixdownToMono(audio));
+    expect(mono).toHaveLength(2);
+    expect(mono[0]).toBeCloseTo(0.9, 6);
+    expect(mono[1]).toBeCloseTo(0.1, 6);
   });
 });
