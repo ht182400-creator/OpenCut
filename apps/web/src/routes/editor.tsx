@@ -17,7 +17,6 @@ import {
   TEXT_MAIN,
   DiagnosticsPanel,
   ExportSettingsPanel,
-  PreviewSection,
   TopBar,
   blankFrame,
   type ApplyResponse,
@@ -48,6 +47,7 @@ import type { ClassicTimelineTrack, TimelineAction } from '../local/classic-ui/t
 import { AssetsPanel } from '../local/classic-ui/assets-panel'
 import type { AssetDragPayload, AssetItem } from '../local/classic-ui/assets-panel'
 import { PropertiesPanel } from '../local/classic-ui/properties-panel'
+import { PreviewSection } from '../local/classic-ui/preview-section'
 import {
   createSnapshot,
   parseSnapshot,
@@ -741,8 +741,10 @@ function Editor() {
                     onTogglePlay={() => setPlaying((value) => !value)}
                     frameIndex={frameIndex}
                     frameCount={frameCount}
+                    fps={session.fps}
+                    selected={Boolean(selectedElement)}
                     onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
-                    timecode={`帧 ${frameIndex + 1}/${frameCount} · ${(frameIndex * session.ticksPerFrame / TICKS_PER_SECOND).toFixed(2)}s · 片段 ${activeClip}`}
+                    timecode={`片段 ${activeClip}`}
                   />
                 </ResizablePanel>
                 <ResizableHandle withHandle />

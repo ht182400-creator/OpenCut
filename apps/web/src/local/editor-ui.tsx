@@ -1,13 +1,13 @@
 /**
  * 编辑器共享 UI 片段与配置（W-08 / W-09 / UI 同步第一批）。
  *
- * UI 同步第一批（经典版信息架构）：`TopBar`（项目 + 导出）、
- * `DiagnosticsPanel`（诊断与高级工具）、`PreviewSection`（预览画布）；
- * 素材面板自批 3 起位于 `classic-ui/assets-panel.tsx`，属性面板自批 4 起位于
- * `classic-ui/properties-panel.tsx`（本文件仅保留二者共用的 `ClipPatch` 数据契约）。
+ * UI 同步第一批（经典版信息架构）：`TopBar`（项目 + 导出）、`DiagnosticsPanel`（诊断与高级工具）；
+ * 素材面板（批 3）位于 `classic-ui/assets-panel.tsx`，属性面板（批 4）位于
+ * `classic-ui/properties-panel.tsx`，预览画布（批 5）位于 `classic-ui/preview-section.tsx`
+ * （本文件保留三者共用的 `ClipPatch`/帧工具数据契约）。
  */
 import { useState } from 'react'
-import type { CSSProperties, RefObject } from 'react'
+import type { CSSProperties } from 'react'
 
 import { SHORTCUT_HELP } from './editor-shortcuts'
 import type { DiscoverResult, EditorAdapter, ProjectView } from './editor-adapter'
@@ -233,37 +233,6 @@ export function DiagnosticsPanel(props: { items: Array<{ label: string; value: s
 
 /** W-09 量化阈值：单帧预览合成耗时不超过 16ms（60fps）。 */
 export const SCRUB_THRESHOLD_MS = 16
-
-/** 预览画布与播放头：绘制由编辑器页面的副作用驱动，这里只承载交互与展示。 */
-export function PreviewSection(props: {
-  canvasRef: RefObject<HTMLCanvasElement | null>
-  playing: boolean
-  onTogglePlay: () => void
-  frameIndex: number
-  frameCount: number
-  onSeek: (frameIndex: number) => void
-  /** 时间码（帧号 + 秒），诊断信息不放这里。 */
-  timecode: string
-}) {
-  return (
-    <section className="panel classic-panel" data-testid="classic-preview">
-      <div className="classic-preview-stage">
-        <canvas ref={props.canvasRef} width={PREVIEW_WIDTH} height={PREVIEW_HEIGHT}
-          style={{ width: '100%', height: '100%', objectFit: 'contain', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: '#000' }} />
-      </div>
-      <div className="classic-preview-controls">
-        <button type="button" className="classic-button" onClick={props.onTogglePlay}>
-          {props.playing ? '暂停' : '播放'}
-        </button>
-        <input type="range" min={0} max={Math.max(props.frameCount - 1, 0)}
-          value={Math.min(props.frameIndex, props.frameCount - 1)}
-          onChange={(event) => props.onSeek(Number(event.target.value))}
-          style={{ flex: 1, minWidth: 80 }} aria-label="播放头" />
-        <span style={{ whiteSpace: 'nowrap' }}>{props.timecode}</span>
-      </div>
-    </section>
-  )
-}
 
 /** 工具栏动作描述。 */
 export interface ToolbarAction {
