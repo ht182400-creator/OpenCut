@@ -17,7 +17,6 @@ import {
   TEXT_MAIN,
   DiagnosticsPanel,
   ExportSettingsPanel,
-  MediaPanel,
   PreviewSection,
   PropertiesPanel,
   TopBar,
@@ -47,6 +46,8 @@ import {
 import { matchShortcut } from '../local/editor-shortcuts'
 import { ClassicTimeline } from '../local/classic-ui/timeline'
 import type { ClassicTimelineTrack, TimelineAction } from '../local/classic-ui/timeline'
+import { AssetsPanel } from '../local/classic-ui/assets-panel'
+import type { AssetDragPayload, AssetItem } from '../local/classic-ui/assets-panel'
 import {
   createSnapshot,
   parseSnapshot,
@@ -134,6 +135,8 @@ function Editor() {
   const [playing, setPlaying] = useState(false)
   const [media, setMedia] = useState<DecodedMedia | null>(null)
   const [mediaStatus, setMediaStatus] = useState('未加载素材')
+  /** 批 3：素材面板网格数据；导入视频后追加，供 112px 卡片网格展示。 */
+  const [assets, setAssets] = useState<AssetItem[]>([])
   const [cacheInfo, setCacheInfo] = useState('代理缓存 0 份')
   const [proxyUrl, setProxyUrl] = useState<string | null>(null)
   const [otioUrl, setOtioUrl] = useState<string | null>(null)
@@ -591,6 +594,10 @@ function Editor() {
           ? `${decoded.cacheDetail}命中 · ${decoded.decodeMilliseconds}ms`
           : `解码 ${decoded.decodeMilliseconds}ms${decoded.persisted ? ' · 已持久化' : ''}`
         setMedia(decoded)
+        // 批 3：追加到素材网格；core 暂无帧缩略图接口，thumbnailUrl 留空由卡片占位图标兜底（见台账 §4）。
+        setAssets((prev) => prev.some((item) => item.id === decoded.name)
+          ? prev
+          : [...prev, { id: decoded.name, name: decoded.name, type: 'video', duration: decoded.durationSeconds }])
         setMediaStatus(
           `已载入 ${decoded.name} · ${decoded.frames.length} 代理帧 · ${decoded.durationSeconds.toFixed(2)}s · ${decoded.audio ? '含音轨' : '无音轨'} · ${cost}`,
         )
@@ -615,6 +622,14 @@ function Editor() {
       setErrorText(error instanceof Error ? error.message : String(error))
       setMediaStatus('演示素材生成失败')
     }
+  }
+
+  /**
+   * 批 3：素材卡加入时间轴的占位回调。core 暂无「新增元素」能力（属批 7 扩展），
+   * 这里只反馈友好提示，不伪装成已插入；拖拽 dataTransfer 载荷已按经典版 MIME 输出。
+   */
+  const handleAddAsset = (payload: AssetDragPayload) => {
+    setMediaStatus(`已选素材「${payload.name}」；新增片段需 core 扩展（批 7），当前为占位`)
   }
 
   const activeClip = clipAtTime(elements, frameIndex * (session?.ticksPerFrame ?? 0))?.id ?? (session ? '空档' : '—')
@@ -703,16 +718,18 @@ function Editor() {
               <ResizablePanelGroup className="classic-split" data-orientation="horizontal" orientation="horizontal">
                 <ResizablePanel defaultSize={String(CLASSIC_PANEL_CONFIG.tools)}
                   minSize={String(CLASSIC_PANEL_LIMITS.tools.min)} maxSize={String(CLASSIC_PANEL_LIMITS.tools.max)}>
-                  <MediaPanel
+                  <AssetsPanel
                     projectFileRef={projectFileRef}
                     videoFileRef={videoFileRef}
                     otioFileRef={otioFileRef}
-                    onDropFile={(file) => void readFile(file)}
+                    onImportFile={(file) => void readFile(file)}
                     onOtioFile={(file) => void handleOtioImport(file)}
                     onDemo={() => void handleDemoClip()}
+                    assets={assets}
                     sourceName={sourceName}
                     mediaStatus={mediaStatus}
                     settingsContent={settingsContent}
+                    onAddToTimeline={handleAddAsset}
                   />
                 </ResizablePanel>
                 <ResizableHandle withHandle />

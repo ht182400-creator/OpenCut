@@ -238,6 +238,7 @@
 }
 .classic-tab {
   display: flex;
+  flex: 0 0 auto; /* 经典版 shrink-0：tabbar 空间不足时滚动而非压缩 tab */
   align-items: center;
   justify-content: center;
   width: 2rem;
@@ -253,6 +254,12 @@
 .classic-tab-separator { width: 1px; background: var(--border); flex: 0 0 auto; }
 .classic-panel-content { flex: 1; min-width: 0; overflow: auto; }
 .classic-placeholder { padding: 0.75rem; font-size: var(--text-sm); color: var(--muted-foreground); }
+
+/* 批 3 素材面板：隐藏滚动条（经典版 scrollbar-hidden）与卡片 hover 加号。 */
+.classic-assets-scroll { scrollbar-width: none; }
+.classic-assets-scroll::-webkit-scrollbar { display: none; }
+.classic-asset-add { transition: opacity 0.12s ease; }
+.classic-assets-grid > div:hover .classic-asset-add { opacity: 1 !important; }
 
 .classic-preview-stage {
   flex: 1;

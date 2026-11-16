@@ -1,12 +1,12 @@
 /**
  * 编辑器共享 UI 片段与配置（W-08 / W-09 / UI 同步第一批）。
  *
- * UI 同步第一批（经典版信息架构）：`TopBar`（项目 + 撤销重做 + 导出）、
- * `MediaPanel`（左栏素材与导入）、`PropertiesPanel`（右栏选中片段属性）、
- * `DiagnosticsPanel`（折叠的诊断与高级工具）；调试信息不再平铺在主界面。
+ * UI 同步第一批（经典版信息架构）：`TopBar`（项目 + 导出）、
+ * `PropertiesPanel`（右栏选中片段属性）、`DiagnosticsPanel`（诊断与高级工具）、
+ * `PreviewSection`（预览画布）；素材面板自批 3 起位于 `classic-ui/assets-panel.tsx`。
  */
 import { useEffect, useState } from 'react'
-import type { CSSProperties, ReactNode, RefObject } from 'react'
+import type { CSSProperties, RefObject } from 'react'
 
 import { SHORTCUT_HELP } from './editor-shortcuts'
 import type { DiscoverResult, EditorAdapter, ProjectView } from './editor-adapter'
@@ -140,109 +140,6 @@ export function TopBar(props: {
       )}
       </nav>
     </header>
-  )
-}
-
-/** 左栏素材库：项目/素材/OTIO 导入、拖放与演示素材。 */
-/** 经典版素材面板的九个竖排 tab（与 assets/index.tsx 的 viewMap 顺序一致）。 */
-export const CLASSIC_ASSET_TABS = [
-  { key: 'media', label: '素材', icon: 'film' },
-  { key: 'sounds', label: '声音', icon: 'music' },
-  { key: 'text', label: '文字', icon: 'type' },
-  { key: 'stickers', label: '贴纸', icon: 'smile' },
-  { key: 'effects', label: '效果', icon: 'sparkles' },
-  { key: 'transitions', label: '转场', icon: 'layers' },
-  { key: 'captions', label: '字幕', icon: 'message' },
-  { key: 'adjustment', label: '调整', icon: 'sliders' },
-  { key: 'settings', label: '设置', icon: 'settings' },
-] as const
-
-/** 用纯 SVG path 画经典版同位置图标（避免依赖版本差异，形状与 lucide 一致）。 */
-function TabIcon({ name }: { name: string }) {
-  const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  const paths: Record<string, string> = {
-    film: 'M4 4h16v16H4z M8 4v16 M16 4v16 M4 9h4 M4 15h4 M16 9h4 M16 15h4',
-    music: 'M9 18V5l12-2v13 M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0 M21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
-    type: 'M4 7V4h16v3 M9 20h6 M12 4v16',
-    smile: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M8 14s1.5 2 4 2 4-2 4-2 M9 9h.01 M15 9h.01',
-    sparkles: 'M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z M19 15l.8 1.8L22 18l-2.2 1.2L19 21l-.8-1.8L16 18l2.2-1.2z',
-    layers: 'M12 3l9 5-9 5-9-5z M3 13l9 5 9-5 M3 17l9 5 9-5',
-    message: 'M4 4h16v12H8l-4 4z M8 9h8 M8 12h5',
-    sliders: 'M4 7h10 M18 7h2 M4 17h2 M10 17h10 M14 5v4 M6 15v4',
-    settings: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M12 8v4l3 2',
-  }
-  return (
-    <svg {...common} aria-hidden="true">
-      {(paths[name] ?? paths.film).split(' M').map((segment, index) => (
-        <path key={index} d={index === 0 ? segment : `M${segment}`} />
-      ))}
-    </svg>
-  )
-}
-
-export function MediaPanel(props: {
-  projectFileRef: RefObject<HTMLInputElement | null>
-  videoFileRef: RefObject<HTMLInputElement | null>
-  otioFileRef: RefObject<HTMLInputElement | null>
-  onDropFile: (file?: File) => void
-  onOtioFile: (file?: File) => void
-  onDemo: () => void
-  sourceName: string
-  mediaStatus: string
-  /** 批 1：诊断与导出设置收纳到 settings tab，避免主框架多出非 1:1 区块。 */
-  settingsContent?: ReactNode
-}) {
-  const [activeTab, setActiveTab] = useState<string>('media')
-  return (
-    <section
-      className="panel classic-panel classic-panel-row"
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault()
-        props.onDropFile(event.dataTransfer.files[0])
-      }}
-    >
-      <div className="classic-tabbar" role="tablist" aria-label="素材面板">
-        {CLASSIC_ASSET_TABS.map((tab) => (
-          <button key={tab.key} type="button" className="classic-tab" role="tab"
-            aria-selected={activeTab === tab.key} data-active={activeTab === tab.key}
-            title={tab.label} aria-label={tab.label}
-            onClick={() => setActiveTab(tab.key)}>
-            <TabIcon name={tab.icon} />
-          </button>
-        ))}
-      </div>
-      <div className="classic-tab-separator" />
-      <div className="classic-panel-content" role="tabpanel">
-        {activeTab === 'media' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8 }}>
-            <label className="classic-button" style={{ textAlign: 'center' }}>
-              导入项目 JSON
-              <input ref={props.projectFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
-                onChange={(event) => props.onDropFile(event.target.files?.[0])} />
-            </label>
-            <label className="classic-button" style={{ textAlign: 'center' }}>
-              导入视频素材
-              <input ref={props.videoFileRef} type="file" accept="video/*,.mp4,.webm" style={{ display: 'none' }}
-                onChange={(event) => props.onDropFile(event.target.files?.[0])} />
-            </label>
-            <label className="classic-button" style={{ textAlign: 'center' }}>
-              导入 OTIO
-              <input ref={props.otioFileRef} type="file" accept=".otio,application/json" style={{ display: 'none' }}
-                onChange={(event) => props.onOtioFile(event.target.files?.[0])} />
-            </label>
-            <button type="button" className="classic-button" onClick={props.onDemo}>生成演示素材</button>
-            <p className="classic-placeholder">当前：{props.sourceName}<br />{props.mediaStatus}</p>
-          </div>
-        )}
-        {activeTab === 'settings' && props.settingsContent}
-        {activeTab !== 'media' && activeTab !== 'settings' && (
-          <p className="classic-placeholder">
-            {CLASSIC_ASSET_TABS.find((tab) => tab.key === activeTab)?.label} 视图：批次 3（素材）/ 4（属性）实现，当前为占位。
-          </p>
-        )}
-      </div>
-    </section>
   )
 }
 
