@@ -106,6 +106,11 @@ export interface ProjectElementView {
   /** 素材内起始/结束时间（ticks），经典版可选字段，缺省为 0。 */
   trimStart: number;
   trimEnd: number;
+  /** 批 7.1：类型特化字段（保真读取，缺省字段在 JSON 中不存在）。 */
+  name?: string;
+  mediaId?: string;
+  content?: string;
+  params?: unknown;
 }
 
 /** 经典版项目只读视图的轨道。 */

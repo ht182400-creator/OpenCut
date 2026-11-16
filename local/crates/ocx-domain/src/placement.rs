@@ -20,7 +20,7 @@ use crate::types::{
 pub fn get_track_type_for_element_type(element_type: ElementType) -> TrackType {
     match element_type {
         ElementType::Audio => TrackType::Audio,
-        ElementType::Text => TrackType::Text,
+        ElementType::Text | ElementType::Caption => TrackType::Text,
         ElementType::Sticker | ElementType::Graphic => TrackType::Graphic,
         ElementType::Effect => TrackType::Effect,
         ElementType::Video | ElementType::Image => TrackType::Video,

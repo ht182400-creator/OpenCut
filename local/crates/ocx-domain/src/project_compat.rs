@@ -81,8 +81,11 @@ pub struct CanvasView {
     pub height: u32,
 }
 
-/// 元素视图：只读取兼容所需的最小字段。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// 元素视图：批 7.1 起在最小时间字段之外，保真读取经典版的类型特化字段。
+///
+/// 所有新增字段均为 `Option` + `serde(default)` + `skip_serializing_if`，
+/// 保证 additive-only：旧 JSON 解析得到 None、写回时不新增 null 字段。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ElementView {
     pub id: String,
@@ -95,10 +98,22 @@ pub struct ElementView {
     /// 素材内结束时间（ticks）。
     #[serde(default)]
     pub trim_end: i64,
+    /// 元素显示名（text/video/audio 等类型通用），缺失不记 warning。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// 素材引用 id（video/audio 轨常见），缺失不记 warning。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<String>,
+    /// 文本内容（text/caption 类型特化），缺失不记 warning。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    /// 元素参数对象（字体/变换/音量等），原样透传不做结构假设。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
 }
 
 /// 轨道视图：`overlay → main → audio` 顺序，与经典版一致。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackView {
     pub id: String,
@@ -108,7 +123,7 @@ pub struct TrackView {
 }
 
 /// 场景视图。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneView {
     pub id: String,
@@ -118,7 +133,7 @@ pub struct SceneView {
 }
 
 /// 归一化只读视图。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectView {
     pub version: u32,
@@ -156,6 +171,11 @@ fn ticks_field(value: &Value, field: &str, warnings: &mut Vec<String>) -> i64 {
     }
 }
 
+/// 可选字符串字段：存在且为字符串时返回 Some，否则 None（不记 warning）。
+fn optional_string(value: &Value, field: &str) -> Option<String> {
+    value[field].as_str().map(str::to_owned)
+}
+
 /// 解析单条轨道；`default_type` 用于 main 轨缺省时补 `video`。
 fn parse_track(raw: &Value, default_type: &str, warnings: &mut Vec<String>) -> TrackView {
     let id = string_field(raw, "id", "", warnings);
@@ -179,6 +199,14 @@ fn parse_track(raw: &Value, default_type: &str, warnings: &mut Vec<String>) -> T
                     duration: ticks_field(element, "duration", warnings),
                     trim_start: element["trimStart"].as_i64().unwrap_or(0),
                     trim_end: element["trimEnd"].as_i64().unwrap_or(0),
+                    // 批 7.1：类型特化字段保真读取，缺失为 None（不记 warning，保持 additive-only）。
+                    name: optional_string(element, "name"),
+                    media_id: optional_string(element, "mediaId"),
+                    content: optional_string(element, "content"),
+                    params: element
+                        .get("params")
+                        .filter(|value| !value.is_null())
+                        .cloned(),
                 })
                 .collect()
         })
@@ -318,6 +346,19 @@ fn merge_track(target: &mut Value, view: &TrackView) -> Result<(), CompatError> 
         entry.insert("duration".to_owned(), json!(element_view.duration));
         entry.insert("trimStart".to_owned(), json!(element_view.trim_start));
         entry.insert("trimEnd".to_owned(), json!(element_view.trim_end));
+        // 批 7.1：仅当视图带值（读自原文档）时写回，避免把 None 写成 null 覆盖原字段。
+        if let Some(name) = &element_view.name {
+            entry.insert("name".to_owned(), json!(name));
+        }
+        if let Some(media_id) = &element_view.media_id {
+            entry.insert("mediaId".to_owned(), json!(media_id));
+        }
+        if let Some(content) = &element_view.content {
+            entry.insert("content".to_owned(), json!(content));
+        }
+        if let Some(params) = &element_view.params {
+            entry.insert("params".to_owned(), params.clone());
+        }
     }
     Ok(())
 }

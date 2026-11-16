@@ -278,7 +278,11 @@ try {
           id: "main",
           type: "video",
           elements: [
-            { id: "e1", type: "video", startTime: 0, duration: 120000, trimStart: 0 },
+            {
+              id: "e1", type: "video", name: "Intro clip", mediaId: "media-1",
+              startTime: 0, duration: 120000, trimStart: 0,
+              params: { opacity: 0.8 },
+            },
             { id: "e2", type: "video", startTime: 120000, duration: 120000, trimStart: 60000 },
           ],
         },
@@ -305,6 +309,19 @@ try {
   );
   check("项目元素 trimStart 被读取", () =>
     assert.equal(projectView.scenes[0].tracks[0].elements[1].trimStart, 60000),
+  );
+  // 批 7.1：类型特化字段保真读取
+  check("批7.1 元素 name 被读取", () =>
+    assert.equal(projectView.scenes[0].tracks[0].elements[0].name, "Intro clip"),
+  );
+  check("批7.1 元素 mediaId 被读取", () =>
+    assert.equal(projectView.scenes[0].tracks[0].elements[0].mediaId, "media-1"),
+  );
+  check("批7.1 元素 params 原样透传", () =>
+    assert.deepEqual(projectView.scenes[0].tracks[0].elements[0].params, { opacity: 0.8 }),
+  );
+  check("批7.1 缺省可选字段不出现", () =>
+    assert.equal(projectView.scenes[0].tracks[0].elements[1].name, undefined),
   );
   check("未来项目版本被拒绝", () =>
     assert.equal(
@@ -397,6 +414,20 @@ try {
   const writtenRaw = JSON.parse(writeResult.project);
   check("写回保留未知字段", () => assert.equal(writtenRaw.metadata.createdAt, "2026-01-01T00:00:00.000Z"));
   check("写回不写派生字段", () => assert.equal(writtenRaw.warnings, undefined));
+  // 批 7.1：类型特化字段在写回后保真
+  check("批7.1 文字元素 name/params 保真", () => {
+    const el = writtenRaw.scenes[0].tracks.overlay[0].elements[0];
+    assert.equal(el.name, "Opening title");
+    assert.deepEqual(el.params, {});
+  });
+  check("批7.1 视频元素 mediaId 保真", () => {
+    const el = writtenRaw.scenes[0].tracks.main.elements.find((e) => e.id === "clip-intro");
+    assert.equal(el.mediaId, "media-intro");
+  });
+  check("批7.1 音频元素 mediaId 保真", () => {
+    const el = writtenRaw.scenes[0].tracks.audio[0].elements[0];
+    assert.equal(el.mediaId, "media-music");
+  });
   const reread = JSON.parse(read_classic_project(writeResult.project));
   check("写回后再读名称生效", () => assert.equal(reread.name, "WASM 写回验证"));
   check("写回后再读剪辑决策生效", () => {

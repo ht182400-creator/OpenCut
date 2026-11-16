@@ -170,6 +170,8 @@ pub enum ElementType {
     Effect,
     Video,
     Image,
+    /// 批 7.1：字幕类型（经典版 caption），与 text 共享文本参数但语义不同。
+    Caption,
 }
 
 impl ElementType {
@@ -183,6 +185,7 @@ impl ElementType {
             ElementType::Effect => "effect",
             ElementType::Video => "video",
             ElementType::Image => "image",
+            ElementType::Caption => "caption",
         }
     }
 }
