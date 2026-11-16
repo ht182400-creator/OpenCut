@@ -13,12 +13,14 @@ import { SHORTCUT_HELP } from './editor-shortcuts'
 import type { DiscoverResult, EditorAdapter, ProjectView } from './editor-adapter'
 import { CONTAINER_LABELS } from './export-settings'
 import type { ExportContainerChoice, ExportSettings } from './export-settings'
+import { PROXY_HEIGHT, PROXY_WIDTH, RESOLUTION_PRESETS } from './resolution'
+import type { ResolutionPreset } from './resolution'
 import type { TimelineClip } from './timeline'
 import type { WebCodecsSupport } from './webcodecs'
 
-/** 预览帧尺寸（同时是代理帧尺寸）。 */
-export const PREVIEW_WIDTH = 320
-export const PREVIEW_HEIGHT = 180
+/** 预览帧尺寸（同时是代理帧尺寸）；实际可配置尺寸见 resolution.ts，此处保留默认以兼容既有调用。 */
+export const PREVIEW_WIDTH = PROXY_WIDTH
+export const PREVIEW_HEIGHT = PROXY_HEIGHT
 
 /** 主文字色 / 次要文字色：批 1 起改由经典版主题变量驱动。 */
 export const TEXT_MAIN = 'var(--foreground)'
@@ -158,14 +160,17 @@ const INPUT_STYLE: CSSProperties = {
   border: '1px solid #475569', borderRadius: 4, padding: '4px 6px', fontSize: 12,
 }
 
-/** 导出设置面板（UI 第三批）：容器、音轨、码率与快捷键说明。 */
+/** 导出设置面板（UI 第三批）：容器、音轨、码率、分辨率与快捷键说明。 */
 export function ExportSettingsPanel(props: {
   open: boolean
   settings: ExportSettings
   onChange: (settings: ExportSettings) => void
   onExport: () => void
   exportDisabled?: boolean
-  resolution: string
+  /** 批 7.2：当前分辨率预设（贯穿解码/合成/预览/导出）。 */
+  resolution: ResolutionPreset
+  /** 批 7.2：切换分辨率的回调；切换后需重新解码素材。 */
+  onResolutionChange?: (resolution: ResolutionPreset) => void
 }) {
   if (!props.open) return null
   const settings = props.settings
@@ -199,9 +204,24 @@ export function ExportSettingsPanel(props: {
               ...settings, bitrateBps: Math.max(1, Number(event.target.value) || 1),
             })} />
         </label>
-        <span style={{ color: TEXT_MUTED, fontSize: 12 }}>
-          分辨率 {props.resolution}（由 core 帧源固定，暂不可改）
-        </span>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          分辨率
+          <select aria-label="导出分辨率" value={`${props.resolution.width}x${props.resolution.height}`}
+            style={{ ...INPUT_STYLE, width: 'auto' }}
+            disabled={!props.onResolutionChange}
+            onChange={(event) => {
+              const next = RESOLUTION_PRESETS.find(
+                (item) => `${item.width}x${item.height}` === event.target.value,
+              )
+              if (next) props.onResolutionChange?.(next)
+            }}>
+            {RESOLUTION_PRESETS.map((item) => (
+              <option key={`${item.width}x${item.height}`} value={`${item.width}x${item.height}`}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <button type="button" style={{ ...BUTTON_STYLE, background: '#1d4ed8', borderColor: '#3b82f6' }}
           onClick={props.onExport} disabled={props.exportDisabled}>开始导出</button>
       </div>
@@ -296,9 +316,13 @@ export interface ExportState {
   filename?: string
 }
 
-/** 空档帧：不透明黑底，交给 core 叠加图层。 */
-export function blankFrame(): Uint8Array {
-  const pixels = new Uint8Array(PREVIEW_WIDTH * PREVIEW_HEIGHT * 4)
+/**
+ * 空档帧：不透明黑底，交给 core 叠加图层。
+ * @param width 帧宽（默认代理基准，批 7.2 可由分辨率覆盖）
+ * @param height 帧高（默认代理基准）
+ */
+export function blankFrame(width = PREVIEW_WIDTH, height = PREVIEW_HEIGHT): Uint8Array {
+  const pixels = new Uint8Array(width * height * 4)
   for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255
   return pixels
 }

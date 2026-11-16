@@ -64,7 +64,7 @@ const HOTSPOTS = [
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r51";
+const DATA_VERSION = "2026-11-08-r52";
 const DATA_UPDATED_AT = "2026-11-17 00:30";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 

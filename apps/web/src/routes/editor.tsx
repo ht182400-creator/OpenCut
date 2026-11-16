@@ -10,8 +10,6 @@ import {
   BASE_PROFILE,
   DEMO_PARAMS,
   PANEL_STYLE,
-  PREVIEW_HEIGHT,
-  PREVIEW_WIDTH,
   SCRUB_THRESHOLD_MS,
   SURFACE_STYLE,
   TEXT_MAIN,
@@ -35,6 +33,8 @@ import {
   isExportSupported,
   isOpusEncodingSupported,
 } from '../local/export'
+import { DEFAULT_RESOLUTION, resolutionLabel } from '../local/resolution'
+import type { ResolutionPreset } from '../local/resolution'
 import {
   DEFAULT_EXPORT_SETTINGS,
   buildExportProfile,
@@ -147,6 +147,8 @@ function Editor() {
   })
   const [sourceName, setSourceName] = useState('内置示例项目')
   const [exportSettings, setExportSettings] = useState<ExportSettings>(DEFAULT_EXPORT_SETTINGS)
+  /** 批 7.2：当前帧分辨率，贯穿解码/合成/预览/导出；默认 320×180 保持回归。 */
+  const [resolution, setResolution] = useState<ResolutionPreset>(DEFAULT_RESOLUTION)
   /** 批 1：亮/暗主题（对应经典版 ThemeToggle，作用域限定在编辑器外壳）。 */
   const [dark, setDark] = useState(false)
   /** 批 6：快捷键帮助对话框开关（经典版项目菜单 Shortcuts 入口）。 */
@@ -191,7 +193,10 @@ function Editor() {
       if (mainElements.length === 0) throw new Error('项目中没有可编辑的主轨片段')
 
       const fps = project.fps.numerator / project.fps.denominator
-      const profile = { ...BASE_PROFILE, frameRate: project.fps }
+      // 批 7.2：profile 宽高跟随当前分辨率，保证无素材时的 core 渲染帧与画布尺寸一致。
+      const profile = {
+        ...BASE_PROFILE, width: resolution.width, height: resolution.height, frameRate: project.fps,
+      }
       const activeClips = clipHistory.reset(mainElements, '导入项目', name) ?? mainElements
       const duration = timelineDuration(activeClips)
       const plan = adapter.evaluate<FramePlanView>({
@@ -359,11 +364,11 @@ function Editor() {
     if (media) {
       const mapping = mapProjectFrame(elements, timeTicks, session.fps, media.frames.length)
       const base = mapping.sourceFrameIndex === null
-        ? blankFrame()
+        ? blankFrame(resolution.width, resolution.height)
         : mediaFrameAt(media, mapping.sourceFrameIndex)
       return session.adapter.compositeFrameRgba(base, {
-        width: PREVIEW_WIDTH,
-        height: PREVIEW_HEIGHT,
+        width: resolution.width,
+        height: resolution.height,
         frameIndex: index,
         timeTicks,
         durationTicks: session.ticksPerFrame,
@@ -390,13 +395,13 @@ function Editor() {
       const context = canvas?.getContext('2d')
       if (canvas && context) {
         context.putImageData(
-          new ImageData(new Uint8ClampedArray(pixels), PREVIEW_WIDTH, PREVIEW_HEIGHT), 0, 0,
+          new ImageData(new Uint8ClampedArray(pixels), resolution.width, resolution.height), 0, 0,
         )
       }
     } catch (error) {
       setErrorText(formatCoreError(error))
     }
-  }, [session, frameIndex, media, elements])
+  }, [session, frameIndex, media, elements, resolution])
 
   /** 播放：按帧率推进播放头，循环播放。 */
   useEffect(() => {
@@ -485,7 +490,7 @@ function Editor() {
       const exporter = container === 'mp4' ? exportProjectToMp4
         : container === 'webm' ? exportProjectToWebM : exportProjectToAv1WebM
       const result = await exporter({
-        width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT,
+        width: resolution.width, height: resolution.height,
         fps: session.fps, frameCount, ticksPerFrame: session.ticksPerFrame,
         profile: buildExportProfile(session.profile, exportSettings), params: DEMO_PARAMS,
         frameSource,
@@ -587,8 +592,8 @@ function Editor() {
       setMediaStatus('解码中 0/' + Math.min(frameCount, MAX_DECODE_FRAMES))
       try {
         const decoded = await decodeVideoFile(file, {
-          width: PREVIEW_WIDTH,
-          height: PREVIEW_HEIGHT,
+          width: resolution.width,
+          height: resolution.height,
           fps: session.fps,
           frameCount: Math.min(frameCount, MAX_DECODE_FRAMES),
           onProgress: (done, total) => setMediaStatus(`解码中 ${done}/${total}`),
@@ -613,6 +618,31 @@ function Editor() {
       return
     }
     await loadProject(await file.text(), file.name)
+  }
+
+  /**
+   * 批 7.2：切换帧分辨率。旧代理帧的像素尺寸与新分辨率不匹配，
+   * 因此清空已解码素材并提示重新导入；缓存 key 含宽高，重导会按新尺寸重建。
+   */
+  const handleResolutionChange = (next: ResolutionPreset) => {
+    if (next.width === resolution.width && next.height === resolution.height) return
+    try {
+      setResolution(next)
+      // 同步 core profile 宽高：无素材时 renderFrameRgba 直接读 profile 生成帧。
+      if (session) {
+        setSession({ ...session, profile: { ...session.profile, width: next.width, height: next.height } })
+      }
+      setMedia(null)
+      setPlaying(false)
+      setFrameIndex(0)
+      setMediaStatus(
+        media
+          ? `分辨率已切换为 ${resolutionLabel(next.width, next.height)}，请重新导入素材以按新尺寸抽帧`
+          : `分辨率已切换为 ${resolutionLabel(next.width, next.height)}`,
+      )
+    } catch (error) {
+      setErrorText(formatCoreError(error))
+    }
   }
 
   /** 生成并导入一段演示音视频，便于无素材时体验完整链路。 */
@@ -654,7 +684,8 @@ function Editor() {
         onChange={setExportSettings}
         onExport={() => void handleExport()}
         exportDisabled={!session || exportState.status === 'running'}
-        resolution={`${PREVIEW_WIDTH}×${PREVIEW_HEIGHT}`}
+        resolution={resolution}
+        onResolutionChange={handleResolutionChange}
       />
       <DiagnosticsPanel items={diagnosticsItems} proxyUrl={proxyUrl} />
     </div>
@@ -748,6 +779,8 @@ function Editor() {
                     frameCount={frameCount}
                     fps={session.fps}
                     selected={Boolean(selectedElement)}
+                    frameWidth={resolution.width}
+                    frameHeight={resolution.height}
                     onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
                     timecode={`片段 ${activeClip}`}
                   />

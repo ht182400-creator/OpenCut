@@ -402,6 +402,24 @@ try {
     ),
   );
 
+  // 批 7.2：可变分辨率——core 按请求宽高合成，底图长度须与新尺寸匹配。
+  for (const [width, height] of [[640, 360], [1280, 720]]) {
+    const variableBase = new Uint8Array(width * height * 4).fill(70);
+    const variableComposed = composite_frame_rgba(
+      variableBase,
+      JSON.stringify({ ...compositeRequest, width, height }),
+    );
+    check(`合成帧支持 ${width}×${height} 分辨率`, () =>
+      assert.equal(variableComposed.length, width * height * 4),
+    );
+    check(`${width}×${height} 底图尺寸不符被拒绝`, () =>
+      assert.throws(
+        () => composite_frame_rgba(new Uint8Array(8 * 4 * 4), JSON.stringify({ ...compositeRequest, width, height })),
+        /INVALID_BASE_FRAME|合成预览帧/,
+      ),
+    );
+  }
+
   // W-05 第五批：经典版项目 JSON 无损写回（真实 WASM 产物）
   const classicProject = readFileSync(path.resolve(HERE, "../../public/fixtures/classic-project-v31.json"), "utf8");
   const classicView = JSON.parse(read_classic_project(classicProject));

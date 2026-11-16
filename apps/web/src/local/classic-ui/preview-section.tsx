@@ -6,8 +6,9 @@
  * - 选框 SVG（白色描边 0.75 / 1px）+ 8 手柄（4 角 10px + 3 边 6×14 + 旋转 20px）+ 对齐参考线（1px 白 70%）
  * - 三栏控制条：左时间码 HH:MM:SS:FF / 中播放暂停 28px / 右缩放（Fit + 6 预设）+ 全屏
  *
- * 边界：core 固定 320×180 帧源、无元素 transform 存储（属批 7），故选框/手柄/参考线为
- * 视觉叠加 + 本地交互状态，不改变合成结果；时间码由 frameIndex/fps 计算。
+ * 边界：core 无元素 transform 存储（属批 7），故选框/手柄/参考线为视觉叠加 +
+ * 本地交互状态，不改变合成结果；时间码由 frameIndex/fps 计算。批 7.2 起画布
+ * 分辨率可配置（由 frameWidth/frameHeight 传入，默认 320×180），16:9 预设不变。
  * 尺寸/文案来自 preview-tokens.ts；图标为本地绘制 SVG。
  */
 
@@ -62,6 +63,9 @@ export interface PreviewSectionProps {
   timecode?: string
   /** 是否选中元素：选中时画布上叠加选框与手柄（视觉占位，见边界说明）。 */
   selected?: boolean
+  /** 批 7.2：画布内部分辨率（RGBA 像素缓冲尺寸），默认 320×180。 */
+  frameWidth?: number
+  frameHeight?: number
 }
 
 /** 本地选框矩形（百分比坐标，0~100；旋转恒 0，见边界）。 */
@@ -266,7 +270,7 @@ export function PreviewSection(props: PreviewSectionProps) {
           width: `${Math.min(100, 100 * zoom)}%`, height: '100%', maxWidth: '100%', maxHeight: '100%',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <canvas ref={props.canvasRef} width={320} height={180}
+          <canvas ref={props.canvasRef} width={props.frameWidth ?? 320} height={props.frameHeight ?? 180}
             style={{ width: '100%', height: '100%', objectFit: 'contain', border: '1px solid var(--border)', background: '#000' }} />
           {props.selected && (
             <div style={{ position: 'absolute', left: `${box.left}%`, top: `${box.top}%`, width: `${box.width}%`, height: `${box.height}%`, pointerEvents: 'none' }}>
