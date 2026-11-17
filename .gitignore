@@ -9,3 +9,6 @@ docs/
 # moon runtime cache
 .moon/cache/
 .wrangler/
+
+# 本项目使用 bun 管理依赖，忽略误用 pnpm 生成的多余锁文件
+pnpm-lock.yaml

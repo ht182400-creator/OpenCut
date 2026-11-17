@@ -15,9 +15,20 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 
 import type { ClipPatch, CoreElement } from '../editor-ui';
-import { normalizeElementParams } from '../element-model';
+import {
+  ANIMATION_TRACKS_KEY,
+  DEFAULT_KEYFRAME_EASING,
+  PARAM_KEY_TO_FLAT,
+  normalizeElementParams,
+  readAnimationTracks,
+  removeKeyframeTrack,
+  toFlatParamKey,
+  upsertKeyframe,
+} from '../element-model';
 import {
   AUDIO_ELEMENT_PARAMS,
+  EFFECT_ELEMENT_PARAMS,
+  MASK_ELEMENT_PARAMS,
   PROPERTIES_EMPTY_GAP_PX,
   PROPERTIES_EMPTY_PADDING_PX,
   PROPERTIES_EMPTY_PRIMARY,
@@ -62,6 +73,8 @@ export interface PropertiesPanelProps {
   selectedCount?: number
   /** 属性变更回调：时间字段与 params 以 ClipPatch 结构上送。 */
   onChange?: (patch: ClipPatch) => void
+  /** P2：当前播放头绝对 ticks，供关键帧在播放头打点。 */
+  playheadTicks?: number
 }
 
 /** tab 图标 path（本地绘制，形状对齐经典版 Hugeicons）。 */
@@ -358,13 +371,33 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
   )
   const defaultTab = PROPERTIES_DEFAULT_TAB_BY_TYPE[elementType] as string
   const [activeTab, setActiveTab] = useState<string>(defaultTab)
-  const [keyframes, setKeyframes] = useState<Record<string, boolean>>({ 'background.enabled': false })
 
   // 元素类型变化时切到该类型的默认 tab，避免停留在不存在的 tab（如 text 的 Content）。
   useEffect(() => { setActiveTab(defaultTab) }, [defaultTab])
 
+  // P2：关键帧开关状态从元素真实动画轨道派生（不再是纯本地视觉态）。
+  const tracks = props.selected ? readAnimationTracks(props.selected) : {}
+  const keyframes: Record<string, boolean> = {}
+  for (const key of Object.keys(tracks)) keyframes[key] = (tracks[key]?.length ?? 0) > 0
+
+  /**
+   * P2：菱形开关 = 在播放头打/删关键帧。打点时取当前参数值写入动画轨道，
+   * 由 element-composite 每帧采样插值；删除则移除整条轨道。
+   */
   const onKeyframe = (key: string) => {
-    setKeyframes((prev) => ({ ...prev, [key]: !prev[key] }))
+    if (!props.selected || !props.onChange) return
+    const element = props.selected
+    if (keyframes[key]) {
+      props.onChange({ params: { [ANIMATION_TRACKS_KEY]: removeKeyframeTrack(element, key).params?.[ANIMATION_TRACKS_KEY] ?? {} } })
+      return
+    }
+    const raw = element.params?.[toFlatParamKey(key)] ?? element.params?.[key]
+    const value = typeof raw === 'number' ? raw : Number((params.find((p) => p.key === key)?.defaultValue) ?? 0)
+    const relativeTime = Math.max(0, Math.round((props.playheadTicks ?? 0) - element.startTime))
+    const withKeyframe = upsertKeyframe(element, key, {
+      time: relativeTime, value: Number.isFinite(value) ? value : 0, easing: DEFAULT_KEYFRAME_EASING,
+    })
+    props.onChange({ params: { [ANIMATION_TRACKS_KEY]: withKeyframe.params?.[ANIMATION_TRACKS_KEY] ?? {} } })
   }
 
   const count = props.selectedCount ?? (props.selected ? 1 : 0)
@@ -415,18 +448,33 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
   }
   values.volume = typeof normalized.volume === 'number' ? normalized.volume : 0
   values.muted = typeof normalized.muted === 'boolean' ? normalized.muted : false
+  // P2：遮罩/效果默认值（元素未显式设置时也要显示合理默认，避免输入框空值）。
+  for (const param of [...MASK_ELEMENT_PARAMS, ...EFFECT_ELEMENT_PARAMS]) {
+    if (values[param.key] === undefined) values[param.key] = param.defaultValue
+  }
+
+  // P2 修复：注册表用 transform.positionX 等点分 key，而 ElementParams 存扁平 positionX；
+  // 这里先把扁平字段镜像成点分 key，编辑时再映射回去，避免改了面板却不驱动预览。
+  const flatRecord = normalized as unknown as Record<string, number>
+  for (const [dotted, flat] of Object.entries(PARAM_KEY_TO_FLAT)) {
+    values[dotted] = flatRecord[flat]
+  }
 
   const onParamChange = (key: string, value: number | string | boolean) => {
     // content 是 CoreElement 顶层字段（写回经典版 JSON 用），其余写入 params。
     if (key === 'content') props.onChange?.({ content: String(value) })
-    else props.onChange?.({ params: { [key]: value } })
+    else props.onChange?.({ params: { [toFlatParamKey(key)]: value } })
   }
 
   const paramsForType: readonly string[] = PROPERTIES_PARAMS_BY_TYPE[elementType]
+  // P2：遮罩/效果参数按「该类型是否有对应 tab」决定（PROPERTIES_PARAMS_BY_TYPE 不含这两组）。
+  const typeTabs: readonly string[] = PROPERTIES_TABS_BY_TYPE[elementType]
   const params: ParamDefinition[] = [
     ...(paramsForType.includes('text') ? TEXT_ELEMENT_PARAMS : []),
     ...(paramsForType.includes('visual') ? VISUAL_ELEMENT_PARAMS : []),
     ...(paramsForType.includes('audio') ? AUDIO_ELEMENT_PARAMS : []),
+    ...(typeTabs.includes('masks') ? MASK_ELEMENT_PARAMS : []),
+    ...(typeTabs.includes('effects') ? EFFECT_ELEMENT_PARAMS : []),
   ]
 
   let content: ReactNode
@@ -440,6 +488,10 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
     content = <ParamsSection params={params} keys={['volume', 'muted']} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else if (activeTab === 'text') {
     content = <ParamsSection params={params} keys={TEXT_ELEMENT_PARAMS.map((p) => p.key)} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
+  } else if (activeTab === 'masks') {
+    content = <ParamsSection params={params} keys={MASK_ELEMENT_PARAMS.map((p) => p.key)} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
+  } else if (activeTab === 'effects') {
+    content = <ParamsSection params={params} keys={EFFECT_ELEMENT_PARAMS.map((p) => p.key)} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else {
     content = (
       <div style={{ padding: PROPERTIES_SECTION_CONTENT_PADDING_PX, color: 'var(--muted-foreground)', fontSize: 'var(--text-sm)' }}>

@@ -70,6 +70,22 @@ export const VISUAL_ELEMENT_PARAMS: readonly ParamDefinition[] = [
   { key: 'blendMode', label: 'Blend Mode', control: 'select', defaultValue: 'normal', options: ['normal', 'darken', 'multiply', 'color-burn', 'lighten', 'screen', 'plus-lighter', 'color-dodge', 'overlay', 'soft-light', 'hard-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity'], keyframable: false },
 ] as const;
 
+/** P2 矩形遮罩参数（编辑后由 element-composite 的 readRectMask 消费）。 */
+export const MASK_ELEMENT_PARAMS: readonly ParamDefinition[] = [
+  { key: 'mask.enabled', label: 'Enable Mask', control: 'boolean', defaultValue: false, keyframable: false },
+  { key: 'mask.left', label: 'Mask Left', control: 'number', defaultValue: 0, min: 0, max: 1, step: 0.01, keyframable: true, dependsOn: 'mask.enabled' },
+  { key: 'mask.top', label: 'Mask Top', control: 'number', defaultValue: 0, min: 0, max: 1, step: 0.01, keyframable: true, dependsOn: 'mask.enabled' },
+  { key: 'mask.right', label: 'Mask Right', control: 'number', defaultValue: 1, min: 0, max: 1, step: 0.01, keyframable: true, dependsOn: 'mask.enabled' },
+  { key: 'mask.bottom', label: 'Mask Bottom', control: 'number', defaultValue: 1, min: 0, max: 1, step: 0.01, keyframable: true, dependsOn: 'mask.enabled' },
+] as const;
+
+/** P2 基础调色效果参数（编辑后由 element-composite 的 readColorAdjust 消费）。 */
+export const EFFECT_ELEMENT_PARAMS: readonly ParamDefinition[] = [
+  { key: 'effects.brightness', label: 'Brightness', control: 'number', defaultValue: 1, min: 0, max: 4, step: 0.01, keyframable: true },
+  { key: 'effects.contrast', label: 'Contrast', control: 'number', defaultValue: 1, min: 0, max: 4, step: 0.01, keyframable: true },
+  { key: 'effects.saturate', label: 'Saturate', control: 'number', defaultValue: 1, min: 0, max: 4, step: 0.01, keyframable: true },
+] as const;
+
 /** volume/muted（audioElementParams）。 */
 export const AUDIO_ELEMENT_PARAMS: readonly ParamDefinition[] = [
   { key: 'volume', label: 'Volume', control: 'number', defaultValue: 0, min: -60, max: 20, step: 0.01, keyframable: true },

@@ -79,7 +79,7 @@
 | 时间码 HH:MM:SS:FF | 可编辑并驱动 seek | 只读显示 | 🔴 | 编辑闭环缺失 |
 | 缩放预设 + Fit + 全屏 | 真实 | 真实 | ✅ | 批 5 验收 |
 | 选框/手柄/对齐参考线 | 真实（改 transform） | 视觉叠加 + 本地拖拽，不改 core 画面 | 🔴 | §7 批 5 |
-| 遮罩手柄 | 真实 | 无 | ⚪ | — |
+| 遮罩手柄 | 真实 | P2：矩形遮罩参数（mask.*）经属性面板可编辑 + 像素裁剪生效；无可视化拖拽手柄 | 🟡 | P2：`element-composite.ts` `applyVisualEffects`，曲线/手柄归 P2 长尾 |
 | 双击文字就地编辑 | 真实 | 无 | ⚪ | 依赖文字元素可编辑 |
 | 画面合成 | 真实（canvas renderer） | 真实（core `composite_frame` + 真实素材帧） | ✅ | 批 7 + 正式模式去演示色块 |
 | 右键菜单（Fit/Full screen/Snapshot） | 真实 | token 固化但未接 OnContextMenu | 🔴 | §7 批 6 |
@@ -89,9 +89,9 @@
 | 功能 | 经典版 | 本版本 | 状态 | 判定依据 |
 | --- | --- | --- | --- | --- |
 | 空状态/选中状态文案 | 真实 | 真实（含经典版字面 `.0`） | ✅ | 批 4 |
-| Transform / Blending / Audio / Text 参数 | 真实可编辑并驱动画面 | 受控可编辑并驱动预览（opacity/position/scale/rotate/文字/颜色等；关键帧动画仍本地态） | 🟡 | P0：`properties-panel.tsx` + `element-composite.ts`，浏览器验收 opacity 255→76（浏览器实测）；关键帧动画归 P2 |
-| Speed / Masks / Effects / Graphic tab | 真实可编辑 | 骨架/占位 | 🔴 | — |
-| 关键帧开关 + 曲线编辑器 | 真实 | 本地视觉态，不写动画 | 🔴 | — |
+| Transform / Blending / Audio / Text 参数 | 真实可编辑并驱动画面 | 受控可编辑并驱动预览（opacity/position/scale/rotate/文字/颜色等；P2 修复点分 key 映射，transform 编辑真正驱动画面） | ✅ | P0+P2：`properties-panel.tsx` + `element-composite.ts`，浏览器验收 opacity/transform |
+| Speed / Masks / Effects / Graphic tab | 真实可编辑 | Masks/Effects 基础参数可编辑并驱动像素；Speed/Graphic 仍骨架 | 🟡 | P2：`MASK_ELEMENT_PARAMS`/`EFFECT_ELEMENT_PARAMS` + `applyVisualEffects`；GPU 效果需 core 扩展 |
+| 关键帧开关 + 曲线编辑器 | 真实 | P2：真实动画轨道（打点/删除/持久化/播放头插值驱动画面），无可视化曲线编辑器 | 🟡 | P2：`element-model.ts` 关键帧模型 + `sampleParamsAtTime`，浏览器验收打点写入轨道；曲线编辑器归长尾 |
 | Timing（Start/Duration/Trim In/Out） | 经典版在时间轴完成 | 真实编辑 + 写回 JSON | ✅ | 批 7.5 验收 |
 
 ## 6. 编辑器引擎（用户可感知）
@@ -105,13 +105,14 @@
 | 拖拽排序 | 真实（片段跨轨 + 效果列表） | 仅 main 轨片段拖动 | 🟡 | — |
 | 剪贴板直接贴媒体 | 真实 | 无（P1 仅内部元素剪贴板，非系统剪贴板贴文件） | ⚪ | — |
 | 面板尺寸可拖拽 | 真实 | 真实 | ✅ | 批 1 |
+| GPU/编解码能力提示 | 真实 | P2：WebGL2/WebGPU/硬件编码能力探测 + 诊断面板真实提示 | ✅ | P2：`gpu-capability.ts`，浏览器验收显示「WebGL2 / WebGPU / 硬件视频编码」 |
 
 ## 7. 导出 / 交换
 
 | 功能 | 经典版 | 本版本 | 状态 | 判定依据 |
 | --- | --- | --- | --- | --- |
 | 导出 MP4 (H.264) + AAC | 真实 | 真实 | ✅ | `handleExport` + WebCodecs |
-| 导出 WebM (VP9) | 真实 | 无 | ⚪ | — |
+| 导出 WebM (VP9) | 真实 | 真实（VP9 + Opus / AV1 变体，UI 容器可选） | ✅ | 文档更正：`export.ts` 早已实现，P2 核实并改文档；`export.test.ts` 覆盖 |
 | 质量档位 / 包含音频开关 | 真实 | 真实（settings 面板） | ✅ | `ExportSettingsPanel` |
 | 进度 / 取消 / 错误重试 | 真实 | 进度 + 友好错误，无 Cancel/Retry | 🟡 | — |
 | 素材右键 Export clips | 经典版仅展示无 onClick | 无 | ⚪ | 双方均无闭环 |
@@ -137,20 +138,21 @@
 
 | 状态 | 数量 | 分布（§） | 主要条目 |
 | --- | --- | --- | --- |
-| ✅ 已实现 | 25 | §1:4 §2:4 §3:9 §4:3 §5:2 §6:1 §7:2 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、**Duplicate/Delete**、**复制/粘贴**、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Timing、面板尺寸、MP4 导出、质量档位 |
-| 🟡 部分闭环 | 11 | §1:1 §2:1 §3:2 §5:1 §6:5 §7:1 | 快捷键帮助对话框、网格卡片/无排序、三轨结构固定、**多选（无框选橡皮筋）**、参数可编辑但关键帧动画仍本地态、撤销重做、自动保存（localStorage/无多端同步）、**快捷键分发（不可重绑定）**、拖拽排序、导出进度无取消 |
-| 🔴 占位 | 13 | §2:4 §3:4 §4:3 §5:2 | Sounds/Stickers/Effects/Settings 数据源、静音隐藏、overlay/audio 编辑、关键帧、书签、时间码编辑、选框手柄、右键菜单、Speed/Masks/Effects tab |
-| ⚪ 未覆盖 | 17 | §1:5 §2:5 §3:3 §4:2 §6:1 §7:2 | 项目列表/重命名、反馈/Onboarding/GPU 提示、视频卡预览、字幕、Transitions/Adjustment、Ripple、场景、WebM、剪贴板直接贴媒体 |
+| ✅ 已实现 | 28 | §1:4 §2:4 §3:9 §4:3 §5:3 §6:2 §7:3 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、GPU 能力提示、MP4/WebM 导出、质量档位 |
+| 🟡 部分闭环 | 13 | §1:1 §2:1 §3:2 §4:1 §5:2 §6:5 §7:1 | 快捷键帮助对话框、网格卡片/无排序、三轨结构固定、多选（无框选橡皮筋）、遮罩手柄（参数化无拖拽）、Masks/Effects 基础参数（无 GPU 效果）、关键帧（无曲线编辑器）、撤销重做、自动保存（localStorage）、快捷键分发（不可重绑定）、拖拽排序、导出进度无取消 |
+| 🔴 占位 | 11 | §2:4 §3:4 §4:3 | Sounds/Stickers/Effects/Settings 数据源、静音隐藏、overlay/audio 编辑、书签、时间码编辑、选框/手柄/对齐参考线、右键菜单 |
+| ⚪ 未覆盖 | 15 | §1:5 §2:5 §3:2 §4:1 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、双击文字就地编辑、素材右键 Export clips、剪贴板直接贴媒体 |
 
-> 合计 66 项（25+11+13+17），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算，与表格严格一致。
+> 合计 67 项（28+13+11+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算，与表格严格一致。
 > **2026-11-17 P0 完成后变化**：✅ 20→23（Text/Media 加轨、落轨拖放），🟡 7→9（参数编辑、自动保存由 🔴 升级），🔴 19→14。详见 `UI_REPLICA_PLAN.md` §8「P0 闭环实现」。
 > **2026-11-17 P1 完成后变化**：✅ 23→25（Duplicate、复制/粘贴），🟡 9→11（多选、快捷键分发升级），🔴 14→13（Duplicate 出占位），⚪ 20→17（多选/复制粘贴出未覆盖）。数据源接入（Sounds/Stickers/Effects）依赖服务端素材库，本仓库无此后端且超出 UI 闭环范围，记 🔴 并写入 `UI_REPLICA_PLAN.md` §7 差异台账；不伪造数据。
+> **2026-11-17 P2 完成后变化**：新增 GPU 项（总 66→67）；✅ 25→28（Transform/Text 参数修复 key 映射升 ✅、GPU 提示、WebM 文档更正），🟡 11→13（遮罩/效果基础参数、关键帧真实数据模型），🔴 13→11（参数/关键帧出占位），⚪ 17→15（WebM/GPU 出未覆盖）。AI 字幕、项目管理页无后端，保持 ⚪ 并写入台账；曲线编辑器、GPU 效果、框选橡皮筋归长尾。
 
 ## 10. 闭环优先级（P0 → P2，供实施）
 
 - **P0（让编辑器能用）— ✅ 2026-11-17 完成**：① 新增元素插入（Text / 导入的 media → 时间轴，TS 侧轻量 editor store：buildElement + 插入/删除 + undo + placement）；② 本地自动保存（刷新不丢）；③ 属性参数可编辑并驱动预览（至少 opacity/position/scale/text content）。tsc 0 / vitest 299 / build 通过 + 浏览器截图验收。
 - **P1（接近经典版交互）— ✅ 2026-11-17 完成（数据源接入除外）**：多选（Cmd/Ctrl 加选 + Shift 区间 + Ctrl+A）、复制粘贴（Ctrl+C/V/D 内存剪贴板）、快捷键分发（Ctrl/Cmd 组合键）。tsc 0 / vitest 326 / build 通过 + 浏览器截图验收（`oc-p1-multiselect.png`）。**未做**：Sounds/Stickers/Effects 数据源接入 —— 依赖服务端素材库（本仓库无后端），框选橡皮筋、快捷键重绑定归 P2；均写入 `UI_REPLICA_PLAN.md` 台账，不伪造数据。
-- **P2（长尾）— 待实施**：项目管理页、AI 字幕、关键帧曲线、遮罩/效果编辑、WebM 导出、GPU 提示。
+- **P2（长尾）— ✅ 2026-11-17 完成（可闭环项）**：关键帧曲线（真实动画轨道 + 播放头插值驱动画面，无曲线编辑器 UI）、遮罩/效果编辑（矩形裁剪 + brightness/contrast/saturate 纯像素运算，无 GPU 效果）、GPU 提示（WebGL2/WebGPU/硬件编码能力探测）、WebM 导出（核实早已实现，更正文档）。tsc 0 / vitest 357 / build 通过 + 浏览器截图验收（`oc-p2-keyframes.png`）。**Blocked（无后端，写入台账不伪造）**：项目管理页（无多项目持久化）、AI 字幕（无转写服务）。**归长尾**：可视化曲线编辑器、GPU 效果、框选橡皮筋、快捷键重绑定。
 
 ## 附录 A：经典版「新增文字」实证（为什么不是 core 的事）
 

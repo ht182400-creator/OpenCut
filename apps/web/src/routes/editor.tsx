@@ -28,11 +28,15 @@ import {
   makeElementId,
   patchElementParams,
   resolveAutoPlacement,
+  sampleParamsAtTime,
   type ElementKind,
 } from '../local/element-model'
 import {
+  applyVisualEffects,
   composeTransform,
   rasterizeText,
+  readColorAdjust,
+  readRectMask,
   resolveTextLayout,
   transformFromElement,
 } from '../local/element-composite'
@@ -100,6 +104,7 @@ import {
   trimClipOutAt,
 } from '../local/timeline'
 import { probeWebCodecsSupport } from '../local/webcodecs'
+import { probeHardwareEncoder, probeWebGL2, probeWebGPU, summarizeCapability, type GpuCapabilityReport } from '../local/gpu-capability'
 
 export const Route = createFileRoute('/editor')({ component: Editor })
 
@@ -248,6 +253,8 @@ export function Editor() {
   const [dark, setDark] = useState(false)
   /** 批 6：快捷键帮助对话框开关（经典版项目菜单 Shortcuts 入口）。 */
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  /** P2：GPU/编解码能力报告（只读探测，供诊断面板提示）。 */
+  const [gpuCapability, setGpuCapability] = useState<GpuCapabilityReport | null>(null)
   /** 撤销/重做恢复的片段重新应用帧计划；历史由 M6 快照驱动。 */
   const clipHistory = useClipHistory((clips) => {
     setElements(clips as CoreElement[])
@@ -346,6 +353,18 @@ export function Editor() {
     }
     void load()
     void refreshCacheInfo()
+    // P2：一次性能力探测（同步 WebGL2/WebGPU + WebCodecs 结果推导）。
+    try {
+      void probeWebCodecsSupport().then((codecs) => {
+        setGpuCapability(summarizeCapability(
+          probeWebGL2(), probeWebGPU(),
+          probeHardwareEncoder(codecs.configSupported, codecs.reason),
+        ))
+      })
+    } catch (error) {
+      setGpuCapability(summarizeCapability(probeWebGL2(), probeWebGPU(),
+        probeHardwareEncoder(false, formatCoreError(error))))
+    }
   }, [])
 
   /**
@@ -497,12 +516,19 @@ export function Editor() {
 
     // 验证模式保持 golden 像素不变，只做定位；正式模式叠加用户参数。
     if (verification || !active?.params) return pixels
-    const transform = transformFromElement(active)
+
+    // P2：先在播放头对关键帧求值（无动画则原样），再据此做变换/遮罩/效果/文字。
+    const sampled: CoreElement = { ...active, params: sampleParamsAtTime(active, timeTicks) }
+    const transform = transformFromElement(sampled)
     pixels = composeTransform(pixels, transform, resolution.width, resolution.height)
+    pixels = applyVisualEffects(
+      pixels, readRectMask(sampled), readColorAdjust(sampled),
+      resolution.width, resolution.height,
+    )
 
     // 文字元素：把 content 按参数栅格化后合成（alpha 叠加，保留底图）。
-    if (active.elementType === 'text' || (active.content && active.params.content)) {
-      const layout = resolveTextLayout(active, resolution.width, resolution.height)
+    if (sampled.elementType === 'text' || (sampled.content && sampled.params?.content)) {
+      const layout = resolveTextLayout(sampled, resolution.width, resolution.height)
       if (layout.text) {
         const textLayer = rasterizeText(layout, transform, resolution.width, resolution.height)
         if (textLayer) {
@@ -785,6 +811,7 @@ export function Editor() {
     { label: '4K scrub 基准', value: benchmarkInfo || '未运行' },
     { label: '帧耗时', value: `${frameCost.toFixed(2)}ms（阈值 ${SCRUB_THRESHOLD_MS}ms ${frameCost <= SCRUB_THRESHOLD_MS ? '达标' : '超标'}）` },
     { label: 'core', value: `API ${session.info.apiVersion} / ${session.info.backendId} · WebCodecs ${session.codecs.available ? '可用' : '不可用'}` },
+    { label: 'GPU 能力', value: gpuCapability?.summary ?? '探测中…' },
     { label: '兼容提示', value: `${session.project.warnings.length} 条` },
   ] : []
   /** 批 1：诊断与导出设置收进素材面板的 settings tab，主框架不再有额外区块。 */
@@ -917,6 +944,7 @@ export function Editor() {
                   minSize={String(CLASSIC_PANEL_LIMITS.properties.min)} maxSize={String(CLASSIC_PANEL_LIMITS.properties.max)}>
                   <PropertiesPanel selected={selectedElement}
                     selectedCount={selection.selectedIds.length || (selectedElement ? 1 : 0)}
+                    playheadTicks={frameIndex * (session?.ticksPerFrame ?? 0)}
                     onChange={applyPropertyPatch} />
                 </ResizablePanel>
               </ResizablePanelGroup>

@@ -278,3 +278,164 @@ export function patchElementParams(
   const after = JSON.stringify(merged);
   return before === after ? element : { ...element, params: merged };
 }
+
+/* ========================================================================
+ * P2 关键帧：真实动画数据模型 + 播放头插值采样（纯 TS，无 core/WASM 依赖）。
+ * 每个参数可挂一组关键帧；frameSource 每帧按 timeTicks 插值求值得静态参数再合成。
+ * ====================================================================== */
+
+/** 单个关键帧：相对片段起点的时间（ticks）+ 数值 + 缓动方式。 */
+export interface AnimationKeyframe {
+  time: number
+  value: number
+  easing: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut'
+}
+
+/** 参数 → 关键帧轨道。 */
+export type AnimationTracks = Record<string, AnimationKeyframe[]>
+
+/** 动画数据在 ElementParams 中的固定 key（避免与用户参数混淆）。 */
+export const ANIMATION_TRACKS_KEY = '__animations'
+
+/** 默认缓动。 */
+export const DEFAULT_KEYFRAME_EASING: AnimationKeyframe['easing'] = 'linear'
+
+/**
+ * 参数注册表点分 key → ElementParams 扁平字段的映射（属性面板与关键帧共用）。
+ * 经典版用 transform.positionX 等点分 key，而本工程 params 存扁平 positionX，
+ * 采样时必须映射，否则关键帧写入点分 key 不会驱动画面。
+ */
+export const PARAM_KEY_TO_FLAT: Readonly<Record<string, string>> = Object.freeze({
+  'transform.positionX': 'positionX',
+  'transform.positionY': 'positionY',
+  'transform.scaleX': 'scaleX',
+  'transform.scaleY': 'scaleY',
+  'transform.rotate': 'rotate',
+})
+
+/**
+ * 把注册表单参数 key 归一到实际存储字段（点分→扁平，其余保持）。
+ * @param key 参数 key
+ * @returns {string} 存储字段 key
+ */
+export function toFlatParamKey(key: string): string {
+  return PARAM_KEY_TO_FLAT[key] ?? key
+}
+
+/**
+ * 读取元素的关键帧轨道（无则空对象，不改入参）。
+ * @param element 元素
+ * @returns {AnimationTracks} 轨道表
+ */
+export function readAnimationTracks(element: CoreElement | null): AnimationTracks {
+  const raw = element?.params?.[ANIMATION_TRACKS_KEY]
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as AnimationTracks : {}
+}
+
+/**
+ * 对缓动进度应用 ease 曲线（0..1 → 0..1）。
+ * @param t 线性进度
+ * @param easing 缓动方式
+ * @returns {number} 缓动后进度
+ */
+export function applyEasing(t: number, easing: AnimationKeyframe['easing']): number {
+  const clamped = Math.min(1, Math.max(0, t))
+  switch (easing) {
+    case 'easeIn': return clamped * clamped
+    case 'easeOut': return 1 - (1 - clamped) * (1 - clamped)
+    case 'easeInOut': return clamped < 0.5
+      ? 2 * clamped * clamped
+      : 1 - Math.pow(-2 * clamped + 2, 2) / 2
+    case 'linear':
+    default: return clamped
+  }
+}
+
+/**
+ * 在时间点对一组关键帧插值求值（区间外用端点值，空轨道返回 null）。
+ * @param frames 关键帧轨道（按 time 升序）
+ * @param time 相对片段起点的 ticks
+ * @returns {number | null} 插值结果
+ */
+export function sampleKeyframes(frames: readonly AnimationKeyframe[], time: number): number | null {
+  if (frames.length === 0) return null
+  const sorted = [...frames].sort((a, b) => a.time - b.time)
+  if (time <= sorted[0].time) return sorted[0].value
+  const last = sorted[sorted.length - 1]
+  if (time >= last.time) return last.value
+  for (let index = 0; index < sorted.length - 1; index += 1) {
+    const current = sorted[index]
+    const next = sorted[index + 1]
+    if (time >= current.time && time <= next.time) {
+      const span = next.time - current.time
+      const linear = span === 0 ? 0 : (time - current.time) / span
+      const eased = applyEasing(linear, current.easing)
+      return current.value + (next.value - current.value) * eased
+    }
+  }
+  return last.value
+}
+
+/**
+ * 在给定时间把元素参数里的动画轨道求值成静态参数（供预览/导出合成使用）。
+ * 无动画时原样返回；有动画时仅覆盖对应参数 key，保留其余字段。
+ * @param element 元素
+ * @param timeTicks 播放头绝对 ticks
+ * @returns {ElementParams} 求值后的参数
+ */
+export function sampleParamsAtTime(element: CoreElement, timeTicks: number): ElementParams {
+  const params = normalizeElementParams(element.params)
+  const tracks = readAnimationTracks(element)
+  const keys = Object.keys(tracks)
+  if (keys.length === 0) return params
+  const relativeTime = timeTicks - element.startTime
+  const result: ElementParams = { ...params }
+  for (const key of keys) {
+    const value = sampleKeyframes(tracks[key], relativeTime)
+    if (value !== null) result[toFlatParamKey(key)] = value
+  }
+  return result
+}
+
+/**
+ * 添加/更新一个关键帧（写入元素 params 的动画轨道），返回新元素。
+ * @param element 元素
+ * @param key 参数 key
+ * @param frame 关键帧
+ * @returns {CoreElement} 新元素
+ */
+export function upsertKeyframe(
+  element: CoreElement,
+  key: string,
+  frame: AnimationKeyframe,
+): CoreElement {
+  try {
+    const tracks = readAnimationTracks(element)
+    const existing = tracks[key] ?? []
+    const next = existing.filter((item) => item.time !== frame.time)
+    next.push(frame)
+    tracks[key] = next.sort((a, b) => a.time - b.time)
+    return {
+      ...element,
+      params: { ...normalizeElementParams(element.params), [ANIMATION_TRACKS_KEY]: tracks },
+    }
+  } catch {
+    return element
+  }
+}
+
+/**
+ * 删除一个参数的关键帧轨道。
+ * @param element 元素
+ * @param key 参数 key
+ * @returns {CoreElement} 新元素
+ */
+export function removeKeyframeTrack(element: CoreElement, key: string): CoreElement {
+  const tracks = readAnimationTracks(element)
+  if (!tracks[key]) return element
+  delete tracks[key]
+  return {
+    ...element,
+    params: { ...normalizeElementParams(element.params), [ANIMATION_TRACKS_KEY]: tracks },
+  }
+}

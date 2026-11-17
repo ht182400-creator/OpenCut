@@ -27,6 +27,15 @@ import {
   removeElementById,
   resolveAutoPlacement,
   secondsToTicks,
+  ANIMATION_TRACKS_KEY,
+  DEFAULT_KEYFRAME_EASING,
+  applyEasing,
+  readAnimationTracks,
+  removeKeyframeTrack,
+  sampleKeyframes,
+  sampleParamsAtTime,
+  upsertKeyframe,
+  type AnimationKeyframe,
 } from './element-model'
 import type { CoreElement } from './editor-ui'
 
@@ -246,3 +255,99 @@ describe('resolveAutoPlacement 数据驱动用例', () => {
 /** 确保 CoreElement 上 params 字段类型可用于插值（编译期校验）。 */
 const _typeCheck: CoreElement = buildTextElement({ id: 'x', content: 'y', startTime: 0 })
 void _typeCheck
+
+/* ==================== P2 关键帧模型测试 ==================== */
+
+describe('applyEasing（缓动曲线）', () => {
+  it('linear 恒等', () => {
+    expect(applyEasing(0.5, 'linear')).toBe(0.5)
+  })
+  it('easeIn/easeOut 边界为 0/1', () => {
+    expect(applyEasing(0, 'easeIn')).toBe(0)
+    expect(applyEasing(1, 'easeOut')).toBe(1)
+    expect(applyEasing(0.5, 'easeIn')).toBeLessThan(0.5)
+    expect(applyEasing(0.5, 'easeOut')).toBeGreaterThan(0.5)
+  })
+  it('easeInOut 中点 0.5 且夹逼非法输入', () => {
+    expect(applyEasing(0.5, 'easeInOut')).toBe(0.5)
+    expect(applyEasing(-1, 'linear')).toBe(0)
+    expect(applyEasing(2, 'linear')).toBe(1)
+  })
+})
+
+describe('sampleKeyframes（关键帧插值）', () => {
+  const frames: AnimationKeyframe[] = [
+    { time: 0, value: 0, easing: 'linear' },
+    { time: 100, value: 10, easing: 'linear' },
+  ]
+  it('空轨道返回 null', () => {
+    expect(sampleKeyframes([], 50)).toBeNull()
+  })
+  it('区间前取首值，区间后取尾值', () => {
+    expect(sampleKeyframes(frames, -10)).toBe(0)
+    expect(sampleKeyframes(frames, 200)).toBe(10)
+  })
+  it('区间内线性插值', () => {
+    expect(sampleKeyframes(frames, 50)).toBe(5)
+  })
+  it('easeIn 首段插值非线性', () => {
+    const eased = [{ time: 0, value: 0, easing: 'easeIn' as const }, { time: 100, value: 100, easing: 'linear' as const }]
+    expect(sampleKeyframes(eased, 50)).toBe(25)
+  })
+  it('乱序输入自动排序', () => {
+    expect(sampleKeyframes([frames[1], frames[0]], 50)).toBe(5)
+  })
+})
+
+describe('关键帧轨道增删改与采样', () => {
+  it('打点后可读出轨道', () => {
+    const element = buildTextElement({ id: 'k', content: 'x', startTime: 0 })
+    const next = upsertKeyframe(element, 'opacity', { time: 0, value: 1, easing: DEFAULT_KEYFRAME_EASING })
+    const tracks = readAnimationTracks(next)
+    expect(tracks.opacity).toHaveLength(1)
+    expect(next.params?.[ANIMATION_TRACKS_KEY]).toBeDefined()
+    expect(readAnimationTracks(element)).toEqual({}) // 不改入参
+  })
+
+  it('同一时间点覆盖而非重复', () => {
+    let element = buildTextElement({ id: 'k', content: 'x', startTime: 0 })
+    element = upsertKeyframe(element, 'opacity', { time: 100, value: 1, easing: 'linear' })
+    element = upsertKeyframe(element, 'opacity', { time: 100, value: 0.5, easing: 'linear' })
+    expect(readAnimationTracks(element).opacity).toHaveLength(1)
+    expect(readAnimationTracks(element).opacity[0].value).toBe(0.5)
+  })
+
+  it('删除轨道', () => {
+    let element = buildTextElement({ id: 'k', content: 'x', startTime: 0 })
+    element = upsertKeyframe(element, 'opacity', { time: 0, value: 1, easing: 'linear' })
+    const removed = removeKeyframeTrack(element, 'opacity')
+    expect(readAnimationTracks(removed)).toEqual({})
+  })
+
+  it('按播放头采样得到动态参数（相对片段起点）', () => {
+    let element = buildTextElement({ id: 'k', content: 'x', startTime: 1000 })
+    element = upsertKeyframe(element, 'opacity', { time: 0, value: 0, easing: 'linear' })
+    element = upsertKeyframe(element, 'opacity', { time: 1000, value: 1, easing: 'linear' })
+    expect(sampleParamsAtTime(element, 1000).opacity).toBe(0)
+    expect(sampleParamsAtTime(element, 1500).opacity).toBe(0.5)
+    expect(sampleParamsAtTime(element, 2000).opacity).toBe(1)
+  })
+
+  it('无动画时采样原样返回', () => {
+    const element = buildTextElement({ id: 'k', content: 'x', startTime: 0 })
+    expect(sampleParamsAtTime(element, 100).opacity).toBe(1)
+  })
+
+  it('点分 key 关键帧采样写入扁平字段（驱动画面）', () => {
+    let element = buildTextElement({ id: 'k', content: 'x', startTime: 0 })
+    element = upsertKeyframe(element, 'transform.positionX', { time: 0, value: 0, easing: 'linear' })
+    element = upsertKeyframe(element, 'transform.positionX', { time: 1000, value: 100, easing: 'linear' })
+    expect(sampleParamsAtTime(element, 500).positionX).toBe(50)
+  })
+
+  it('非法轨道内容降级为空', () => {
+    const element = buildTextElement({ id: 'k', content: 'x', startTime: 0 })
+    element.params = normalizeElementParams({ ...element.params, [ANIMATION_TRACKS_KEY]: 'bad' as never })
+    expect(readAnimationTracks(element)).toEqual({})
+  })
+})

@@ -8,7 +8,7 @@
 在**现有 Vite + TanStack Router + Rust core（WASM）架构**上，把经典版编辑器做**像素级 1:1 复刻**：
 主题变量、字体、图标、间距、圆角、面板比例、组件结构与交互行为逐项对齐，而不是仅对齐信息架构。
 
-- **参照物（用户指定）**：`E:\AI_Studio\opencut-classic`（完整源码，Next.js 16 + Bun + turborepo + Tailwind v4）。
+- **参照物（用户指定）**：`<classic-source>`（经典版源码本地检出目录，完整源码为 Next.js 16 + Bun + turborepo + Tailwind v4；实际路径由用户本机提供，不写入公开文档）。
 - **入口参照**：`apps/web/src/app/editor/[project_id]/page.tsx` → `EditorLayout`。
 - **不迁移**：Next.js App Router、服务端 actions、数据库/登录/云部署、经典版前端状态库实现代码。
 - **必须保持**：W-11 冻结契约、10 crate 回归、现有 `ocx.*` / MCP / Headless CLI / OTIO 能力；UI 改动不得回退 core 契约与测试。
@@ -65,7 +65,7 @@
 ## 5. 依赖与许可
 
 - 用户已明确批准**像素级 1:1**，因此本阶段允许引入经典版使用的样式值、图标与字体资源，这会改变此前「零 UI 依赖」的隔离策略。
-- 经典版为 MIT（`E:\AI_Studio\opencut-classic\LICENSE`）；复制的 CSS 变量、图标与字体资源在 `local/NOTICE.md` 逐批登记来源，MIT © 2025-2026 声明继续保留。
+- 经典版为 MIT（`<classic-source>/LICENSE`）；复制的 CSS 变量、图标与字体资源在 `local/NOTICE.md` 逐批登记来源，MIT © 2025-2026 声明继续保留。
 - 服务端框架、数据库、认证代码不复制；每个批次在 `NOTICE.md` 说明「复制了什么 / 本地重写了什么」。
 
 ## 6. 风险与约定
@@ -147,6 +147,8 @@
 | 2026-11-17 | P0 闭环 | 本次提交（见 `git log -1`） | P0 三项目标全部闭环（用户「实现过程不要占位和硬编码，逐批提交推送」）：① 新增元素——新建 `element-model.ts`（buildText/buildMedia/placement 找空位/insert/remove/params 归一化，纯函数 + 数据驱动单测）、`handleAddAsset` 由占位改真实插入 + undo + 重算帧计划，`timeline.tsx` 加 `onDropAsset`（经典版 MIME 落点 ticks 换算）；② 自动保存——新建 `project-autosave.ts`（800ms debounce、localStorage、schema 版本/项目隔离/损坏降级、可注入存储），`editor.tsx` 加载时恢复/变化防抖写入；③ 参数驱动预览——`CoreElement`/`ClipPatch` 扩 `params`、`properties-panel.tsx` 去 `elementType='video'` 硬编码改按元素类型分发 tab、ParamField 受控可编辑（数值/文本失焦提交避免污染 undo）、新建 `element-composite.ts`（opacity/position/scale/rotate CPU 像素变换 + 文字 Canvas2D 栅格化，预览导出共用 `frameSource` 保证一致）、`project-write.ts` 写回 params。**验收**：tsc `--noEmit` 0 错误、vitest **27 文件/299 项**（+3 文件 +57 用例）全绿、vite build 成功；浏览器实测点 Text 卡插入 text 元素（剩余 2→3 片段、自动选中、Text tab 出现可编辑字段）、Content 改「Hello P0」真实渲染到预览画布、opacity 1→0.3 画布最大像素 255→76 且 localStorage 持久化、刷新后编辑现场完整恢复、控制台 0 错误。截图 `roadmap/oc-p0-text-preview.png`。**边界**：自动保存介质为 localStorage（非经典版 OPFS）且无多端同步、关键帧动画仍本地态，故 §9 记 🟡 而非 ✅；core/WASM 契约未改（纯 TS 应用层，符合经典版实证）。看板热点无变化 | `apps/web/src/local/element-model.ts` / `element-composite.ts` / `project-autosave.ts` / `properties-panel.tsx` / `timeline.tsx` / `routes/editor.tsx` / `project-write.ts` |
 
 | 2026-11-17 | P1 闭环 | 本次提交（见 `git log -1`） | P1 交互闭环（用户逐批节奏）：① 多选/区间/全选——新建 `element-operations.ts`（selectSingle/toggleSelection/selectRange/selectAll/copyElements/pasteElements/duplicateElements 纯函数 + 27 用例数据驱动/边界）、`use-selection.ts` hook 集中管理多选集合/锚点/内存剪贴板；`timeline.tsx` 加 `selectedIds` + 修饰键点击（Cmd/Ctrl 加选、Shift 区间）与 `data-selected` 高亮；属性面板传入 `selectedCount` 显示「N elements selected」。② 复制粘贴——Ctrl+C/V/D 内存剪贴板 + 工具栏入口，粘贴走 placement 避开既有片段。③ 快捷键分发——`editor-shortcuts.ts` 扩 Ctrl/Cmd+C/V/D/A（显式不接管 Ctrl+Z 归 clip-history）。④ **数据源接入未做**：Sounds/Stickers/Effects 依赖服务端素材库，本仓库无此后端，按用户「解决不了写入文档、不伪造数据」要求记入本台账 §7，不造假数据；框选橡皮筋/快捷键重绑定归 P2。**顺带重构**：editor.tsx 原 1101 行超 1000 上限，新建 `editor-actions.ts` 工厂抽出导出/OTIO/快照 9 个 handler（无 React Hook 故用工厂非 hook），editor.tsx 降至 958 行。**验收**：tsc 0、vitest **29 文件/326 项**（+2 文件 +27 用例）全绿、vite build 成功；浏览器实测 Ctrl 加选 2 片段高亮 + 状态栏「已选中 2 个」、Ctrl+D 4→6 片段、Ctrl+V 6→8 片段、Ctrl+A 全选、Ctrl+Z 撤销 8→6（clip-history 无冲突）、控制台 0 错误。截图 `roadmap/oc-p1-multiselect.png`。看板热点无变化 | `apps/web/src/local/element-operations.ts` / `use-selection.ts` / `editor-shortcuts.ts` / `editor-actions.ts` / `classic-ui/timeline.tsx` / `routes/editor.tsx` |
+
+| 2026-11-17 | P2 闭环 | 本次提交（见 `git log -1`） | P2 长尾可闭环项（用户逐批节奏最后一波）：① 关键帧曲线——`element-model.ts` 新增真实动画数据模型（AnimationKeyframe/AnimationTracks + applyEasing 4 种缓动 + sampleKeyframes 插值 + sampleParamsAtTime 播放头采样 + upsert/removeKeyframeTrack），`properties-panel.tsx` 菱形开关从本地视觉态改为在播放头打/删关键帧（状态从真实轨道派生），`frameSource` 每帧先按时间采样再合成；修复点分 key（transform.positionX）与扁平存储（positionX）映射不一致的真实 bug（PARAM_KEY_TO_FLAT/toFlatParamKey）。② 遮罩/效果——`element-composite.ts` 新增矩形裁剪 mask + brightness/contrast/saturate 纯像素运算（readRectMask/readColorAdjust/applyVisualEffects），`properties-tokens.ts` 新增 MASK/EFFECT_PARAM_DEFS，属性面板 Masks/Effects tab 可编辑并驱动画面；修复 Effects tab 参数集按 tab 可用性判定（原 PROPERTIES_PARAMS_BY_TYPE 不含这两组致空面板）。③ GPU 提示——新建 `gpu-capability.ts`（WebGL2/WebGPU/硬件编码探测 + 汇总），诊断面板显示真实能力（浏览器验收「WebGL2 / WebGPU / 硬件视频编码」）。④ WebM 导出——代码早已实现（export.ts VP9/Opus + AV1），更正文档滞后（⚪→✅）。⑤ **Blocked（写入台账不伪造）**：AI 字幕（无 STT 服务）、项目管理页（无多项目持久化）；长尾：曲线编辑器 UI、GPU 效果、框选橡皮筋、快捷键重绑定。**验收**：tsc 0、vitest **30 文件/357 项**（+1 文件 +31 用例）全绿、vite build 成功；浏览器实测关键帧打点写入轨道（localStorage `__animations`）且刷新后开关状态由真实轨道派生（true/false）、Effects tab 显示 Brightness/Contrast/Saturate 可编辑、GPU 能力提示真实渲染、控制台 0 错误。截图 `roadmap/oc-p2-keyframes.png`。**环境注意**：Demo 素材生成在本环境报 `colorSpace` null（预先存在的 WebCodecs 环境限制，与本改动无关），无真实素材时预览为空白，像素级效果由单测覆盖。看板热点无变化 | `apps/web/src/local/element-model.ts` / `element-composite.ts` / `gpu-capability.ts` / `classic-ui/properties-panel.tsx` / `classic-ui/properties-tokens.ts` / `routes/editor.tsx` |
 
 ## 9. 未开展进度明细（2026-11-16 会话总结登记）
 

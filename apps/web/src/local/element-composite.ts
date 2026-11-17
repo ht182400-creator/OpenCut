@@ -249,3 +249,145 @@ export function rasterizeText(
     return null;
   }
 }
+
+/* ========================================================================
+ * P2 基础遮罩/效果：纯像素运算（无 core/WASM 改动），参数经 ElementParams 透传。
+ * 与 composeTransform 同管线，预览/导出共用 frameSource，保证一致。
+ * ====================================================================== */
+
+/** 矩形裁剪遮罩（归一化 0..1，坐标系左上原点）。 */
+export interface RectMask {
+  enabled: boolean
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+/** 基础调色效果（brightness/contrast/saturate 乘性系数，1 = 不变）。 */
+export interface ColorAdjust {
+  brightness: number
+  contrast: number
+  saturate: number
+}
+
+/** 遮罩/效果常量边界（避免硬编码，集中命名）。 */
+export const MASK_RANGE_MIN = 0
+export const MASK_RANGE_MAX = 1
+export const EFFECT_MIN = 0
+export const EFFECT_MAX = 4
+export const GRAYSCALE_RED = 0.299
+export const GRAYSCALE_GREEN = 0.587
+export const GRAYSCALE_BLUE = 0.114
+export const CHANNEL_MAX = 255
+
+/**
+ * 夹逼数值到区间，非法回落到 fallback。
+ * @param value 输入
+ * @param min 下界
+ * @param max 上界
+ * @param fallback 非法回落
+ * @returns {number} 合法数值
+ */
+function clamp(value: unknown, min: number, max: number, fallback: number): number {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.min(max, Math.max(min, numeric))
+}
+
+/**
+ * 从元素参数读取矩形遮罩（键名对齐经典版约定 mask.*）。
+ * @param element 元素
+ * @returns {RectMask} 遮罩参数
+ */
+export function readRectMask(element: CoreElement | null): RectMask {
+  const params: Record<string, unknown> = element?.params ?? {}
+  return {
+    enabled: params['mask.enabled'] === true,
+    left: clamp(params['mask.left'], MASK_RANGE_MIN, MASK_RANGE_MAX, MASK_RANGE_MIN),
+    top: clamp(params['mask.top'], MASK_RANGE_MIN, MASK_RANGE_MAX, MASK_RANGE_MIN),
+    right: clamp(params['mask.right'], MASK_RANGE_MIN, MASK_RANGE_MAX, MASK_RANGE_MAX),
+    bottom: clamp(params['mask.bottom'], MASK_RANGE_MIN, MASK_RANGE_MAX, MASK_RANGE_MAX),
+  }
+}
+
+/**
+ * 从元素参数读取调色效果（键名 effects.*）。
+ * @param element 元素
+ * @returns {ColorAdjust} 调色参数
+ */
+export function readColorAdjust(element: CoreElement | null): ColorAdjust {
+  const params: Record<string, unknown> = element?.params ?? {}
+  const brightness = clamp(params['effects.brightness'], EFFECT_MIN, EFFECT_MAX, 1)
+  const contrast = clamp(params['effects.contrast'], EFFECT_MIN, EFFECT_MAX, 1)
+  const saturate = clamp(params['effects.saturate'], EFFECT_MIN, EFFECT_MAX, 1)
+  return { brightness, contrast, saturate }
+}
+
+/**
+ * 判断是否存在需要应用的遮罩/效果（identity 时跳过像素运算）。
+ * @param mask 遮罩
+ * @param adjust 调色
+ * @returns {boolean} 是否需要处理
+ */
+export function hasVisualEffects(mask: RectMask, adjust: ColorAdjust): boolean {
+  return mask.enabled
+    || adjust.brightness !== 1 || adjust.contrast !== 1 || adjust.saturate !== 1
+}
+
+/**
+ * 应用矩形遮罩 + 基础调色到 RGBA8 像素（就地修改输出缓冲）。
+ * 遮罩外的 alpha 置 0；调色按 brightness/contrast/saturate 顺序逐像素运算并夹逼到 [0,255]。
+ * @param pixels RGBA8 像素（原地修改）
+ * @param mask 矩形遮罩
+ * @param adjust 调色参数
+ * @param width 帧宽
+ * @param height 帧高
+ * @returns {Uint8Array} 同一缓冲引用
+ */
+export function applyVisualEffects(
+  pixels: Uint8Array,
+  mask: RectMask,
+  adjust: ColorAdjust,
+  width: number,
+  height: number,
+): Uint8Array {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return pixels
+  if (pixels.length < width * height * 4) return pixels
+  if (!hasVisualEffects(mask, adjust)) return pixels
+
+  const left = Math.floor(clamp(mask.left, 0, 1, 0) * width)
+  const top = Math.floor(clamp(mask.top, 0, 1, 0) * height)
+  const right = Math.ceil(clamp(mask.right, 0, 1, 1) * width)
+  const bottom = Math.ceil(clamp(mask.bottom, 0, 1, 1) * height)
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4
+      if (mask.enabled && (x < left || x >= right || y < top || y >= bottom)) {
+        pixels[index + 3] = 0
+        continue
+      }
+      let r = pixels[index]
+      let g = pixels[index + 1]
+      let b = pixels[index + 2]
+      // 亮度：乘性；对比度：围绕中灰 128 缩放；饱和度：向灰度插值。
+      r = (r - CHANNEL_MAX / 2) * adjust.contrast + CHANNEL_MAX / 2
+      g = (g - CHANNEL_MAX / 2) * adjust.contrast + CHANNEL_MAX / 2
+      b = (b - CHANNEL_MAX / 2) * adjust.contrast + CHANNEL_MAX / 2
+      r *= adjust.brightness
+      g *= adjust.brightness
+      b *= adjust.brightness
+      if (adjust.saturate !== 1) {
+        const gray = r * GRAYSCALE_RED + g * GRAYSCALE_GREEN + b * GRAYSCALE_BLUE
+        r = gray + (r - gray) * adjust.saturate
+        g = gray + (g - gray) * adjust.saturate
+        b = gray + (b - gray) * adjust.saturate
+      }
+      pixels[index] = Math.min(CHANNEL_MAX, Math.max(0, Math.round(r)))
+      pixels[index + 1] = Math.min(CHANNEL_MAX, Math.max(0, Math.round(g)))
+      pixels[index + 2] = Math.min(CHANNEL_MAX, Math.max(0, Math.round(b)))
+    }
+  }
+  return pixels
+}
