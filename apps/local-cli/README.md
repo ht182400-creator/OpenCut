@@ -10,17 +10,27 @@
 | --- | --- | --- |
 | `frame` | 渲染单帧为 PPM（P6, RGB8） | `--profile` `--params` `--frame-index` `--time-ticks` `--duration-ticks` `--out` `[--name]` |
 | `batch` | 批量渲染 N 帧（帧 i 时间 = i × duration-ticks） | `--profile` `--params` `--count` `--duration-ticks` `--out` `[--name]` |
+| `frame-png` | 渲染单帧为 PNG（RGBA8，保留 alpha；W-13 C 批） | 同 `frame` |
+| `batch-png` | 批量渲染 N 帧为 PNG（RGBA8；W-13 C 批） | 同 `batch` |
+| `audio-export` | planar f32 PCM → 16-bit PCM WAV（W-13 C 批） | `--pcm` `--out` |
 | `project-info` | 输出经典版项目结构摘要（只读） | `--project` |
 
 `--profile` / `--params` 是 JSON **文件**（camelCase，与 MCP `ocx.render.frame` 的字段一致）；
-stdout 输出一行 JSON 摘要（`frameIndex` / `file` / `size` / `checksum`），错误输出中文到 stderr
+stdout 输出一行 JSON 摘要（帧命令：`frameIndex` / `file` / `size` / `checksum`；音频命令：`frames` / `channels` / `sampleRateHz` / `size`），错误输出中文到 stderr
 并以非零码退出。
+
+PNG 为手写编码器（`src/_png.rs`，stored DEFLATE + CRC32/Adler32），WAV 为手写编码器
+（`src/_wav.rs`，f32→i16 对称缩放），均无第三方图像/音频库；两者保留输入 alpha / 采样语义，
+可与浏览器侧逐像素/逐采样对齐。同帧的 PNG 与 PPM 摘要一致（都取 RGBA 全字节的 FNV-1a）。
+`--pcm` JSON 格式：`{"sampleRateHz":48000,"channels":[[0.0,0.5,...],[...]]}`（planar，采样归一到 [-1,1]）。
 
 ## 构建 / 运行 / 测试
 
 ```bash
 cargo run -p ocx-cli -- project-info --project apps/web/public/fixtures/classic-project-v31.json
+cargo run -p ocx-cli -- frame-png --profile <p.json> --params <a.json> --frame-index 0 --time-ticks 0 --duration-ticks 4000 --out <dir>
+cargo run -p ocx-cli -- audio-export --pcm <pcm.json> --out <out.wav>
 cargo test  -p ocx-cli
 ```
 
-零第三方依赖（仅本仓库 crate 与 serde/serde_json）。
+零第三方图像/音频库（仅本仓库 crate 与 serde/serde_json）；PNG/WAV 均为手写编码。

@@ -102,3 +102,5 @@
 **追加（批 8 补丁 · 演示色块分层）**：`apps/web/src/local/frame-source.ts` 的验证模式判定与帧源决策纯函数为本地新写实现，仅用于把本仓库 `ocx-render` 的确定性演示帧（W-07 程序化色块）与正式 UI 画面分层，未复制经典版任何样式值、字体、图标或渲染代码，也未引入第三方依赖；`?verifyDemoFrame=1` 验证开关为工程自有约定，经典版无此机制。core 帧渲染契约与 golden master 未改动。经典版 MIT © 2025-2026 声明继续保留。
 
 **追加（tsc 基线清零维护）**：`DiagnosticsPanel` 的 `actions` 高级工具入口为本地新写实现，恢复的是本仓库 W-08/W-09/W-10 既有的 4K 基准 / 代理导出 / 清缓存 / OTIO 导出功能入口（非经典版代码拷贝）。`calendar.tsx` 的 `table`→`month_grid` 与 `spinner.tsx` 的 strokeWidth 归一化仅为对齐本工程已安装依赖（`react-day-picker@3.8.0` / `@hugeicons/react`）的公开类型定义，未复制第三方实现代码。经典版 MIT © 2025-2026 声明继续保留。
+
+**追加（W-13 第三批 · Headless PNG/音频）**：`apps/local-cli/src/_png.rs` 与 `src/_wav.rs` 为本地新写实现——PNG（stored DEFLATE + CRC32/Adler32 + IHDR/IDAT/IEND）与 WAV（RIFF/fmt/data，f32→i16 PCM）均按公开标准格式手写编码，未引入 `png`/`flate2`/`crc32fast` 或任何图像/音频库代码，也未拷贝经典版或第三方编码器实现。`frame-png`/`batch-png`/`audio-export` 子命令与 `parse_pcm_json` 为本地新写；测试 PCM 为程序生成的示例采样，不含第三方音频素材。经典版 MIT © 2025-2026 声明继续保留。

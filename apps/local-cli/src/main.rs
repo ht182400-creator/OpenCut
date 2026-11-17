@@ -1,8 +1,10 @@
-//! Headless CLI 入口：子命令 `frame` / `batch` / `project-info`。
+//! Headless CLI 入口：子命令 `frame` / `batch` / `frame-png` / `batch-png` / `audio-export` / `project-info`。
 //!
 //! 用法：
 //! - `ocx-cli frame --profile <json文件> --params <json文件> --frame-index N --time-ticks T --duration-ticks D --out <目录> [--name 前缀]`
 //! - `ocx-cli batch --profile <json文件> --params <json文件> --count N --duration-ticks D --out <目录> [--name 前缀]`
+//! - `ocx-cli frame-png / batch-png`：参数同 frame / batch，输出 RGBA8 PNG
+//! - `ocx-cli audio-export --pcm <json文件> --out <wav文件>`：planar f32 PCM → 16-bit WAV
 //! - `ocx-cli project-info --project <经典版项目JSON文件>`
 //!
 //! 结果一律以一行 JSON 打印到 stdout；失败打印中文错误并以非零码退出。
@@ -10,12 +12,16 @@
 use std::process::ExitCode;
 
 use ocx_cli::{
-    parse_json, parse_params, parse_profile, project_info, render_batch_to_ppm, render_one_to_ppm,
+    parse_json, parse_params, parse_pcm_json, parse_profile, project_info, render_batch_to_png,
+    render_batch_to_ppm, render_one_to_png, render_one_to_ppm, write_audio_wav,
 };
 
 const HELP: &str = "ocx-cli 子命令：
   frame        渲染单帧为 PPM（--profile --params --frame-index --time-ticks --duration-ticks --out [--name]）
   batch        批量渲染多帧为 PPM（--profile --params --count --duration-ticks --out [--name]）
+  frame-png    渲染单帧为 PNG（参数同 frame，RGBA8）
+  batch-png    批量渲染多帧为 PNG（参数同 batch，RGBA8）
+  audio-export planar f32 PCM → 16-bit WAV（--pcm <json> --out <wav>）
   project-info 输出经典版项目结构摘要（--project）";
 
 /** 读取 `--key value` 形式的参数。 */
@@ -48,16 +54,19 @@ fn main() -> ExitCode {
 fn run(args: &[String]) -> Result<String, String> {
     let Some(command) = args.first() else {
         return Err(format!(
-            "用法：ocx-cli <frame|batch|project-info> ...\n{HELP}"
+            "用法：ocx-cli <frame|batch|frame-png|batch-png|audio-export|project-info> ...\n{HELP}"
         ));
     };
     match command.as_str() {
         "frame" => run_frame(&args[1..]),
         "batch" => run_batch(&args[1..]),
+        "frame-png" => run_frame_png(&args[1..]),
+        "batch-png" => run_batch_png(&args[1..]),
+        "audio-export" => run_audio_export(&args[1..]),
         "project-info" => run_project_info(&args[1..]),
         "help" | "--help" | "-h" => Ok(HELP.to_owned()),
         other => Err(format!(
-            "未知子命令：{other}；可用：frame / batch / project-info"
+            "未知子命令：{other}；可用：frame / batch / frame-png / batch-png / audio-export / project-info"
         )),
     }
 }
@@ -119,6 +128,76 @@ fn run_batch(args: &[String]) -> Result<String, String> {
         &base,
     )?;
     serde_json::to_string(&summaries).map_err(|error| format!("序列化结果失败：{error}"))
+}
+
+/** 渲染单帧为 PNG（参数与 frame 相同）。 */
+fn run_frame_png(args: &[String]) -> Result<String, String> {
+    let profile_text = read_json_file(
+        &flag(args, "--profile").ok_or("缺少 --profile")?,
+        "导出配置",
+    )?;
+    let params_text = read_json_file(&flag(args, "--params").ok_or("缺少 --params")?, "帧参数")?;
+    let frame_index: u64 = flag(args, "--frame-index")
+        .ok_or("缺少 --frame-index")?
+        .parse()
+        .map_err(|_| "--frame-index 必须是非负整数".to_owned())?;
+    let time_ticks: i64 = flag(args, "--time-ticks")
+        .ok_or("缺少 --time-ticks")?
+        .parse()
+        .map_err(|_| "--time-ticks 必须是整数".to_owned())?;
+    let duration_ticks: i64 = flag(args, "--duration-ticks")
+        .ok_or("缺少 --duration-ticks")?
+        .parse()
+        .map_err(|_| "--duration-ticks 必须是整数".to_owned())?;
+    let out = flag(args, "--out").ok_or("缺少 --out")?;
+    let base = flag(args, "--name").unwrap_or_else(|| "frame".to_owned());
+    let summary = render_one_to_png(
+        frame_index,
+        time_ticks,
+        duration_ticks,
+        &parse_profile(&profile_text)?,
+        &parse_params(&params_text)?,
+        std::path::Path::new(&out),
+        &base,
+    )?;
+    serde_json::to_string(&summary).map_err(|error| format!("序列化结果失败：{error}"))
+}
+
+/** 批量渲染多帧为 PNG（参数与 batch 相同）。 */
+fn run_batch_png(args: &[String]) -> Result<String, String> {
+    let profile_text = read_json_file(
+        &flag(args, "--profile").ok_or("缺少 --profile")?,
+        "导出配置",
+    )?;
+    let params_text = read_json_file(&flag(args, "--params").ok_or("缺少 --params")?, "帧参数")?;
+    let count: u64 = flag(args, "--count")
+        .ok_or("缺少 --count")?
+        .parse()
+        .map_err(|_| "--count 必须是非负整数".to_owned())?;
+    let duration_ticks: i64 = flag(args, "--duration-ticks")
+        .ok_or("缺少 --duration-ticks")?
+        .parse()
+        .map_err(|_| "--duration-ticks 必须是整数".to_owned())?;
+    let out = flag(args, "--out").ok_or("缺少 --out")?;
+    let base = flag(args, "--name").unwrap_or_else(|| "frame".to_owned());
+    let summaries = render_batch_to_png(
+        count,
+        duration_ticks,
+        &parse_profile(&profile_text)?,
+        &parse_params(&params_text)?,
+        std::path::Path::new(&out),
+        &base,
+    )?;
+    serde_json::to_string(&summaries).map_err(|error| format!("序列化结果失败：{error}"))
+}
+
+/** 把 planar f32 PCM JSON 编码为 WAV。 */
+fn run_audio_export(args: &[String]) -> Result<String, String> {
+    let pcm_text = read_json_file(&flag(args, "--pcm").ok_or("缺少 --pcm")?, "PCM JSON")?;
+    let (channels, sample_rate_hz) = parse_pcm_json(&pcm_text)?;
+    let out = flag(args, "--out").ok_or("缺少 --out")?;
+    let summary = write_audio_wav(&channels, sample_rate_hz, std::path::Path::new(&out))?;
+    serde_json::to_string(&summary).map_err(|error| format!("序列化结果失败：{error}"))
 }
 
 fn run_project_info(args: &[String]) -> Result<String, String> {
