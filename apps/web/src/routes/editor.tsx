@@ -20,6 +20,32 @@ import {
 import { useClipHistory } from '../local/clip-history'
 import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
 import {
+  DEFAULT_MEDIA_DURATION_SECONDS,
+  DEFAULT_TEXT_CONTENT,
+  MEDIA_ID_PREFIX,
+  TEXT_ID_PREFIX,
+  TICKS_PER_SECOND as MODEL_TICKS_PER_SECOND,
+  buildMediaElement,
+  buildTextElement,
+  insertElement,
+  makeElementId,
+  patchElementParams,
+  resolveAutoPlacement,
+  type ElementKind,
+} from '../local/element-model'
+import {
+  composeTransform,
+  rasterizeText,
+  resolveTextLayout,
+  transformFromElement,
+} from '../local/element-composite'
+import {
+  AUTOSAVE_DEBOUNCE_MS,
+  defaultAutosaveStorage,
+  persistAutosave,
+  readAutosave,
+} from '../local/project-autosave'
+import {
   BASE_PROFILE,
   PANEL_STYLE,
   SCRUB_THRESHOLD_MS,
@@ -267,6 +293,8 @@ export function Editor() {
         name: element.name,
         content: element.content,
         elementType: element.elementType,
+        // P0：读取可视参数（不透明度/位置/缩放等），供预览与属性面板使用。
+        params: (element.params ?? undefined) as CoreElement['params'],
       }))
       if (mainElements.length === 0) throw new Error('项目中没有可编辑的主轨片段')
 
@@ -275,25 +303,35 @@ export function Editor() {
       const profile = {
         ...BASE_PROFILE, width: resolution.width, height: resolution.height, frameRate: project.fps,
       }
-      const activeClips = clipHistory.reset(mainElements, '导入项目', name) ?? mainElements
-      const duration = timelineDuration(activeClips)
+      const historyClips = clipHistory.reset(mainElements, '导入项目', name) ?? mainElements
       const plan = adapter.evaluate<FramePlanView>({
-        kind: 'buildFramePlan', durationTicks: duration, profile,
+        kind: 'buildFramePlan', durationTicks: timelineDuration(historyClips), profile,
       })
+
+      // P0 自动保存：同项目且有合法快照时，恢复元素与编辑现场；否则用历史/项目基线。
+      const saved = readAutosave(defaultAutosaveStorage(), name)
+      const restored: CoreElement[] = saved ? saved.state.elements.map((item) => ({ ...item })) : historyClips
+      const duration = timelineDuration(restored)
+      const restoredPlan = saved
+        ? adapter.evaluate<FramePlanView>({ kind: 'buildFramePlan', durationTicks: duration, profile })
+        : plan
       const codecs = await probeWebCodecsSupport()
       setSession({
         adapter, project, info: adapter.discover(), codecs, fps,
         originalJson: text,
-        ticksPerFrame: plan.ticksPerFrame, profile, projectTrackCount: tracks.length,
+        ticksPerFrame: restoredPlan.ticksPerFrame, profile, projectTrackCount: tracks.length,
       })
-      setElements(activeClips)
+      setElements(restored)
       setProjectTracks(buildTimelineTracks(project))
-      setMediaStatus(activeClips === mainElements ? '未加载素材' : '已恢复上次编辑会话（可撤销）')
-      setAdjustments([])
-      setSelectedId(null)
-      setFrameIndex(0)
-      setFrameCount(Math.max(plan.frameCount, 1))
+      setMediaStatus(saved
+        ? `已恢复自动保存的编辑现场（${saved.state.elements.length} 个片段）`
+        : restored === mainElements ? '未加载素材' : '已恢复上次编辑会话（可撤销）')
+      setAdjustments(saved?.state.adjustments ?? [])
+      setSelectedId(saved?.state.selectedId ?? null)
+      setFrameIndex(saved?.state.frameIndex ?? 0)
+      setFrameCount(Math.max(restoredPlan.frameCount, 1))
       setSourceName(name)
+      setResolution(saved?.state.resolution ?? resolution)
     } catch (error) {
       setErrorText(formatCoreError(error))
       setSession(null)
@@ -313,6 +351,25 @@ export function Editor() {
     void load()
     void refreshCacheInfo()
   }, [])
+
+  /**
+   * P0 自动保存：编辑现场变化后防抖落盘。仅在会话就绪时写入，
+   * 用 ref 保存最新状态以避免 effect 依赖状态导致每次按键都重设定时器开销。
+   */
+  const autosaveStateRef = useRef({ elements, frameIndex, selectedId, adjustments, resolution, sourceName })
+  autosaveStateRef.current = { elements, frameIndex, selectedId, adjustments, resolution, sourceName }
+  useEffect(() => {
+    if (!session) return
+    const timer = window.setTimeout(() => {
+      try {
+        persistAutosave(autosaveStateRef.current, sourceName, defaultAutosaveStorage())
+      } catch (error) {
+        // 自动保存失败不阻断编辑，只记录一次可恢复警告。
+        setErrorText(`自动保存失败：${formatCoreError(error)}`)
+      }
+    }, AUTOSAVE_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [session, elements, frameIndex, selectedId, adjustments, resolution, sourceName])
 
   /** 删除选中片段，由 core 计算并应用 ripple。 */
   const deleteSelected = () => {
@@ -386,9 +443,10 @@ export function Editor() {
         next = resizeClipEdge(next, ctx.clipId, 'right', patch.duration - current.duration, ctx.ticksPerFrame)
       }
       if (patch.trimStart !== undefined || patch.trimEnd !== undefined
-        || patch.name !== undefined || patch.content !== undefined) {
-        next = next.map((item) => item.id === ctx.clipId
-          ? {
+        || patch.name !== undefined || patch.content !== undefined || patch.params !== undefined) {
+        next = next.map((item) => {
+          if (item.id !== ctx.clipId) return item
+          const base: CoreElement = {
             ...item,
             trimStart: patch.trimStart ?? item.trimStart,
             trimEnd: patch.trimEnd ?? item.trimEnd,
@@ -396,7 +454,13 @@ export function Editor() {
             ...(patch.name !== undefined ? { name: patch.name } : {}),
             ...(patch.content !== undefined ? { content: patch.content } : {}),
           }
-          : item)
+          // P0：文字内容同步进 params，保证预览栅格化与写回用同一来源。
+          const paramsPatch = { ...patch.params }
+          if (patch.content !== undefined && paramsPatch.content === undefined) {
+            paramsPatch.content = patch.content
+          }
+          return Object.keys(paramsPatch).length > 0 ? patchElementParams(base, paramsPatch) : base
+        })
       }
       return next
     }, selectedId, '编辑属性')
@@ -466,19 +530,24 @@ export function Editor() {
 
   /**
    * 生成当前帧像素：正式 UI 显示真实素材或纯色空白帧，绝不出现演示色块；
-   * 仅当 URL 带 ?verifyDemoFrame=1 时交给 core 叠加用于 golden master 定位的演示块。
+   * P0 起按当前时间命中片段的 params 做真实变换（位移/缩放/旋转/透明度）与文字栅格化，
+   * 预览与导出共用本函数，保证二者一致。验证模式仍交给 core 叠加定位块。
    */
   const frameSource = (index: number): Uint8Array => {
     if (!session) throw new Error('会话尚未就绪')
     const timeTicks = index * session.ticksPerFrame
+    const verification = isVerificationFrameMode()
     let basePixels: Uint8Array | null = null
+    const active = clipAtTime(elements, timeTicks) as CoreElement | null
+
     if (media) {
       const mapping = mapProjectFrame(elements, timeTicks, session.fps, media.frames.length)
       basePixels = mapping.sourceFrameIndex === null
         ? blankFrame(resolution.width, resolution.height)
         : mediaFrameAt(media, mapping.sourceFrameIndex)
     }
-    return resolvePreviewPixels(
+
+    let pixels = resolvePreviewPixels(
       session.adapter,
       session.profile,
       basePixels,
@@ -489,8 +558,31 @@ export function Editor() {
         width: resolution.width,
         height: resolution.height,
       },
-      isVerificationFrameMode(),
+      verification,
     )
+
+    // 验证模式保持 golden 像素不变，只做定位；正式模式叠加用户参数。
+    if (verification || !active?.params) return pixels
+    const transform = transformFromElement(active)
+    pixels = composeTransform(pixels, transform, resolution.width, resolution.height)
+
+    // 文字元素：把 content 按参数栅格化后合成（alpha 叠加，保留底图）。
+    if (active.elementType === 'text' || (active.content && active.params.content)) {
+      const layout = resolveTextLayout(active, resolution.width, resolution.height)
+      if (layout.text) {
+        const textLayer = rasterizeText(layout, transform, resolution.width, resolution.height)
+        if (textLayer) {
+          for (let offset = 0; offset < textLayer.length; offset += 4) {
+            const alpha = textLayer[offset + 3] / 255
+            if (alpha <= 0) continue
+            pixels[offset] = Math.round(textLayer[offset] * alpha + pixels[offset] * (1 - alpha))
+            pixels[offset + 1] = Math.round(textLayer[offset + 1] * alpha + pixels[offset + 1] * (1 - alpha))
+            pixels[offset + 2] = Math.round(textLayer[offset + 2] * alpha + pixels[offset + 2] * (1 - alpha))
+          }
+        }
+      }
+    }
+    return pixels
   }
 
   /** 逐帧预览：帧号、会话、片段或素材变化时重新向 core 取像素并绘制。 */
@@ -781,11 +873,58 @@ export function Editor() {
   }
 
   /**
-   * 批 3：素材卡加入时间轴的占位回调。core 暂无「新增元素」能力（属批 7 扩展），
-   * 这里只反馈友好提示，不伪装成已插入；拖拽 dataTransfer 载荷已按经典版 MIME 输出。
+   * P0：把素材载荷真正插入时间轴。placement 由 element-model 自动找空位，
+   * 起点优先取投放位置（拖放）或播放头（点击卡片），插入后重算帧计划并记入撤销历史。
+   * @param payload 素材载荷（Text/Media）
+   * @param atTicks 可选的目标起点；缺省用播放头
    */
-  const handleAddAsset = (payload: AssetDragPayload) => {
-    setMediaStatus(`已选素材「${payload.name}」；新增片段需 core 扩展（批 7），当前为占位`)
+  const handleAddAsset = (payload: AssetDragPayload, atTicks?: number) => {
+    if (!session) {
+      setErrorText('请先加载项目，再添加素材到时间轴')
+      return
+    }
+    try {
+      const desiredStart = atTicks ?? frameIndex * session.ticksPerFrame
+      let element
+      if (payload.kind === 'text') {
+        element = buildTextElement({
+          id: makeElementId(TEXT_ID_PREFIX),
+          content: payload.content ?? DEFAULT_TEXT_CONTENT,
+          startTime: desiredStart,
+          ticksPerSecond: MODEL_TICKS_PER_SECOND,
+        })
+      } else {
+        const asset = assets.find((item) => item.id === payload.id)
+        const durationSeconds = asset?.duration ?? DEFAULT_MEDIA_DURATION_SECONDS
+        element = buildMediaElement({
+          id: makeElementId(MEDIA_ID_PREFIX),
+          name: payload.name,
+          elementType: ((payload.mediaType === 'video' || payload.mediaType === 'audio' || payload.mediaType === 'image')
+            ? payload.mediaType : 'video') as ElementKind,
+          startTime: desiredStart,
+          durationSeconds,
+          ticksPerSecond: MODEL_TICKS_PER_SECOND,
+          mediaId: payload.id,
+        })
+      }
+      const start = resolveAutoPlacement(elements, desiredStart, element.duration)
+      const placed = { ...element, startTime: start }
+      const next = insertElement(elements, placed)
+      setElements(next)
+      clipHistory.record(next, `新增${payload.kind === 'text' ? '文字' : '媒体'}片段`)
+      setFrameCount(plannedFrameCount(next, session.adapter, session.profile))
+      setSelectedId(placed.id)
+      setErrorText(null)
+      setMediaStatus(`已加入时间轴：${placed.name ?? placed.id}（起点 ${(start / MODEL_TICKS_PER_SECOND).toFixed(2)}s）`)
+    } catch (error) {
+      setErrorText(`添加素材失败：${formatCoreError(error)}`)
+    }
+  }
+
+  /** 时间轴拖放落点：由时间轴组件换算好 ticks，这里只做类型校验并插入。 */
+  const handleTimelineDrop = (payload: AssetDragPayload, atTicks: number) => {
+    if (payload.kind !== 'text' && payload.kind !== 'media') return
+    handleAddAsset(payload, atTicks)
   }
 
   const activeClip = clipAtTime(elements, frameIndex * (session?.ticksPerFrame ?? 0))?.id ?? (session ? '空档' : '—')
@@ -939,6 +1078,7 @@ export function Editor() {
             videoThumbnails={videoThumbnails}
             selectedId={selectedId}
             onSelect={setSelectedId}
+            onDropAsset={handleTimelineDrop}
             adjustments={adjustments}
             frameIndex={frameIndex}
             frameCount={frameCount}

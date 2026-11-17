@@ -1,0 +1,280 @@
+/**
+ * 编辑器元素模型（P0 闭环）：元素的类型/参数契约与纯函数操作。
+ *
+ * 经典版实证（FEATURE_PARITY.md 附录 A）表明「新增文字/媒体到时间轴」是纯前端
+ * 编辑器应用层逻辑（构建元素 → placement 找空位 → 写回内存 tracks → undo），
+ * 不依赖 Rust core。本模块即这层轻量 editor store 的核心，全部为无 DOM 纯函数，
+ * 便于用边界值/异常/竞态用例充分覆盖。
+ */
+
+import type { CoreElement } from './editor-ui';
+import type { TimelineClip } from './timeline';
+
+/** 可识别的元素类型（与经典版 elementType 字符串对齐）。 */
+export type ElementKind =
+  | 'text' | 'video' | 'image' | 'audio' | 'sticker' | 'graphic' | 'effect';
+
+/** 参与画面合成的变换参数（P0 驱动预览/导出的字段）。 */
+export interface ElementVisualParams {
+  opacity: number;
+  positionX: number;
+  positionY: number;
+  scaleX: number;
+  scaleY: number;
+  rotate: number;
+}
+
+/**
+ * 元素参数集合：变换参数为强类型必填，其余字段按 key 透传（经典版参数注册表很长，
+ * P0 不逐项建模，但必须保真存储，避免编辑一次就把未知参数抹掉）。
+ */
+export interface ElementParams extends ElementVisualParams {
+  content?: string;
+  fontSize?: number;
+  color?: string;
+  [key: string]: unknown;
+}
+
+/** 文字片段默认时长（秒）；来源：经典版默认文字片段接近 5s。 */
+export const DEFAULT_TEXT_DURATION_SECONDS = 5;
+/** 媒体片段缺省时长（秒）；素材卡片无 duration 时的兜底。 */
+export const DEFAULT_MEDIA_DURATION_SECONDS = 8;
+/** 新片段之间的最小间隔（ticks），避免首尾紧贴难以点选。 */
+export const DEFAULT_ELEMENT_GAP_TICKS = 0;
+/** 时间单位：每秒 ticks，与 Rust core / timeline.ts 一致。 */
+export const TICKS_PER_SECOND = 120000;
+
+/** 变换参数取值域（防止非法值污染画面合成）。 */
+export const OPACITY_MIN = 0;
+export const OPACITY_MAX = 1;
+export const SCALE_MIN = 0.01;
+export const SCALE_MAX = 100;
+export const POSITION_LIMIT_PX = 1_000_000;
+export const ROTATE_MIN_DEG = -360;
+export const ROTATE_MAX_DEG = 360;
+
+/** 新建元素的默认变换参数（identity 变换：不改变画面）。 */
+export const IDENTITY_VISUAL_PARAMS: Readonly<ElementVisualParams> = Object.freeze({
+  opacity: 1,
+  positionX: 0,
+  positionY: 0,
+  scaleX: 1,
+  scaleY: 1,
+  rotate: 0,
+});
+
+/** 默认文字内容，与经典版 Text 卡片一致。 */
+export const DEFAULT_TEXT_CONTENT = 'Default text';
+/** 默认文字字号（px）与颜色，供预览绘制使用。 */
+export const DEFAULT_TEXT_FONT_SIZE_PX = 32;
+export const DEFAULT_TEXT_COLOR = '#ffffff';
+
+/** 生成元素 id 的前缀（便于在时间轴/日志中辨认来源）。 */
+export const TEXT_ID_PREFIX = 'text';
+export const MEDIA_ID_PREFIX = 'media';
+
+/**
+ * 把任意输入夹逼到 [min, max]；非有限值回落到 fallback。
+ * @param value 待校验数值
+ * @param min 下界
+ * @param max 上界
+ * @param fallback 非法时回落值
+ * @returns {number} 合法数值
+ */
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, numeric));
+}
+
+/**
+ * 归一化元素参数：必填变换字段夹逼到合法域，未知字段原样透传。
+ * @param raw 任意参数输入（可能来自持久化或经典版 JSON）
+ * @returns {ElementParams} 归一化后的新对象（不改入参）
+ */
+export function normalizeElementParams(raw?: Partial<ElementParams> | null): ElementParams {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const result: ElementParams = {
+    ...source,
+    opacity: clampNumber(source.opacity, OPACITY_MIN, OPACITY_MAX, IDENTITY_VISUAL_PARAMS.opacity),
+    positionX: clampNumber(source.positionX, -POSITION_LIMIT_PX, POSITION_LIMIT_PX, IDENTITY_VISUAL_PARAMS.positionX),
+    positionY: clampNumber(source.positionY, -POSITION_LIMIT_PX, POSITION_LIMIT_PX, IDENTITY_VISUAL_PARAMS.positionY),
+    scaleX: clampNumber(source.scaleX, SCALE_MIN, SCALE_MAX, IDENTITY_VISUAL_PARAMS.scaleX),
+    scaleY: clampNumber(source.scaleY, SCALE_MIN, SCALE_MAX, IDENTITY_VISUAL_PARAMS.scaleY),
+    rotate: clampNumber(source.rotate, ROTATE_MIN_DEG, ROTATE_MAX_DEG, IDENTITY_VISUAL_PARAMS.rotate),
+  };
+  return result;
+}
+
+/**
+ * 读取单个参数值：优先取元素的显式参数，否则回落到注册表默认值。
+ * @param element 元素（可为空）
+ * @param key 参数 key
+ * @param fallback 默认值
+ * @returns {number | string | boolean} 参数值
+ */
+export function readParamValue(
+  element: CoreElement | null,
+  key: string,
+  fallback: number | string | boolean,
+): number | string | boolean {
+  const value = element?.params?.[key];
+  if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') {
+    return value;
+  }
+  return fallback;
+}
+
+/**
+ * 生成带前缀的唯一 id；优先用 crypto.randomUUID，缺失时回落到时间戳+随机数。
+ * @param prefix id 前缀
+ * @returns {string} 唯一 id
+ */
+export function makeElementId(prefix: string): string {
+  const scope = globalThis as unknown as { crypto?: { randomUUID?: () => string } };
+  const random = scope.crypto?.randomUUID?.()
+    ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`;
+}
+
+/**
+ * 自动 placement：从期望起点开始，向后寻找能容纳 duration 的空档（跳过已占用片段）。
+ * 相当于经典版 `resolveTrackPlacement` 的 auto 模式：不覆盖既有片段、不留负起点。
+ * @param clips 已存在的片段（任意顺序）
+ * @param desiredStart 期望起点（ticks），负数按 0 处理
+ * @param duration 新片段时长（ticks），负数按 0 处理
+ * @param gapTicks 片段间最小间隔（ticks）
+ * @returns {number} 实际可插入的起点（ticks）
+ */
+export function resolveAutoPlacement(
+  clips: readonly TimelineClip[],
+  desiredStart: number,
+  duration: number,
+  gapTicks: number = DEFAULT_ELEMENT_GAP_TICKS,
+): number {
+  const safeStart = Number.isFinite(desiredStart) ? Math.max(0, Math.round(desiredStart)) : 0;
+  const safeDuration = Number.isFinite(duration) ? Math.max(0, Math.round(duration)) : 0;
+  const safeGap = Number.isFinite(gapTicks) ? Math.max(0, Math.round(gapTicks)) : 0;
+  const sorted = [...clips].sort((a, b) => a.startTime - b.startTime);
+
+  // 最多扫描 clips.length + 1 轮：每轮至少跳过一个重叠片段，保证终止。
+  let candidate = safeStart;
+  for (let round = 0; round <= sorted.length; round += 1) {
+    const blocker = sorted.find(
+      (clip) => candidate < clip.startTime + clip.duration + safeGap
+        && candidate + safeDuration + safeGap > clip.startTime,
+    );
+    if (!blocker) return candidate;
+    candidate = blocker.startTime + blocker.duration + safeGap;
+  }
+  return candidate;
+}
+
+/**
+ * 秒 → ticks；非法秒数按默认值兜底。
+ * @param seconds 秒数
+ * @param ticksPerSecond 每秒 ticks
+ * @param fallbackSeconds 非法时的秒数
+ * @returns {number} ticks
+ */
+export function secondsToTicks(
+  seconds: number | undefined,
+  ticksPerSecond: number,
+  fallbackSeconds: number,
+): number {
+  const safeTps = Number.isFinite(ticksPerSecond) && ticksPerSecond > 0 ? ticksPerSecond : TICKS_PER_SECOND;
+  const safeSeconds = typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0
+    ? seconds : fallbackSeconds;
+  return Math.round(safeSeconds * safeTps);
+}
+
+/**
+ * 构建文字元素（起点由调用方按 placement 结果提供）。
+ * @param input 构建参数
+ * @returns {CoreElement} 文字元素
+ */
+export function buildTextElement(input: {
+  id: string;
+  content: string;
+  startTime: number;
+  durationTicks?: number;
+  ticksPerSecond?: number;
+  name?: string;
+}): CoreElement {
+  const tps = input.ticksPerSecond ?? TICKS_PER_SECOND;
+  return {
+    id: input.id,
+    name: input.name ?? input.content,
+    elementType: 'text',
+    startTime: Math.max(0, Math.round(input.startTime)),
+    duration: input.durationTicks ?? secondsToTicks(DEFAULT_TEXT_DURATION_SECONDS, tps, DEFAULT_TEXT_DURATION_SECONDS),
+    trimStart: 0,
+    content: input.content,
+    params: normalizeElementParams({ content: input.content }),
+  };
+}
+
+/**
+ * 构建媒体元素（视频/音频/图片），时长来自素材卡片真实 duration。
+ * @param input 构建参数
+ * @returns {CoreElement} 媒体元素
+ */
+export function buildMediaElement(input: {
+  id: string;
+  name: string;
+  elementType: ElementKind;
+  startTime: number;
+  durationSeconds?: number;
+  ticksPerSecond?: number;
+  mediaId?: string;
+}): CoreElement {
+  const tps = input.ticksPerSecond ?? TICKS_PER_SECOND;
+  return {
+    id: input.id,
+    name: input.name,
+    elementType: input.elementType,
+    startTime: Math.max(0, Math.round(input.startTime)),
+    duration: secondsToTicks(input.durationSeconds, tps, DEFAULT_MEDIA_DURATION_SECONDS),
+    trimStart: 0,
+    params: normalizeElementParams(),
+  };
+}
+
+/**
+ * 插入元素并按 startTime 稳定排序；重复 id 视为错误（避免写回合并时歧义）。
+ * @param clips 现有片段
+ * @param element 新片段
+ * @returns {CoreElement[]} 新数组（不改入参）
+ */
+export function insertElement(clips: readonly CoreElement[], element: CoreElement): CoreElement[] {
+  if (clips.some((clip) => clip.id === element.id)) {
+    throw new Error(`元素 id 已存在：${element.id}`);
+  }
+  return [...clips, element].sort((a, b) => a.startTime - b.startTime);
+}
+
+/**
+ * 按 id 删除元素；id 不存在时原样返回（不做无意义的历史记录）。
+ * @param clips 现有片段
+ * @param id 待删除 id
+ * @returns {CoreElement[]} 新数组或原引用
+ */
+export function removeElementById(clips: readonly CoreElement[], id: string): CoreElement[] {
+  return clips.some((clip) => clip.id === id) ? clips.filter((clip) => clip.id !== id) : [...clips];
+}
+
+/**
+ * 合并参数补丁到元素（归一化后写回），无变化时返回原引用。
+ * @param element 目标元素
+ * @param patch 参数补丁
+ * @returns {CoreElement} 新元素或原引用
+ */
+export function patchElementParams(
+  element: CoreElement,
+  patch: Partial<ElementParams>,
+): CoreElement {
+  const merged = normalizeElementParams({ ...element.params, ...patch });
+  const before = JSON.stringify(element.params ?? {});
+  const after = JSON.stringify(merged);
+  return before === after ? element : { ...element, params: merged };
+}

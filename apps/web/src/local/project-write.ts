@@ -51,6 +51,8 @@ export function buildWriteView(
             ...(edit.name !== undefined ? { name: edit.name } : {}),
             ...(edit.content !== undefined ? { content: edit.content } : {}),
             ...(edit.elementType !== undefined ? { elementType: edit.elementType } : {}),
+            // P0：可视参数写回（含 opacity/position/scale/rotate 与文字字段）。
+            ...(edit.params !== undefined ? { params: edit.params } : {}),
           };
         }),
       })),

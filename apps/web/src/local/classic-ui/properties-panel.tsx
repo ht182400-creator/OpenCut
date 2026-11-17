@@ -6,8 +6,8 @@
  * - 参数字段：label 在上、输入在下、label 左侧关键帧菱形开关
  * - 注册表按元素类型分发（text/video/image/sticker/graphic/audio/effect）
  *
- * 边界：core 只支持时间属性（start/duration/trim）编辑，transform/opacity/text 等参数
- * 为只读占位（属批 7 core 扩展），工程真实可编辑的时间字段放在专属 Timing tab。
+ * P0 起参数字段改为「受控可编辑」：数值/文本/下拉等改动经 `ClipPatch` 上送，
+ * 由 editor 写入元素 `params` 并驱动预览；不再有 disabled 只读占位。
  * 尺寸/文案来自 properties-tokens.ts；图标为本地绘制 SVG。
  */
 
@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 
 import type { ClipPatch, CoreElement } from '../editor-ui';
+import { normalizeElementParams } from '../element-model';
 import {
   AUDIO_ELEMENT_PARAMS,
   PROPERTIES_EMPTY_GAP_PX,
@@ -40,21 +41,26 @@ import {
   PROPERTIES_TAB_LABELS,
   PROPERTIES_TAB_SIZE_PX,
   PROPERTIES_TABS_BY_TYPE,
+  PROPERTIES_DEFAULT_TAB_BY_TYPE,
   TEXT_ELEMENT_PARAMS,
   VISUAL_ELEMENT_PARAMS,
   type ParamDefinition,
 } from './properties-tokens';
 
-/** 面板选中项（当前工程只有 main 轨视频片段；type 固定 video，保留扩展位）。 */
+/** 属性面板支持的元素类型（与注册表 key 对齐）。 */
+type PropertiesElementType = keyof typeof PROPERTIES_TABS_BY_TYPE;
+
+/** 面板选中项（保留扩展位；实际类型取自 CoreElement.elementType）。 */
 export interface PropertiesSelection {
   element: CoreElement
-  elementType?: 'video' | 'text' | 'image' | 'audio' | 'sticker' | 'graphic' | 'effect'
+  elementType?: PropertiesElementType
 }
 
 export interface PropertiesPanelProps {
   selected: CoreElement | null
   /** 选中元素数量（>1 显示多选文案；当前工程单轨只会是 0 或 1）。 */
   selectedCount?: number
+  /** 属性变更回调：时间字段与 params 以 ClipPatch 结构上送。 */
   onChange?: (patch: ClipPatch) => void
 }
 
@@ -92,7 +98,18 @@ function EmptyGear(): ReactNode {
   )
 }
 
-/** 关键帧菱形开关（label 左侧，本地状态仅视觉占位；动画关键帧属批 7）。 */
+/**
+ * 把字符串元素类型归一到属性面板注册表的 key（未知类型按 video）。
+ * @param value 元素类型字符串
+ * @returns {PropertiesElementType} 注册表 key
+ */
+function toPropertiesElementType(value?: string): PropertiesElementType {
+  return value && value in PROPERTIES_TABS_BY_TYPE
+    ? value as PropertiesElementType
+    : 'video'
+}
+
+/** 关键帧菱形开关（label 左侧；动画关键帧编辑属 P2，此处仅切换视觉标记）。 */
 function KeyframeToggle({ param, active, onToggle }: {
   param: ParamDefinition
   active: boolean
@@ -116,50 +133,88 @@ function KeyframeToggle({ param, active, onToggle }: {
   )
 }
 
-/** 参数字段：label（含关键帧开关）在上、输入框在下，全部只读占位。 */
-function ParamField({ param, keyframes, onKeyframe }: {
+/** 把输入字符串按参数约束解析为合法值；非法返回 null。 */
+function parseParamValue(param: ParamDefinition, raw: string): number | string | boolean | null {
+  if (param.control === 'number') {
+    const value = Number(raw)
+    if (!Number.isFinite(value)) return null
+    const min = param.min ?? -Infinity
+    const max = param.max ?? Infinity
+    return Math.min(max, Math.max(min, value))
+  }
+  if (param.control === 'boolean') return raw === 'true'
+  return raw
+}
+
+/**
+ * 参数字段：受控可编辑。数值/文本用本地草稿，失焦或按 Enter 时提交，
+ * 避免逐字符上送污染撤销历史；下拉/勾选/颜色即时提交。
+ */
+function ParamField({ param, keyframes, onKeyframe, value, onChange }: {
   param: ParamDefinition
   keyframes: Record<string, boolean>
   onKeyframe: (key: string) => void
+  value: number | string | boolean
+  onChange?: (key: string, next: number | string | boolean) => void
 }) {
+  const [draft, setDraft] = useState(() => String(value))
+  useEffect(() => { setDraft(String(value)) }, [value])
+
   const commonInput: CSSProperties = {
     width: '100%', height: PROPERTIES_NUMBER_FIELD_HEIGHT_PX, boxSizing: 'border-box',
     background: 'var(--accent)', color: 'var(--foreground)',
     border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
     padding: `0 ${PROPERTIES_NUMBER_ICON_SIZE_PX / 2}px`, fontSize: 'var(--text-sm)',
   }
+  const commitDraft = () => {
+    const parsed = parseParamValue(param, draft)
+    if (parsed !== null && parsed !== value) onChange?.(param.key, parsed)
+    else setDraft(String(value))
+  }
   let control: ReactNode
   switch (param.control) {
     case 'boolean':
       control = (
-        <input type="checkbox" disabled checked={Boolean(param.defaultValue)}
-          aria-label={param.label} style={{ accentColor: 'var(--primary)' }} />
+        <input type="checkbox" checked={Boolean(value)}
+          aria-label={param.label} style={{ accentColor: 'var(--primary)' }}
+          onChange={(event) => onChange?.(param.key, event.target.checked)} />
       )
       break
     case 'select':
       control = (
-        <select disabled aria-label={param.label} value={String(param.defaultValue)} style={commonInput}>
+        <select aria-label={param.label} value={String(value)} style={commonInput}
+          onChange={(event) => onChange?.(param.key, event.target.value)}>
           {(param.options ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
       )
       break
     case 'text':
-      control = <textarea disabled aria-label={param.label} value={String(param.defaultValue)}
-        style={{ ...commonInput, height: 60, padding: 6, resize: 'vertical' }} />
+      control = (
+        <textarea aria-label={param.label} value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commitDraft() } }}
+          style={{ ...commonInput, height: 60, padding: 6, resize: 'vertical' }} />
+      )
       break
     case 'color':
       control = (
         <div style={{ display: 'flex', alignItems: 'center', gap: PROPERTIES_SUFFIX_GAP_PX }}>
-          <input type="color" disabled aria-label={param.label} value={String(param.defaultValue)}
-            style={{ width: PROPERTIES_NUMBER_FIELD_HEIGHT_PX, height: PROPERTIES_NUMBER_FIELD_HEIGHT_PX, padding: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'transparent' }} />
-          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--muted-foreground)' }}>{String(param.defaultValue)}</span>
+          <input type="color" aria-label={param.label} value={String(value)}
+            style={{ width: PROPERTIES_NUMBER_FIELD_HEIGHT_PX, height: PROPERTIES_NUMBER_FIELD_HEIGHT_PX, padding: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'transparent' }}
+            onChange={(event) => onChange?.(param.key, event.target.value)} />
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--muted-foreground)' }}>{String(value)}</span>
         </div>
       )
       break
     default:
       control = (
-        <input type="number" disabled aria-label={param.label}
-          value={String(param.defaultValue)}
+        <input type="number" aria-label={param.label}
+          min={param.min} max={param.max} step={param.step}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commitDraft() } }}
           style={{ ...commonInput, paddingLeft: `${PROPERTIES_NUMBER_ICON_SIZE_PX + PROPERTIES_SUFFIX_GAP_PX}px` }} />
       )
       break
@@ -182,12 +237,16 @@ function ParamField({ param, keyframes, onKeyframe }: {
   )
 }
 
-/** 参数集 TAB 渲染：按 paramKeys 顺序过滤显示字段（依赖字段仅 enabled 时显示）。 */
-function ParamsSection({ params, keys, keyframes, onKeyframe }: {
+/**
+ * 参数集 TAB 渲染：按 paramKeys 顺序过滤显示字段（依赖字段仅 enabled 时显示）。
+ */
+function ParamsSection({ params, keys, keyframes, onKeyframe, values, onParamChange }: {
   params: readonly ParamDefinition[]
   keys: readonly string[]
   keyframes: Record<string, boolean>
   onKeyframe: (key: string) => void
+  values: Record<string, number | string | boolean>
+  onParamChange: (key: string, value: number | string | boolean) => void
 }) {
   return (
     <div style={{ padding: PROPERTIES_SECTION_CONTENT_PADDING_PX, display: 'flex', flexDirection: 'column', gap: PROPERTIES_SECTION_FIELDS_GAP_PX }}>
@@ -195,15 +254,18 @@ function ParamsSection({ params, keys, keyframes, onKeyframe }: {
         const param = params.find((item) => item.key === key)
         if (!param) return null
         if (param.dependsOn && !keyframes[param.dependsOn]) return null
-        return <ParamField key={key} param={param} keyframes={keyframes} onKeyframe={onKeyframe} />
+        return (
+          <ParamField key={key} param={param} keyframes={keyframes} onKeyframe={onKeyframe}
+            value={values[key] ?? param.defaultValue} onChange={onParamChange} />
+        )
       })}
     </div>
   )
 }
 
-/** 安全读取 trimEnd：core 的 CoreElement 类型缺该字段但运行时快照包含，做兼容断言。 */
+/** 安全读取 trimEnd：CoreElement 的可选字段做兼容断言。 */
 function readTrimEnd(element: CoreElement): number {
-  return (element as CoreElement & { trimEnd?: number }).trimEnd ?? 0
+  return element.trimEnd ?? 0
 }
 
 /** 工程专属 Timing tab：真实可编辑的时间字段 + 批 7.5 文本字段（name/content）。 */
@@ -215,6 +277,7 @@ function TimingSection({ selected, onChange }: {
     startTime: String(selected.startTime), duration: String(selected.duration),
     trimStart: String(selected.trimStart), trimEnd: String(readTrimEnd(selected)),
     name: selected.name ?? '', content: selected.content ?? '',
+    params: '',
   })
   const [draft, setDraft] = useState<Record<keyof ClipPatch, string>>(initialDraft)
   const [error, setError] = useState<string | null>(null)
@@ -246,7 +309,6 @@ function TimingSection({ selected, onChange }: {
             style={numberInputStyle} />
         </div>
       ))}
-      {/* 批 7.5：类型特化文本字段，编辑后经 core 写回经典版 JSON。 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: PROPERTIES_FIELD_INNER_GAP_PX }}>
         <span style={{ height: PROPERTIES_LABEL_ROW_HEIGHT_PX, fontSize: 'var(--text-xs)', color: 'var(--muted-foreground)' }}>Name</span>
         <input type="text" aria-label="Element Name" value={draft.name}
@@ -267,7 +329,6 @@ function TimingSection({ selected, onChange }: {
             if (!Number.isFinite(value) || value < 0) { setError('Fields must be non-negative numbers'); return }
             patch[key] = Math.round(value)
           }
-          // 批 7.5：仅当文本字段与选中值不同才写入，避免误覆盖原值。
           if (draft.name !== (selected.name ?? '')) patch.name = draft.name
           if (draft.content !== (selected.content ?? '')) patch.content = draft.content
           setError(null)
@@ -284,16 +345,23 @@ function TimingSection({ selected, onChange }: {
 }
 
 /**
- * 属性面板（1:1 外壳 + 按类型 tab + 参数注册表）。core 未覆盖的参数为只读占位，
- * 工程真实可编辑的时间字段在专属 Timing tab（差异登记）。
+ * 属性面板（1:1 外壳 + 按类型 tab + 参数注册表）。P0 起参数字段受控可编辑，
+ * 改动经 ClipPatch.params 上送，驱动预览；时间字段仍在 Timing tab。
  * @param props 选中元素、数量与编辑回调
  * @returns {React.ReactElement} 属性面板
  */
 export function PropertiesPanel(props: PropertiesPanelProps) {
-  const elementType: keyof typeof PROPERTIES_TABS_BY_TYPE = 'video'
-  const tabs = useMemo(() => [...PROPERTIES_TABS_BY_TYPE[elementType], 'timing' as const], [])
-  const [activeTab, setActiveTab] = useState<string>('transform')
+  const elementType = toPropertiesElementType(props.selected?.elementType)
+  const tabs = useMemo(
+    () => [...PROPERTIES_TABS_BY_TYPE[elementType], 'timing' as const],
+    [elementType],
+  )
+  const defaultTab = PROPERTIES_DEFAULT_TAB_BY_TYPE[elementType] as string
+  const [activeTab, setActiveTab] = useState<string>(defaultTab)
   const [keyframes, setKeyframes] = useState<Record<string, boolean>>({ 'background.enabled': false })
+
+  // 元素类型变化时切到该类型的默认 tab，避免停留在不存在的 tab（如 text 的 Content）。
+  useEffect(() => { setActiveTab(defaultTab) }, [defaultTab])
 
   const onKeyframe = (key: string) => {
     setKeyframes((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -328,6 +396,32 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
     )
   }
 
+  const selected = props.selected
+  const normalized = normalizeElementParams(selected.params)
+  const values: Record<string, number | string | boolean> = {
+    opacity: normalized.opacity,
+    positionX: normalized.positionX,
+    positionY: normalized.positionY,
+    scaleX: normalized.scaleX,
+    scaleY: normalized.scaleY,
+    rotate: normalized.rotate,
+  }
+  if (selected.content !== undefined) values.content = selected.content
+  // 从透传字段中挑选基础类型值（颜色/字号/字体等），排除对象/数组。
+  for (const [key, value] of Object.entries(normalized)) {
+    if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') {
+      values[key] = value
+    }
+  }
+  values.volume = typeof normalized.volume === 'number' ? normalized.volume : 0
+  values.muted = typeof normalized.muted === 'boolean' ? normalized.muted : false
+
+  const onParamChange = (key: string, value: number | string | boolean) => {
+    // content 是 CoreElement 顶层字段（写回经典版 JSON 用），其余写入 params。
+    if (key === 'content') props.onChange?.({ content: String(value) })
+    else props.onChange?.({ params: { [key]: value } })
+  }
+
   const paramsForType: readonly string[] = PROPERTIES_PARAMS_BY_TYPE[elementType]
   const params: ParamDefinition[] = [
     ...(paramsForType.includes('text') ? TEXT_ELEMENT_PARAMS : []),
@@ -337,19 +431,19 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
 
   let content: ReactNode
   if (activeTab === 'timing') {
-    content = <TimingSection selected={props.selected} onChange={props.onChange} />
+    content = <TimingSection selected={selected} onChange={props.onChange} />
   } else if (activeTab === 'transform') {
-    content = <ParamsSection params={params} keys={['transform.positionX', 'transform.positionY', 'transform.scaleX', 'transform.scaleY', 'transform.rotate']} keyframes={keyframes} onKeyframe={onKeyframe} />
+    content = <ParamsSection params={params} keys={['transform.positionX', 'transform.positionY', 'transform.scaleX', 'transform.scaleY', 'transform.rotate']} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else if (activeTab === 'blending') {
-    content = <ParamsSection params={params} keys={['opacity', 'blendMode']} keyframes={keyframes} onKeyframe={onKeyframe} />
+    content = <ParamsSection params={params} keys={['opacity', 'blendMode']} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else if (activeTab === 'audio') {
-    content = <ParamsSection params={params} keys={['volume', 'muted']} keyframes={keyframes} onKeyframe={onKeyframe} />
+    content = <ParamsSection params={params} keys={['volume', 'muted']} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else if (activeTab === 'text') {
-    content = <ParamsSection params={params} keys={TEXT_ELEMENT_PARAMS.map((p) => p.key)} keyframes={keyframes} onKeyframe={onKeyframe} />
+    content = <ParamsSection params={params} keys={TEXT_ELEMENT_PARAMS.map((p) => p.key)} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else {
     content = (
       <div style={{ padding: PROPERTIES_SECTION_CONTENT_PADDING_PX, color: 'var(--muted-foreground)', fontSize: 'var(--text-sm)' }}>
-        {PROPERTIES_TAB_LABELS[activeTab as keyof typeof PROPERTIES_TAB_LABELS] ?? activeTab} 参数需 core 扩展（批 7），当前为占位。
+        {PROPERTIES_TAB_LABELS[activeTab as keyof typeof PROPERTIES_TAB_LABELS] ?? activeTab} 参数暂未接入。
       </div>
     )
   }

@@ -11,6 +11,7 @@ import type { CSSProperties } from 'react'
 
 import { SHORTCUT_HELP } from './editor-shortcuts'
 import type { DiscoverResult, EditorAdapter, ProjectView } from './editor-adapter'
+import type { ElementParams } from './element-model'
 import { CONTAINER_LABELS } from './export-settings'
 import type { ExportContainerChoice, ExportSettings } from './export-settings'
 import { PROXY_HEIGHT, PROXY_WIDTH, RESOLUTION_PRESETS } from './resolution'
@@ -150,7 +151,7 @@ export function TopBar(props: {
   )
 }
 
-/** 属性面板可编辑的片段字段（ticks + 批 7.5 文本字段）。 */
+/** 属性面板可编辑的片段字段（ticks + 批 7.5 文本字段 + P0 可视参数）。 */
 export interface ClipPatch {
   startTime?: number
   duration?: number
@@ -160,6 +161,8 @@ export interface ClipPatch {
   name?: string
   /** 批 7.5：文字内容（undefined 表示不改该字段）。 */
   content?: string
+  /** P0：可视参数补丁（opacity/position/scale/rotate + 文字字段），undefined 表示不改。 */
+  params?: Partial<ElementParams>
 }
 
 /** 通用输入控件样式（ExportSettingsPanel 仍在使用）。 */
@@ -296,6 +299,8 @@ export interface CoreElement extends TimelineClip {
   content?: string
   /** 批 7.5：元素类型（用于写回时定位轨道/类型，缺省保持原值）。 */
   elementType?: string
+  /** P0：可视参数（不透明度/位置/缩放/旋转 + 文字字段），驱动预览与写回。 */
+  params?: ElementParams
 }
 
 /** core ripple 计算出的单条位移建议。 */

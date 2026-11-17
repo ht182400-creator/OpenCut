@@ -8,10 +8,12 @@
  * 组件逻辑为本地重写：不使用经典版 zustand/Next.js 依赖，编辑仍经 core 适配层。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { MouseEvent as ReactMouseEvent } from 'react'
+import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from 'react'
 
 import { formatTimecode, snapTicks } from '../editor-ui'
 import type { CoreElement, RippleAdjustment } from '../editor-ui'
+import type { AssetDragPayload } from './assets-panel'
+import { TIMELINE_DRAG_MIME } from './assets-tokens'
 import {
   BASE_TIMELINE_PIXELS_PER_SECOND,
   ELEMENT_RING_WIDTH_PX,
@@ -136,6 +138,8 @@ export function ClassicTimeline(props: {
   sceneName: string
   selectedId: string | null
   onSelect: (id: string) => void
+  /** P0：素材卡拖放到轨道时，按落点 ticks 回调插入（载荷经经典版 MIME 传递）。 */
+  onDropAsset?: (payload: AssetDragPayload, atTicks: number) => void
   actions: TimelineAction[]
   statusText: string
   adjustments: RippleAdjustment[]
@@ -389,6 +393,29 @@ export function ClassicTimeline(props: {
       : Math.max(minZoom, current / TIMELINE_ZOOM_BUTTON_FACTOR))
   }
 
+  /**
+   * P0：素材卡拖放落地。按落点 X 与当前缩放/滚动换算 ticks，吸附到帧网格后回调插入。
+   * 只接受本应用经典版 MIME 的载荷，避免误吞外部拖入内容。
+   */
+  const handleAssetDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!props.onDropAsset) return
+    const raw = event.dataTransfer.getData(TIMELINE_DRAG_MIME)
+    if (!raw) return
+    event.preventDefault()
+    try {
+      const payload = JSON.parse(raw) as AssetDragPayload
+      if (payload.kind !== 'text' && payload.kind !== 'media') return
+      const rect = event.currentTarget.getBoundingClientRect()
+      const relativeX = Math.max(0, event.clientX - rect.left)
+      const seconds = relativeX / pixelsPerSecond
+      const rawTicks = seconds * props.ticksPerSecond
+      const snapped = Math.max(0, Math.round(rawTicks / props.ticksPerFrame) * props.ticksPerFrame)
+      props.onDropAsset(payload, snapped)
+    } catch {
+      // 载荷损坏时忽略，不影响其他拖放（如文件导入）。
+    }
+  }
+
   /** 切换轨道静音/隐藏（本地视觉状态；core 未暴露字段，见台账差异）。 */
   const toggleTrackFlag = (trackId: string, kind: 'mute' | 'hide') => {
     const setter = kind === 'mute' ? setMutedTracks : setHiddenTracks
@@ -491,7 +518,9 @@ export function ClassicTimeline(props: {
               })}
             </div>
             <div className="classic-timeline-bookmarks" style={{ height: 16 }} title="书签（core 未暴露数据，占位）" />
-            <div className="classic-timeline-tracks" style={{ height: tracksHeight + 2 }}>
+            <div className="classic-timeline-tracks" style={{ height: tracksHeight + 2 }}
+              onDragOver={(event) => { if (props.onDropAsset && event.dataTransfer.types.includes(TIMELINE_DRAG_MIME)) event.preventDefault() }}
+              onDrop={handleAssetDrop}>
               {props.tracks.map((track, trackIndex) => {
                 const trackType = toTrackType(track.trackType)
                 const readOnly = track.id !== props.mainTrackId
