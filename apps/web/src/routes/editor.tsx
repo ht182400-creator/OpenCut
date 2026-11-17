@@ -137,7 +137,6 @@ function buildTimelineTracks(
 function Editor() {
   const [session, setSession] = useState<Session | null>(null)
   const [errorText, setErrorText] = useState<string | null>(null)
-  const [originalElements, setOriginalElements] = useState<CoreElement[]>([])
   const [elements, setElements] = useState<CoreElement[]>([])
   /** 批 2：经典版三轨（overlay/main/audio）视图；main 轨元素在渲染时用可编辑 elements 覆盖。 */
   const [projectTracks, setProjectTracks] = useState<ClassicTimelineTrack[]>([])
@@ -286,7 +285,6 @@ function Editor() {
         originalJson: text,
         ticksPerFrame: plan.ticksPerFrame, profile, projectTrackCount: tracks.length,
       })
-      setOriginalElements(mainElements)
       setElements(activeClips)
       setProjectTracks(buildTimelineTracks(project))
       setMediaStatus(activeClips === mainElements ? '未加载素材' : '已恢复上次编辑会话（可撤销）')
@@ -412,7 +410,8 @@ function Editor() {
       ticksPerFrame: session.ticksPerFrame,
       ticksPerSecond: TICKS_PER_SECOND,
       frameCount,
-      elements,
+      // SnapshotElement.trimEnd 必填；CoreElement 可选，缺省按经典版约定补 0。
+      elements: elements.map((element) => ({ ...element, trimEnd: element.trimEnd ?? 0 })),
       savedAt: new Date().toISOString(),
     })
     const url = URL.createObjectURL(new Blob([snapshotToJson(snapshot)], { type: 'application/json' }))
@@ -666,7 +665,6 @@ function Editor() {
         return
       }
       setElements(clips)
-      setOriginalElements(clips)
       setSelectedId(null)
       setAdjustments([])
       setFrameIndex(0)
@@ -811,7 +809,16 @@ function Editor() {
         resolution={resolution}
         onResolutionChange={handleResolutionChange}
       />
-      <DiagnosticsPanel items={diagnosticsItems} proxyUrl={proxyUrl} />
+      <DiagnosticsPanel
+        items={diagnosticsItems}
+        proxyUrl={proxyUrl}
+        actions={[
+          { label: '4K 基准', onClick: () => void handleBenchmark(), disabled: !session },
+          { label: '导出代理 MP4', onClick: () => void handleProxyExport(), disabled: !media },
+          { label: '清空缓存', onClick: () => void handleClearCache() },
+          { label: '导出 OTIO', onClick: () => void handleOtioExport(), disabled: !session },
+        ]}
+      />
     </div>
   )
 

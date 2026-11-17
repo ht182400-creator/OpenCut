@@ -239,7 +239,12 @@ export function ExportSettingsPanel(props: {
 }
 
 /** 折叠的诊断与高级工具：缓存、基准、剪辑历史、代理文件与 core 信息。 */
-export function DiagnosticsPanel(props: { items: Array<{ label: string; value: string }>; proxyUrl: string | null }) {
+export function DiagnosticsPanel(props: {
+  items: Array<{ label: string; value: string }>
+  proxyUrl: string | null
+  /** 高级工具入口（批 1 UI 重构收进 settings tab 后经此恢复）。 */
+  actions?: ToolbarAction[]
+}) {
   return (
     <details style={{ ...PANEL_STYLE, padding: '10px 16px' }}>
       <summary style={{ cursor: 'pointer', color: TEXT_MUTED, fontSize: 13 }}>诊断与高级工具</summary>
@@ -249,6 +254,14 @@ export function DiagnosticsPanel(props: { items: Array<{ label: string; value: s
             {item.label}：{item.value}
           </span>
         ))}
+        {props.actions && props.actions.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+            {props.actions.map((action) => (
+              <button key={action.label} type="button" disabled={action.disabled}
+                onClick={action.onClick} style={BUTTON_STYLE}>{action.label}</button>
+            ))}
+          </div>
+        )}
         {props.proxyUrl && (
           <a href={props.proxyUrl} download="opencut-proxy.mp4" style={{ color: '#7dd3fc', fontSize: 12 }}>
             下载代理 MP4
