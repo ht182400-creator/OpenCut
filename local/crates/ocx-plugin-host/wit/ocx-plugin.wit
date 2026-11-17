@@ -1,0 +1,27 @@
+// OpenCut 插件契约（W-12 第四批）。
+// 本文件是 host 官方支持的 effect/command 接口目录，是 manifest 与运行时导出
+// 白名单的单一事实来源（IDL）。插件要新增接口须 additive-only 地扩展本契约。
+//
+// 重要边界：wasmi 2.0 原生只执行 core WebAssembly module，不支持 WebAssembly
+// component model。本文件按官方 WIT 语法书写并作为契约使用，但不生成组件、
+// 不引入 canonical ABI，也不声称是组件运行时。
+
+package opencut:plugin@1.0.0;
+
+/// 效果接口：对画面/时间线产生副作用的处理。
+interface effects {
+  /// 调整亮度：输入 {"amount": number}，输出 {"brightness": number}。
+  brightness: func(payload: string) -> result<string, string>;
+}
+
+/// 命令接口：不产生副作用的原子操作。
+interface commands {
+  /// 回显命令：输入 {"value": any}，输出 {"pong": any}。
+  ping: func(payload: string) -> result<string, string>;
+}
+
+/// 插件 world：host 只接受导出 effects / commands 两个接口的插件。
+world plugin {
+  export effects;
+  export commands;
+}

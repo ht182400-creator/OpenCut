@@ -91,3 +91,47 @@
 - 错误映射（与 core 稳定错误码对齐）：未知 effect/command → `UNKNOWN_EFFECT` / `UNKNOWN_COMMAND`；插件返回 `{"error": ...}` → `HANDLER_FAILED`；缺 ABI 导出 → `INVALID_PLUGIN_ABI`。
 - 回归：`plugin-runtime.test.ts` 6 项（vitest 115/115），用真实产物而非 mock；Rust 侧第一批 13 项不变。
 - 诚实边界更新：跨进程沙箱由「零导入对象」提供，但声明式权限（文件/网络）、Rust 侧运行时（wasmi）与 WIT 组件模型仍后置。
+
+## W-12 第四批：WIT 契约层（IDL 单一事实来源）
+
+执行：`cargo test -p ocx-plugin-host`（单元 6 项 + runtime 8 项 + stability 13 项全绿），`cargo clippy -p ocx-plugin-host --all-targets -- -D warnings` 零告警。
+
+### 调研结论（官方一手资料，不凭感觉）
+
+- wasmi 官方仓库 `wasmi-labs/wasmi` 的 README 特性表：WASI 仅写 `wasip1`（经 `wasmi_wasi` crate），**未列 component model / WASI Preview 2 / WASI 0.2**；
+- 组件模型 issue `wasmi-labs/wasmi#897`「Implement the Wasm component-model proposal」仍开放；
+- 第三方 `wcmp-wasm-core-wasmi` 以「Component Model Polyfill 的 wasmi 后端」形态存在，反证 wasmi 核心不原生运行组件。
+
+**判定**：wasmi 2.0 原生只执行 core WebAssembly module。本批把 WIT 作为**接口契约（IDL）单一事实来源**，不引入 wasm-tools / wit-bindgen / cargo-component（本机均未安装，目标仅 `wasm32-unknown-unknown`），**不谎称完整组件运行时**；完整 component model 后置。
+
+### 交付与契约
+
+| 项 | 内容 |
+| --- | --- |
+| `wit/ocx-plugin.wit` | 内嵌契约：`package opencut:plugin@1.0.0`、`interface effects { brightness }`、`interface commands { ping }`、`world plugin { export effects; export commands; }`，按官方 WIT 语法（kebab-case、`///` 文档注释）书写 |
+| `src/wit.rs` | 零第三方依赖的轻量解析器：`strip_comments`（`//` / `/* */`）、`normalize_braces`（支持官方合法的单行块）、kebab-case 标识符校验、导出名映射 `get-info → effect_get_info` |
+| `runtime.rs` | `LoadedPlugin` 内嵌 `WitContract`；`authorize()` 在「manifest 白名单 + 权限」之外增加**第二层 WIT 契约白名单**，导出名必须能在内嵌 `.wit` 的 effects/commands 接口找到 |
+| 错误码 | 新增 `INVALID_WIT`（契约无法解析）与 `WIT_EXPORT_NOT_DECLARED`（导出名不在契约）两个稳定码，additive-only 追加 |
+
+### 新增稳定错误码
+
+| 错误码 | 触发 |
+| --- | --- |
+| `INVALID_WIT` | 内嵌契约结构/标识符非法（缺 package、world export 空、world export 未知接口、标识符非 kebab-case） |
+| `WIT_EXPORT_NOT_DECLARED` | manifest 已声明且权限已授予，但导出名不在 host 内嵌 WIT 契约的 effects/commands 接口 |
+
+### 用例
+
+| 用例 | 输入 | 预期 |
+| --- | --- | --- |
+| W01 | 解析内嵌 `.wit` 契约 | `package=opencut:plugin@1.0.0`、`effects=[brightness]`、`commands=[ping]` |
+| W02 | 含 `//` 与 `/* */` 注释、单行 world 块 `world p { export effects; }` 的契约 | 注释被忽略、单行块可解析，仍得 `effects=[brightness]` |
+| W03 | 缺 package / world export 空 / export 未知接口 / 接口空 | 四种结构均 `INVALID_WIT` |
+| W04 | 标识符 `bad_name` / `bad--name` / `-name` / `name-` / `1name` | kebab-case 校验拒绝 `INVALID_WIT` |
+| W05 | `to_export_name(effect_, brightness)` / `(command_, get-info)` | `effect_brightness` / `command_get_info` |
+| W06 | 白名单查询 `has_effect(brightness)` / `has_effect(brightness-extra)` / `has_command(ping)` / `has_command(brightness)` | `true / false / true / false`（精确匹配） |
+| W07 | WAT 模块真实导出 `effect_mystery`，Registration 声明 `mystery`、授予 `effect` | 加载成功，但调用被 `WIT_EXPORT_NOT_DECLARED` 拦截（证明 WIT 是独立于 manifest 的第二道闸） |
+
+### 诚实边界
+
+WIT 契约层是 **IDL + 双重导出白名单**，与现有 core wasm ABI（`ocx_alloc` / `(ptr,len)→i64`）完全兼容，浏览器侧 `plugin-runtime.ts` 与 wasmi 侧共用同一份契约语义。**未实现** WebAssembly component model 组件编解码、canonical ABI、wit-bindgen 生成绑定、WASI Preview 2/3（wasmi 不支持）；WASM glue / TS 未新增 wasmi 或 WIT 入口（本批只交付 Rust core 契约能力，避免重复重编 wasm）。

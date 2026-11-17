@@ -2,7 +2,7 @@
 //! 示例插件 wasm 与 `apps/web/public/fixtures/sample-plugin.wasm` 同源（同一产物）。
 
 use ocx_plugin_host::{
-    MAX_INPUT_BYTES, PluginError, check_manifest, load_plugin, load_plugin_with_fuel,
+    MAX_INPUT_BYTES, PluginError, Registration, check_manifest, load_plugin, load_plugin_with_fuel,
 };
 use serde_json::json;
 
@@ -129,5 +129,33 @@ fn oversized_input_is_rejected() {
             .unwrap_err()
             .code(),
         PluginError::InputTooLarge.code()
+    );
+}
+
+#[test]
+fn effect_missing_from_wit_contract_is_rejected_even_if_manifest_allows_it() {
+    // WAT 模块真实导出 effect_mystery，且提供合法 ABI；manifest 与权限都放行，
+    // 但 host 内嵌 WIT 契约没有 mystery → WIT 层必须作为独立第二道白名单拦截。
+    let wat = r#"(module
+        (memory (export "memory") 1)
+        (func (export "ocx_alloc") (param i32) (result i32) i32.const 8)
+        (func (export "ocx_dealloc") (param i32 i32))
+        (func (export "effect_mystery") (param i32 i32) (result i64) i64.const 0)
+    )"#;
+    let registration = Registration {
+        name: "mystery-plugin".to_owned(),
+        version: "1.0.0".to_owned(),
+        schema_version: "1".to_owned(),
+        capabilities: vec!["effect".to_owned()],
+        effects: vec!["mystery".to_owned()],
+        commands: Vec::new(),
+    };
+    let granted: Vec<String> = vec!["effect".to_owned()];
+    let mut plugin = load_plugin(wat.as_bytes(), registration, &granted)
+        .expect("契约外导出不影响加载，只在调用时拦截");
+    let error = plugin.call("effect_mystery", &json!({}), true).unwrap_err();
+    assert_eq!(
+        error.code(),
+        PluginError::WitExportNotDeclared(String::new()).code()
     );
 }

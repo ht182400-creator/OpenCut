@@ -85,6 +85,10 @@ pub enum PluginError {
     InputTooLarge,
     /// 线性内存访问越界。
     MemoryOutOfBounds,
+    /// WIT 契约无法解析（结构/标识符非法）。
+    InvalidWit,
+    /// 导出名未在 host 内嵌 WIT 契约的 effects/commands 接口声明。
+    WitExportNotDeclared(String),
 }
 
 impl PluginError {
@@ -111,6 +115,8 @@ impl PluginError {
             Self::InvalidOutput => "INVALID_OUTPUT",
             Self::InputTooLarge => "INPUT_TOO_LARGE",
             Self::MemoryOutOfBounds => "MEMORY_OUT_OF_BOUNDS",
+            Self::InvalidWit => "INVALID_WIT",
+            Self::WitExportNotDeclared(_) => "WIT_EXPORT_NOT_DECLARED",
         }
     }
 
@@ -150,6 +156,10 @@ impl fmt::Display for PluginError {
             Self::InvalidOutput => "插件输出指针/长度非法或超过上限",
             Self::InputTooLarge => "插件输入超过上限",
             Self::MemoryOutOfBounds => "插件线性内存访问越界",
+            Self::InvalidWit => "host 内嵌 WIT 契约无法解析",
+            Self::WitExportNotDeclared(name) => {
+                return write!(formatter, "{}：导出 {name} 未在 WIT 契约声明", self.code());
+            }
         };
         write!(formatter, "{}：{detail}", self.code())
     }

@@ -106,3 +106,5 @@
 **追加（W-12 第三批 · wasmi 运行时）**：`local/crates/ocx-plugin-host/src/runtime.rs` 为本仓库本地新写实现，使用第三方解释器 crate `wasmi`（MIT/Apache-2.0，crates.io 公开依赖，已由 Cargo.lock 固定版本）加载并调用本仓库 `ocx-plugin-sample` 的 WASM 产物；沙箱、fuel、权限白名单与错误码均为本地新写，未拷贝 Extism / Wasmtime / WIT 组件模型的实现代码。测试 WAT 片段为内联的最小模块样例，不含第三方内容。经典版 MIT © 2025-2026 声明继续保留。
 
 **追加（W-13 第三批 · Headless PNG/音频）**：`apps/local-cli/src/_png.rs` 与 `src/_wav.rs` 为本地新写实现——PNG（stored DEFLATE + CRC32/Adler32 + IHDR/IDAT/IEND）与 WAV（RIFF/fmt/data，f32→i16 PCM）均按公开标准格式手写编码，未引入 `png`/`flate2`/`crc32fast` 或任何图像/音频库代码，也未拷贝经典版或第三方编码器实现。`frame-png`/`batch-png`/`audio-export` 子命令与 `parse_pcm_json` 为本地新写；测试 PCM 为程序生成的示例采样，不含第三方音频素材。经典版 MIT © 2025-2026 声明继续保留。
+
+**追加（W-12 第四批 · WIT 契约层）**：`local/crates/ocx-plugin-host/wit/ocx-plugin.wit` 与 `src/wit.rs` 为本地新写实现——`.wit` 按 WebAssembly Component Model 官方 WIT 语法（`package`/`interface`/`world`/`export`、kebab-case）书写，仅作为本仓库的 IDL 契约单一事实来源；解析器为零第三方依赖的本地实现，未引入 `wit-bindgen`/`wasm-tools`/`cargo-component` 或任何组件模型工具链代码，也未拷贝 Wasmtime / Extism / 第三方 polyfill（如 `wcmp-*`）的实现。经官方一手资料查证 wasmi 2.0 不原生支持组件模型，故本批明确不声称组件运行时；新增的稳定错误码与双重白名单均为本地新写。经典版 MIT © 2025-2026 声明继续保留。

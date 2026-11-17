@@ -11,6 +11,7 @@
 pub mod model;
 pub mod registry;
 pub mod runtime;
+pub mod wit;
 
 pub use model::{
     DEFAULT_FUEL_LIMIT, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, PERMISSION_COMMAND, PERMISSION_EFFECT,
@@ -19,3 +20,4 @@ pub use model::{
 };
 pub use registry::{Handler, PluginHost, check_manifest};
 pub use runtime::{load_plugin, load_plugin_with_fuel};
+pub use wit::{DEFAULT_WIT, WitContract, default_contract, parse as parse_wit};

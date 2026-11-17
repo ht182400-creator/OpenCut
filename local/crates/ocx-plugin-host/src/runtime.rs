@@ -7,10 +7,11 @@
 //!
 //! 沙箱边界（细粒度权限，逐层拒绝）：
 //! 1. 零宿主导入：Linker 不注册任何 host 函数，模块含 import 即实例化失败；
-//! 2. 导出白名单：只能调用 manifest 声明过、且 host 授予对应权限的 effect/command；
-//! 3. fuel 上限：每次调用重置 fuel，耗尽即中断（防死循环/算力 DoS）；
-//! 4. 内存边界：所有 ptr/len 访问前校验不越界、不超过输入/输出上限；
-//! 5. 空模块/坏字节码：统一映射稳定错误码，不 panic。
+//! 2. manifest 白名单：只能调用 manifest 声明过、且 host 授予对应权限的 effect/command；
+//! 3. WIT 契约白名单：导出名还必须出现在 host 内嵌 `.wit` 契约（W-12 第四批，IDL 单一事实来源）；
+//! 4. fuel 上限：每次调用重置 fuel，耗尽即中断（防死循环/算力 DoS）；
+//! 5. 内存边界：所有 ptr/len 访问前校验不越界、不超过输入/输出上限；
+//! 6. 空模块/坏字节码：统一映射稳定错误码，不 panic。
 
 use wasmi::{Config, Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
 
@@ -18,6 +19,7 @@ use crate::model::{
     DEFAULT_FUEL_LIMIT, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, PERMISSION_COMMAND, PERMISSION_EFFECT,
     PluginError, Registration,
 };
+use crate::wit::{WitContract, default_contract};
 
 /// effect 导出的函数名前缀（与 `ocx-plugin-sample` / 浏览器侧一致）。
 const EFFECT_PREFIX: &str = "effect_";
@@ -34,6 +36,8 @@ pub struct LoadedPlugin {
     registration: Registration,
     granted: Vec<String>,
     fuel_limit: u64,
+    /// host 内嵌 WIT 契约（导出白名单的单一事实来源，W-12 第四批）。
+    wit: WitContract,
 }
 
 impl LoadedPlugin {
@@ -92,6 +96,8 @@ pub fn load_plugin_with_fuel(
     if fuel_limit == 0 {
         return Err(PluginError::FuelExhausted);
     }
+    // 加载 host 内嵌 WIT 契约；契约损坏时直接拒绝（不静默降级为无契约）。
+    let wit = default_contract().map_err(|_| PluginError::InvalidWit)?;
     // wasmi 2.0 的 Config 只实现 Default，不提供 new()。
     let mut config = Config::default();
     config.consume_fuel(true);
@@ -127,6 +133,7 @@ pub fn load_plugin_with_fuel(
         registration,
         granted: granted.to_vec(),
         fuel_limit,
+        wit,
     })
 }
 
@@ -180,6 +187,23 @@ impl LoadedPlugin {
         }
         if !declared.iter().any(|item| item == logical) {
             return Err(PluginError::ExportNotDeclared(export_name.to_owned()));
+        }
+        // 第二层白名单：即便 manifest 声明，导出名也必须能在 host 内嵌 WIT 契约里找到。
+        // 契约逻辑名是 kebab-case（如 get-info），core wasm 导出是 snake_case
+        // （effect_get_info），因此统一用 to_export_name 映射后比对。
+        let in_wit = if export_name.starts_with(EFFECT_PREFIX) {
+            self.wit
+                .effects
+                .iter()
+                .any(|item| WitContract::to_export_name(EFFECT_PREFIX, item) == export_name)
+        } else {
+            self.wit
+                .commands
+                .iter()
+                .any(|item| WitContract::to_export_name(COMMAND_PREFIX, item) == export_name)
+        };
+        if !in_wit {
+            return Err(PluginError::WitExportNotDeclared(export_name.to_owned()));
         }
         Ok(())
     }
