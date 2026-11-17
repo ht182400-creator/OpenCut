@@ -6,29 +6,68 @@
 //! - `ocx_dealloc(ptr, len)`：宿主归还输出内存。
 //!
 //! 沙箱边界（细粒度权限，逐层拒绝）：
-//! 1. 零宿主导入：Linker 不注册任何 host 函数，模块含 import 即实例化失败；
-//! 2. manifest 白名单：只能调用 manifest 声明过、且 host 授予对应权限的 effect/command；
-//! 3. WIT 契约白名单：导出名还必须出现在 host 内嵌 `.wit` 契约（W-12 第四批，IDL 单一事实来源）；
-//! 4. fuel 上限：每次调用重置 fuel，耗尽即中断（防死循环/算力 DoS）；
-//! 5. 内存边界：所有 ptr/len 访问前校验不越界、不超过输入/输出上限；
-//! 6. 空模块/坏字节码：统一映射稳定错误码，不 panic。
+//! 1. 默认零宿主导入：`load_plugin` 的 Linker 不注册任何 host 函数，含 import 即失败；
+//! 2. 声明式权限（W-12 第五批）：`load_plugin_with_resources` 仅按 host 授予的
+//!    `permissionScopes` 注入受控能力函数（当前 `ocx.resource_len`），函数内二次校验
+//!    具体资源，deny-by-default；未授予任何 scope 时仍为零导入；
+//! 3. manifest 白名单：只能调用 manifest 声明过、且 host 授予对应权限的 effect/command；
+//! 4. WIT 契约白名单：导出名还必须出现在 host 内嵌 `.wit` 契约（W-12 第四批，IDL 单一事实来源）；
+//! 5. fuel 上限：每次调用重置 fuel，耗尽即中断（防死循环/算力 DoS）；
+//! 6. 内存边界：所有 ptr/len 访问前校验不越界、不超过输入/输出上限；
+//! 7. 空模块/坏字节码：统一映射稳定错误码，不 panic。
 
-use wasmi::{Config, Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
+use std::collections::BTreeMap;
+
+use wasmi::{Caller, Config, Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
 
 use crate::model::{
-    DEFAULT_FUEL_LIMIT, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, PERMISSION_COMMAND, PERMISSION_EFFECT,
-    PluginError, Registration,
+    DEFAULT_FUEL_LIMIT, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, MAX_SCOPE_LEN, PERMISSION_COMMAND,
+    PERMISSION_EFFECT, PluginError, Registration, SCOPE_CAPABILITY_MEDIA_READ,
 };
+use crate::permissions::granted_allows;
 use crate::wit::{WitContract, default_contract};
 
 /// effect 导出的函数名前缀（与 `ocx-plugin-sample` / 浏览器侧一致）。
 const EFFECT_PREFIX: &str = "effect_";
 /// command 导出的函数名前缀。
 const COMMAND_PREFIX: &str = "command_";
+/// 受控能力函数所在模块名。
+const CAPABILITY_MODULE: &str = "ocx";
+/// 受控能力函数名：查询授予资源字节数（`resource key(ptr,len) -> i64 size`）。
+const CAPABILITY_RESOURCE_LEN: &str = "resource_len";
+/// scope 拒绝 trap 的稳定前缀（供错误映射识别）。
+const SCOPE_DENIED_MARKER: &str = "scope_denied:";
+
+/// 宿主注入的状态：授予的 scope + 可见资源表（声明式权限）。
+#[derive(Debug, Default, Clone)]
+pub struct HostState {
+    /// 能力名 → 已授予资源 scope 列表（deny-by-default）。
+    granted_scopes: BTreeMap<String, Vec<String>>,
+    /// 资源 key（`ns:name`）→ 字节内容（host 提供的最小数据集）。
+    resources: BTreeMap<String, Vec<u8>>,
+}
+
+impl HostState {
+    /**
+     * 构造宿主状态：只有 scope 与资源同时存在的键才对插件可见。
+     * @param granted_scopes 能力名 → 授予的 scope 列表
+     * @param resources 资源 key → 字节内容
+     * @returns {HostState} 宿主状态
+     */
+    pub fn new(
+        granted_scopes: BTreeMap<String, Vec<String>>,
+        resources: BTreeMap<String, Vec<u8>>,
+    ) -> Self {
+        Self {
+            granted_scopes,
+            resources,
+        }
+    }
+}
 
 /// 已加载插件的运行时实例（一个插件一份 Store，避免交叉污染）。
 pub struct LoadedPlugin {
-    store: Store<()>,
+    store: Store<HostState>,
     instance: Instance,
     memory: Memory,
     alloc: TypedFunc<i32, i32>,
@@ -51,6 +90,16 @@ impl LoadedPlugin {
 fn map_trap(error: &wasmi::Error, out_of_fuel: bool) -> PluginError {
     let text = error.to_string();
     let lowered = text.to_ascii_lowercase();
+    // 声明式权限：能力函数用 Result::Err(trap) 拒绝越权资源，按稳定前缀提取资源名。
+    if let Some(index) = lowered.find(SCOPE_DENIED_MARKER) {
+        let begin = index + SCOPE_DENIED_MARKER.len();
+        let resource = text[begin..]
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_owned();
+        return PluginError::ScopeDenied(resource);
+    }
     // wasmi 2.0 的 Error::is_out_of_fuel() 是 pub(crate)，外部只能按稳定错误文本判定；
     // 同时保留调用点的 get_fuel()==0 信号，双路兜底。
     if out_of_fuel || lowered.contains("out of fuel") || lowered.contains("fuel") {
@@ -80,7 +129,7 @@ pub fn load_plugin(
 }
 
 /**
- * 带自定义 fuel 上限加载插件（测试/严格环境可下调）。
+ * 带自定义 fuel 上限加载插件（零宿主导入沙箱，向后兼容）。
  * @param wasm_bytes 插件 wasm 二进制
  * @param registration 已校验注册项
  * @param granted host 授予的权限
@@ -93,6 +142,104 @@ pub fn load_plugin_with_fuel(
     granted: &[String],
     fuel_limit: u64,
 ) -> Result<LoadedPlugin, PluginError> {
+    instantiate(
+        wasm_bytes,
+        registration,
+        granted,
+        fuel_limit,
+        HostState::default(),
+        false,
+    )
+}
+
+/**
+ * 以声明式权限加载插件：只为授予的 scope 注入受控能力函数，其余导入仍被拒。
+ * @param wasm_bytes 插件 wasm 二进制
+ * @param registration 已校验注册项（含 permissionScopes）
+ * @param granted host 授予的权限
+ * @param host_state 宿主状态（授予 scope + 可见资源表）
+ * @returns {Result<LoadedPlugin, PluginError>} 已加载实例
+ */
+pub fn load_plugin_with_resources(
+    wasm_bytes: &[u8],
+    registration: Registration,
+    granted: &[String],
+    host_state: HostState,
+) -> Result<LoadedPlugin, PluginError> {
+    instantiate(
+        wasm_bytes,
+        registration,
+        granted,
+        DEFAULT_FUEL_LIMIT,
+        host_state,
+        true,
+    )
+}
+
+/**
+ * 注入受控能力函数 `ocx.resource_len(ptr,len) -> i64`：读资源 key，按授予 scope 校验后返回字节数。
+ * 越权时返回 `Result::Err(trap)`，由 `map_trap` 映射为 `SCOPE_DENIED`。
+ * @param linker 宿主链接器（数据类型为 HostState）
+ * @returns {Result<(), PluginError>} 注册失败给稳定错误码
+ */
+fn register_capabilities(linker: &mut Linker<HostState>) -> Result<(), PluginError> {
+    linker
+        .func_wrap(
+            CAPABILITY_MODULE,
+            CAPABILITY_RESOURCE_LEN,
+            |caller: Caller<'_, HostState>, ptr: i32, len: i32| -> Result<i64, wasmi::Error> {
+                if ptr <= 0 || len <= 0 || len as usize > MAX_SCOPE_LEN {
+                    return Err(wasmi::Error::new("invalid resource key length"));
+                }
+                let memory = caller
+                    .get_export("memory")
+                    .and_then(|external| external.into_memory())
+                    .ok_or_else(|| wasmi::Error::new("missing memory"))?;
+                let mut buffer = vec![0u8; len as usize];
+                memory
+                    .read(&caller, ptr as usize, &mut buffer)
+                    .map_err(|error| wasmi::Error::new(format!("memory read failed: {error}")))?;
+                let key = String::from_utf8(buffer)
+                    .map_err(|_| wasmi::Error::new("invalid utf8 resource key"))?;
+                // 声明式权限：deny-by-default，未命中授予 scope 直接拒绝。
+                if !granted_allows(
+                    &caller.data().granted_scopes,
+                    SCOPE_CAPABILITY_MEDIA_READ,
+                    &key,
+                ) {
+                    return Err(wasmi::Error::new(format!("{SCOPE_DENIED_MARKER}{key}")));
+                }
+                // 资源不存在返回 -1（调用方据此区分「无权」与「无此资源」）。
+                Ok(caller
+                    .data()
+                    .resources
+                    .get(&key)
+                    .map(|bytes| bytes.len() as i64)
+                    .unwrap_or(-1))
+            },
+        )
+        .map_err(|_| PluginError::InvalidWasm)?;
+    Ok(())
+}
+
+/**
+ * 实例化插件的共用实现：零导入或按 scope 注入能力函数两种模式。
+ * @param wasm_bytes 插件 wasm 二进制
+ * @param registration 已校验注册项
+ * @param granted host 授予的权限
+ * @param fuel_limit 单次调用 fuel 上限
+ * @param host_state 宿主状态
+ * @param with_capabilities 是否注入受控能力函数
+ * @returns {Result<LoadedPlugin, PluginError>} 已加载实例
+ */
+fn instantiate(
+    wasm_bytes: &[u8],
+    registration: Registration,
+    granted: &[String],
+    fuel_limit: u64,
+    host_state: HostState,
+    with_capabilities: bool,
+) -> Result<LoadedPlugin, PluginError> {
     if fuel_limit == 0 {
         return Err(PluginError::FuelExhausted);
     }
@@ -104,9 +251,17 @@ pub fn load_plugin_with_fuel(
     let engine = Engine::new(&config);
     let module = Module::new(&engine, wasm_bytes).map_err(|error| map_trap(&error, false))?;
 
-    // 不注册任何 host 函数：插件若 import 任何宿主能力，实例化必然失败。
-    let linker = Linker::<()>::new(&engine);
-    let mut store = Store::new(&engine, ());
+    let mut linker = Linker::<HostState>::new(&engine);
+    // 仅按授予 scope 注入受控能力；未授予任何 scope 时保持零导入语义。
+    let should_inject = with_capabilities
+        && host_state
+            .granted_scopes
+            .values()
+            .any(|scopes| !scopes.is_empty());
+    if should_inject {
+        register_capabilities(&mut linker)?;
+    }
+    let mut store = Store::new(&engine, host_state);
     store
         .set_fuel(fuel_limit)
         .map_err(|error| map_trap(&error, false))?;
@@ -153,7 +308,7 @@ fn decode_output(packed: i64) -> Result<(usize, usize), PluginError> {
 /** 校验 [offset, offset+len) 落在插件线性内存内（防越界读写）。 */
 fn ensure_memory_range(
     memory: &Memory,
-    store: &Store<()>,
+    store: &Store<HostState>,
     offset: usize,
     len: usize,
 ) -> Result<(), PluginError> {

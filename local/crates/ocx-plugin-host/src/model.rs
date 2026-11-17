@@ -3,6 +3,7 @@
 //! additive-only：字段只增不改，未知字段忽略；旧 manifest 缺字段按当前 v1 兼容。
 //! 本批只做「契约 + 权限 + 注册」，不加载真实 WASM 插件运行时（Extism / WIT 后置）。
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -34,6 +35,18 @@ pub const MAX_INPUT_BYTES: usize = 1_048_576;
 /// 指针为 0 视为空指针（宿主不读取/解引用）。
 pub const NULL_POINTER: i64 = 0;
 
+// ---- W-12 第五批：声明式权限（资源 scope）----
+/// 可声明资源 scope 的能力名（与 `PLUGIN_PERMISSIONS` 中的资源型能力对应）。
+pub const SCOPE_CAPABILITY_MEDIA_READ: &str = "media-read";
+/// scope 前缀通配符：`clip:*` 表示允许 clip 命名空间下全部资源。
+pub const SCOPE_WILDCARD: &str = "*";
+/// scope 命名空间与资源名的分隔符。
+pub const SCOPE_SEPARATOR: char = ':';
+/// 单个 scope 字符串的最大长度（防超长键注入）。
+pub const MAX_SCOPE_LEN: usize = 256;
+/// 单个能力的 scope 条数上限（防清单爆炸）。
+pub const MAX_SCOPES_PER_CAPABILITY: usize = 64;
+
 /// 插件清单；camelCase 与 WASM / TS 侧一致。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +65,9 @@ pub struct PluginManifest {
     pub effects: Vec<String>,
     #[serde(default)]
     pub commands: Vec<String>,
+    /// 资源级权限 scope（能力名 → 允许的资源列表）；缺省为空表示无资源访问（deny-by-default）。
+    #[serde(default)]
+    pub permission_scopes: BTreeMap<String, Vec<String>>,
 }
 
 /// 稳定错误码：跨语言映射用 `code()`，越权项用 `denied()` 携带。
@@ -89,6 +105,12 @@ pub enum PluginError {
     InvalidWit,
     /// 导出名未在 host 内嵌 WIT 契约的 effects/commands 接口声明。
     WitExportNotDeclared(String),
+    /// permissionScopes 声明了不支持资源 scope 的能力（或未在 capabilities 声明）。
+    UnknownScopeCapability(String),
+    /// scope 字符串非法（空、超长、缺命名空间、非法通配符位置）。
+    InvalidScope(String),
+    /// 插件请求的资源超出 host 授予的 scope。
+    ScopeDenied(String),
 }
 
 impl PluginError {
@@ -117,6 +139,9 @@ impl PluginError {
             Self::MemoryOutOfBounds => "MEMORY_OUT_OF_BOUNDS",
             Self::InvalidWit => "INVALID_WIT",
             Self::WitExportNotDeclared(_) => "WIT_EXPORT_NOT_DECLARED",
+            Self::UnknownScopeCapability(_) => "UNKNOWN_SCOPE_CAPABILITY",
+            Self::InvalidScope(_) => "INVALID_SCOPE",
+            Self::ScopeDenied(_) => "SCOPE_DENIED",
         }
     }
 
@@ -160,6 +185,23 @@ impl fmt::Display for PluginError {
             Self::WitExportNotDeclared(name) => {
                 return write!(formatter, "{}：导出 {name} 未在 WIT 契约声明", self.code());
             }
+            Self::UnknownScopeCapability(name) => {
+                return write!(
+                    formatter,
+                    "{}：能力 {name} 不支持资源 scope 或未声明",
+                    self.code()
+                );
+            }
+            Self::InvalidScope(scope) => {
+                return write!(formatter, "{}：scope {scope} 非法", self.code());
+            }
+            Self::ScopeDenied(resource) => {
+                return write!(
+                    formatter,
+                    "{}：资源 {resource} 不在授予 scope 内",
+                    self.code()
+                );
+            }
         };
         write!(formatter, "{}：{detail}", self.code())
     }
@@ -175,6 +217,9 @@ pub struct Registration {
     pub capabilities: Vec<String>,
     pub effects: Vec<String>,
     pub commands: Vec<String>,
+    /// 已授予的资源 scope；缺省为空（deny-by-default，兼容旧 JSON）。
+    #[serde(default)]
+    pub permission_scopes: BTreeMap<String, Vec<String>>,
 }
 
 /// 注册结果信封：成功给 registration，失败给 error + denied。

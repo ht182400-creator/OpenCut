@@ -135,3 +135,45 @@
 ### 诚实边界
 
 WIT 契约层是 **IDL + 双重导出白名单**，与现有 core wasm ABI（`ocx_alloc` / `(ptr,len)→i64`）完全兼容，浏览器侧 `plugin-runtime.ts` 与 wasmi 侧共用同一份契约语义。**未实现** WebAssembly component model 组件编解码、canonical ABI、wit-bindgen 生成绑定、WASI Preview 2/3（wasmi 不支持）；WASM glue / TS 未新增 wasmi 或 WIT 入口（本批只交付 Rust core 契约能力，避免重复重编 wasm）。
+
+## W-12 第五批：声明式权限（resource scope）
+
+执行：`cargo test -p ocx-plugin-host`（permissions 单元 4 + wit 单元 6 + declarative 6 + runtime 8 + stability 13 全绿），`cargo clippy -p ocx-plugin-host --all-targets -- -D warnings` 零告警。
+
+### 调研结论（官方/社区资料）
+
+capability-based security 共识：deny-by-default（manifest 显式声明能力）、host 仅注入授予的能力函数、函数内再次按 scope 校验具体资源；宿主不暴露原始文件句柄/套接字。据此本批不引入通用 WASI 文件/网络能力，只做资源级 scope + 一个受控能力函数示例。
+
+### 交付与契约
+
+| 项 | 内容 |
+| --- | --- |
+| `PluginManifest.permissionScopes` | additive-only：`BTreeMap<能力名, Vec<scope>>`，缺省空 → deny-by-default；缺省/未知字段兼容旧 JSON |
+| `Registration.permissionScopes` | 透传已授予 scope |
+| 资源型能力 | 当前仅 `media-read` 支持 scope；`effect`/`command` 是工作类型非资源，声明 scope 报 `UNKNOWN_SCOPE_CAPABILITY` |
+| scope 语法 | `namespace:resource`，`namespace:*` 整段通配；不允许部分通配、空命名空间/资源、超长（256B）、超量（每项 64 条） |
+| `load_plugin_with_resources` | 仅按授予 scope 注入受控能力函数 `ocx.resource_len(ptr,len)->i64`；未授予任何 scope 时保持零导入；旧 `load_plugin` 完全不变 |
+| 能力函数 | 读插件内存中的资源 key → 按 scope 校验 → 返回 host 资源字节数；越权返回 `Result::Err(trap)`，映射 `SCOPE_DENIED`；资源不存在返回 -1 |
+
+### 新增稳定错误码
+
+| 错误码 | 触发 |
+| --- | --- |
+| `UNKNOWN_SCOPE_CAPABILITY` | permissionScopes 的能力未在 capabilities 声明，或不是资源型能力 |
+| `INVALID_SCOPE` | scope 为空/超长/缺命名空间/空资源/部分通配，或单能力 scope 超量 |
+| `SCOPE_DENIED` | 插件请求的资源 key 不在授予 scope 内（能力函数 trap） |
+
+### 用例（`tests/declarative_permissions.rs`）
+
+| 用例 | 输入 | 预期 |
+| --- | --- | --- |
+| D01 | scope=`clip:intro`，插件请求 `clip:intro` | 能力函数放行，effect 返回合法 JSON |
+| D02 | scope=`clip:intro`，请求 `secret:key` | `SCOPE_DENIED`（错误信息含资源名） |
+| D03 | scope=`clip:*`，请求 `clip:any-name` | 通配命中放行 |
+| D04 | 零导入模式加载含能力导入的模块 | `DISALLOWED_IMPORT`（不注入能力函数） |
+| D05 | scope 声明 `export` 能力 / scope 格式 `no-separator` | `UNKNOWN_SCOPE_CAPABILITY` / `INVALID_SCOPE` |
+| D06 | 旧 manifest 无 permissionScopes | 注册成功且 scope 映射为空（deny-by-default） |
+
+### 诚实边界
+
+本批是 **Rust core 侧的 capability 权限原型**：只验证"显式声明 → 按授予注入 → 函数内按 scope 校验"闭环，受控函数仅返回资源字节数（host 资源表由调用方注入），不提供真实文件/网络访问。未实现通用 WASI P1/P2 能力、文件系统/网络 scope、跨调用资源句柄；WASM glue / TS 未新增入口（避免重复重编 wasm）。能力函数用 wasmi `func_wrap` + `Result::Err` trap，未引入 Extism / Wasmtime / 第三方权限框架。

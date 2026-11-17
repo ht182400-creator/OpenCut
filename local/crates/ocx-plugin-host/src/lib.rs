@@ -9,15 +9,18 @@
 //! - 稳定错误码由 `PluginError::code()` 提供，供 WASM / TS / MCP 映射。
 
 pub mod model;
+pub mod permissions;
 pub mod registry;
 pub mod runtime;
 pub mod wit;
 
 pub use model::{
-    DEFAULT_FUEL_LIMIT, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, PERMISSION_COMMAND, PERMISSION_EFFECT,
-    PLUGIN_MANIFEST_VERSION, PLUGIN_PERMISSIONS, PluginError, PluginManifest, RegisterResult,
-    Registration,
+    DEFAULT_FUEL_LIMIT, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, MAX_SCOPE_LEN,
+    MAX_SCOPES_PER_CAPABILITY, PERMISSION_COMMAND, PERMISSION_EFFECT, PLUGIN_MANIFEST_VERSION,
+    PLUGIN_PERMISSIONS, PluginError, PluginManifest, RegisterResult, Registration,
+    SCOPE_CAPABILITY_MEDIA_READ,
 };
+pub use permissions::{granted_allows, scope_allows, validate_permission_scopes, validate_scope};
 pub use registry::{Handler, PluginHost, check_manifest};
-pub use runtime::{load_plugin, load_plugin_with_fuel};
+pub use runtime::{HostState, load_plugin, load_plugin_with_fuel, load_plugin_with_resources};
 pub use wit::{DEFAULT_WIT, WitContract, default_contract, parse as parse_wit};

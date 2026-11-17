@@ -1,6 +1,8 @@
 //! W-12 第三批回归：wasmi 运行时 + 细粒度权限（零导入沙箱、导出白名单、fuel、内存边界）。
 //! 示例插件 wasm 与 `apps/web/public/fixtures/sample-plugin.wasm` 同源（同一产物）。
 
+use std::collections::BTreeMap;
+
 use ocx_plugin_host::{
     MAX_INPUT_BYTES, PluginError, Registration, check_manifest, load_plugin, load_plugin_with_fuel,
 };
@@ -149,6 +151,7 @@ fn effect_missing_from_wit_contract_is_rejected_even_if_manifest_allows_it() {
         capabilities: vec!["effect".to_owned()],
         effects: vec!["mystery".to_owned()],
         commands: Vec::new(),
+        permission_scopes: BTreeMap::new(),
     };
     let granted: Vec<String> = vec!["effect".to_owned()];
     let mut plugin = load_plugin(wat.as_bytes(), registration, &granted)

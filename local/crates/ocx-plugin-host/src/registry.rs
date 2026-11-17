@@ -14,6 +14,7 @@ use crate::model::{
     PERMISSION_COMMAND, PERMISSION_EFFECT, PLUGIN_PERMISSIONS, PluginError, PluginManifest,
     RegisterResult, Registration,
 };
+use crate::permissions::validate_permission_scopes;
 
 /// 插件处理器：输入 JSON、输出 JSON，失败给一段中文原因。
 pub type Handler = Box<dyn Fn(&Value) -> Result<Value, String> + Send + Sync>;
@@ -42,6 +43,7 @@ pub fn check_manifest(granted: &[&str], manifest_json: &str) -> RegisterResult {
             capabilities: manifest.capabilities,
             effects: manifest.effects,
             commands: manifest.commands,
+            permission_scopes: manifest.permission_scopes,
         }),
         Err(error) => RegisterResult::failure(&error),
     }
@@ -119,7 +121,8 @@ fn validate(manifest: &PluginManifest, granted: &[&str]) -> Result<(), PluginErr
     if !missing.is_empty() {
         return Err(PluginError::CapabilityNotGranted(missing));
     }
-    Ok(())
+    // 声明式权限：scope 必须属于已声明的资源型能力且格式合法（缺省空 → deny-by-default）。
+    validate_permission_scopes(manifest)
 }
 
 /// 插件 host：单实例注册表，处理器只在进程内绑定。

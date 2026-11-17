@@ -50,7 +50,7 @@ const HOTSPOTS = [
   { id: "H04", title: "上游架构未定，长期分叉风险", priority: "P1", milestone: "全程", status: "进行中", action: "落地新增优先 + 差异台账 + git rerere，每 2~4 周小步同步" },
   { id: "H05", title: "原生 Rust 渲染路径从未验证", priority: "P0", milestone: "M1", status: "未开始", action: "【2026-11-14 校准】CPU 帧路径已验证：Headless CLI 与 WASM core 同帧同指纹（MCP 18/18）；仍未做 GPU 纹理 render_frame_to_texture → Vec<u8> 用例与原生 CI" },
   { id: "H06", title: "workspace 未启用 crates/*", priority: "P0", milestone: "M0", status: "进行中", action: "七个 ocx-* crate 已在隔离目录编译通过，rust 1.97 与 moon ci 已实跑；剩余上游 crates/* 启用（按隔离策略待上游同步复核）" },
-  { id: "H07", title: "插件运行时未选型", priority: "P1", milestone: "M3", status: "已完成", action: "【2026-11-17 更新】W-12 四批：契约层（manifest/权限/越权拒绝 13 项）+ 浏览器原生 WebAssembly 运行时（示例插件 116,313B 真实调用）+ Rust wasmi 2.0 运行时（零宿主导入沙箱、导出白名单、fuel、内存边界、输入输出上限）+ WIT 契约层（官方一手查证 wasmi 仅 core wasm 不支持组件模型，改用内嵌 .wit 作为 IDL 单一事实来源，导出白名单双重校验、8 项运行时用例）。不谎称组件运行时；完整 component-model 仍后置" },
+  { id: "H07", title: "插件运行时未选型", priority: "P1", milestone: "M3", status: "已完成", action: "【2026-11-17 更新】W-12 五批：契约层（manifest/权限/越权拒绝 13 项）+ 浏览器原生 WebAssembly 运行时（示例插件 116,313B 真实调用）+ Rust wasmi 2.0 运行时（零宿主导入沙箱、导出白名单、fuel、内存边界、输入输出上限）+ WIT 契约层（官方查证 wasmi 仅 core wasm，内嵌 .wit 作 IDL 单一事实来源、导出白名单双重校验）+ 声明式权限（deny-by-default 资源 scope、按授予注入 ocx.resource_len、越权 SCOPE_DENIED；6 项端到端用例）。不谎称组件运行时；完整 component-model 仍后置" },
   { id: "H08", title: "MCP 规范版本与长任务模型", priority: "P2", milestone: "M5", status: "已完成", action: "【2026-11-14 校准】W-13 两批落地：本地 MCP server（stdio JSON-RPC、ocx.* 8 工具、18/18）、长任务 ocx.render.batch/status 可查进度、Headless CLI 跨栈像素一致" },
   { id: "H09", title: "许可证合规（MIT/LGPL/OFL）", priority: "P1", milestone: "全程", status: "未开始", action: "MIT 声明已由 NOTICE.md 保留；剩余 LGPL 随附与字体归属" },
   { id: "H10", title: "docs/ 被 .gitignore 忽略", priority: "P2", milestone: "M0", status: "已完成", action: "已改用 roadmap/，文档可随 fork 正常提交" },
@@ -64,8 +64,8 @@ const HOTSPOTS = [
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r62";
-const DATA_UPDATED_AT = "2026-11-17 17:30";
+const DATA_VERSION = "2026-11-08-r63";
+const DATA_UPDATED_AT = "2026-11-17 18:20";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**
