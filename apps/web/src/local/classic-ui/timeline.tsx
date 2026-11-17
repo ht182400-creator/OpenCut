@@ -137,7 +137,10 @@ export function ClassicTimeline(props: {
   mainTrackId: string
   sceneName: string
   selectedId: string | null
-  onSelect: (id: string) => void
+  /** P1：多选集合（主选中仍由 selectedId 表达；集合非空时一并高亮）。 */
+  selectedIds?: readonly string[]
+  /** P1：点击片段；additive=Cmd/Ctrl 加选，range=Shift 区间选。 */
+  onSelect: (id: string, additive: boolean, range: boolean) => void
   /** P0：素材卡拖放到轨道时，按落点 ticks 回调插入（载荷经经典版 MIME 传递）。 */
   onDropAsset?: (payload: AssetDragPayload, atTicks: number) => void
   actions: TimelineAction[]
@@ -546,9 +549,11 @@ export function ClassicTimeline(props: {
                       const left = timelineTimeToPixels(shownStart, safeZoom, props.ticksPerSecond)
                       const width = Math.max(2, timelineTimeToPixels(shownDuration, safeZoom, props.ticksPerSecond))
                       const isSelected = props.selectedId === element.id
+                        || Boolean(props.selectedIds?.includes(element.id))
                       return (
                         <div key={element.id} className="classic-timeline-element"
                           data-track-type={trackType}
+                          data-selected={isSelected}
                           title={`${element.id} · ${(shownDuration / props.ticksPerSecond).toFixed(2)}s${readOnly ? '（只读轨道）' : ''}`}
                           style={{
                             left, width,
@@ -557,7 +562,7 @@ export function ClassicTimeline(props: {
                               ? `0 0 0 ${ELEMENT_RING_WIDTH_PX}px var(--primary)` : undefined,
                             opacity: hiddenTracks.has(track.id) ? 0.5 : undefined,
                           }}
-                          onClick={() => props.onSelect(element.id)}
+                          onClick={(event) => props.onSelect(element.id, event.metaKey || event.ctrlKey, event.shiftKey)}
                           onMouseDown={(event) => startDrag(event, element, 'move', readOnly)}>
                           {(() => {
                             const thumbnailUrl = props.videoThumbnails?.get(element.id)

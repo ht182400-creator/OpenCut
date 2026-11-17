@@ -15,7 +15,11 @@ export type ShortcutAction =
   | 'deleteSelected'
   | 'splitAtPlayhead'
   | 'trimIn'
-  | 'trimOut';
+  | 'trimOut'
+  | 'copySelected'
+  | 'pasteAtPlayhead'
+  | 'duplicateSelected'
+  | 'selectAll';
 
 /** 键盘事件的最小结构（真实 KeyboardEvent 与其测试桩都满足）。 */
 export interface ShortcutEvent {
@@ -41,6 +45,20 @@ function isTypingTarget(event: ShortcutEvent): boolean {
  */
 export function matchShortcut(event: ShortcutEvent): ShortcutAction | null {
   if (!event.key || isTypingTarget(event)) return null;
+
+  // P1：Ctrl/Meta 组合键（剪贴板与全选）。Alt 组合一律跳过；
+  // Ctrl+Z / Ctrl+Shift+Z 归 clip-history，这里显式不接管，避免撤销重复触发。
+  const modifier = event.ctrlKey || event.metaKey;
+  if (modifier && !event.altKey) {
+    switch (event.key.toLowerCase()) {
+      case 'c': return 'copySelected';
+      case 'v': return 'pasteAtPlayhead';
+      case 'd': return 'duplicateSelected';
+      case 'a': return 'selectAll';
+      default: return null;
+    }
+  }
+  // 其余 Ctrl/Meta/Alt 组合跳过。
   if (event.ctrlKey || event.metaKey || event.altKey) return null;
   switch (event.key) {
     case ' ':
@@ -80,5 +98,7 @@ export const SHORTCUT_HELP = [
   'Delete 删除片段',
   'S 在播放头分割',
   'I/O 设入/出点',
+  'Ctrl/Cmd+C/V/D 复制/粘贴/副本',
+  'Ctrl/Cmd+A 全选',
   'Ctrl/Cmd+Z 撤销 · Shift+Z 重做',
 ].join(' · ');

@@ -15,6 +15,7 @@ import {
   type AutosaveStorage,
 } from './project-autosave'
 import type { ResolutionPreset } from './resolution'
+import { normalizeElementParams } from './element-model'
 
 /** 内存存储后端（可注入）。 */
 function memoryStorage(): AutosaveStorage & { data: Map<string, string> } {
@@ -31,7 +32,7 @@ const RESOLUTION: ResolutionPreset = { width: 320, height: 180, label: '360p' }
 
 function makeState(): AutosaveState {
   return {
-    elements: [{ id: 'a', startTime: 0, duration: 100, trimStart: 0, params: { opacity: 0.5 } }],
+    elements: [{ id: 'a', startTime: 0, duration: 100, trimStart: 0, params: normalizeElementParams({ opacity: 0.5 }) }],
     frameIndex: 3,
     selectedId: 'a',
     adjustments: [],

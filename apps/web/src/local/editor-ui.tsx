@@ -301,6 +301,8 @@ export interface CoreElement extends TimelineClip {
   elementType?: string
   /** P0：可视参数（不透明度/位置/缩放/旋转 + 文字字段），驱动预览与写回。 */
   params?: ElementParams
+  /** P0：来源素材 id（媒体片段），用于溯源与将来多素材选择，不写回经典版 JSON。 */
+  mediaId?: string
 }
 
 /** core ripple 计算出的单条位移建议。 */

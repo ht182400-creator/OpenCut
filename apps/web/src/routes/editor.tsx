@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import '../local/classic-ui/theme.css'
 import { CLASSIC_PANEL_CONFIG, CLASSIC_PANEL_LIMITS } from '../local/classic-ui/tokens'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../components/ui/resizable'
-import { buildTimelineAudio, downsampleForWaveform, isAacEncodingSupported, mixdownToMono, type PcmAudio } from '../local/audio'
+import { downsampleForWaveform, mixdownToMono } from '../local/audio'
 import {
   ASSET_THUMBNAIL_HEIGHT,
   ASSET_THUMBNAIL_WIDTH,
@@ -11,14 +11,11 @@ import {
   makeThumbnailDataUrl,
   thumbnailCache,
 } from '../local/thumbnail'
-import { buildWriteView, saveProjectJson } from '../local/project-write'
-import {
-  PRODUCTION_FRAME_PARAMS,
-  isVerificationFrameMode,
-  resolvePreviewPixels,
-} from '../local/frame-source'
+import { isVerificationFrameMode, resolvePreviewPixels } from '../local/frame-source'
 import { useClipHistory } from '../local/clip-history'
 import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
+import { createEditorActions } from '../local/editor-actions'
+import { useSelection } from '../local/use-selection'
 import {
   DEFAULT_MEDIA_DURATION_SECONDS,
   DEFAULT_TEXT_CONTENT,
@@ -64,19 +61,10 @@ import {
   type RippleResponse,
   type Session,
 } from '../local/editor-ui'
-import {
-  exportProjectToAv1WebM,
-  exportProjectToMp4,
-  exportProjectToWebM,
-  isExportSupported,
-  isOpusEncodingSupported,
-} from '../local/export'
 import { DEFAULT_RESOLUTION, resolutionLabel } from '../local/resolution'
 import type { ResolutionPreset } from '../local/resolution'
 import {
   DEFAULT_EXPORT_SETTINGS,
-  buildExportProfile,
-  exportFilename,
   type ExportSettings,
 } from '../local/export-settings'
 import { matchShortcut } from '../local/editor-shortcuts'
@@ -89,17 +77,8 @@ import { PreviewSection } from '../local/classic-ui/preview-section'
 import { ShortcutsDialog } from '../local/classic-ui/shortcuts-dialog'
 import { MobileGate } from '../local/classic-ui/mobile-gate'
 import {
-  createSnapshot,
-  parseSnapshot,
-  snapshotToJson,
-} from '../local/project-snapshot'
-import { formatBenchmark, measureFrameCost } from '../local/scrub-benchmark'
-import {
   MAX_DECODE_FRAMES,
-  clearFrameCache,
-  createBenchmarkVideoFile,
   createDemoVideoFile,
-  createProxyFile,
   decodeVideoFile,
   getFrameCacheStats,
   getPersistedCacheStats,
@@ -110,11 +89,9 @@ import {
 import {
   TICKS_PER_SECOND,
   clipAtTime,
-  clipsToOtioText,
   mapProjectFrame,
   moveClipBy,
   moveClipClamped,
-  otioImportToClips,
   plannedFrameCount,
   resizeClipEdge,
   splitClipAt,
@@ -178,6 +155,24 @@ export function Editor() {
   const [waveforms, setWaveforms] = useState<ReadonlyMap<string, Uint8Array>>(() => new Map())
   /** 批 7.4：元素 id → 真实帧缩略图 data URL，供时间轴视频片段显示画面。 */
   const [videoThumbnails, setVideoThumbnails] = useState<ReadonlyMap<string, string>>(() => new Map())
+
+  /**
+   * P1：选择/剪贴板 hook。回调内引用 clipHistory/session 等后续 const 是安全的——
+   * 这些 handler 只在用户交互时才执行，那时 render 已完成、const 均已初始化。
+   */
+  const selection = useSelection({
+    elements, primaryId: selectedId,
+    setPrimaryId: setSelectedId,
+    setElements,
+    recordHistory: (clips, label) => clipHistory.record(clips, label),
+    recomputeFrameCount: (clips) => {
+      if (session) setFrameCount(plannedFrameCount(clips, session.adapter, session.profile))
+    },
+    formatError: formatCoreError,
+    setErrorText, setMediaStatus,
+    canEdit: () => Boolean(session),
+    playheadTicks: () => frameIndex * (session?.ticksPerFrame ?? 1),
+  })
 
   /**
    * 批 7.3：素材音轨加载后，用 core 把真实 PCM 抽样成峰值，绑定到当前场景的音频/主轨元素。
@@ -328,6 +323,7 @@ export function Editor() {
         : restored === mainElements ? '未加载素材' : '已恢复上次编辑会话（可撤销）')
       setAdjustments(saved?.state.adjustments ?? [])
       setSelectedId(saved?.state.selectedId ?? null)
+      selection.resetSelection()
       setFrameIndex(saved?.state.frameIndex ?? 0)
       setFrameCount(Math.max(restoredPlan.frameCount, 1))
       setSourceName(name)
@@ -466,68 +462,6 @@ export function Editor() {
     }, selectedId, '编辑属性')
   }
 
-  /** UI 第三批：把当前剪辑决策保存为 OpenCut 工作区快照 JSON。 */
-  const handleSaveSnapshot = () => {
-    if (!session) return
-    const snapshot = createSnapshot({
-      name: session.project.name,
-      fps: session.fps,
-      ticksPerFrame: session.ticksPerFrame,
-      ticksPerSecond: TICKS_PER_SECOND,
-      frameCount,
-      // SnapshotElement.trimEnd 必填；CoreElement 可选，缺省按经典版约定补 0。
-      elements: elements.map((element) => ({ ...element, trimEnd: element.trimEnd ?? 0 })),
-      savedAt: new Date().toISOString(),
-    })
-    const url = URL.createObjectURL(new Blob([snapshotToJson(snapshot)], { type: 'application/json' }))
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = 'opencut-project.json'
-    anchor.click()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
-    setErrorText(null)
-  }
-
-  /**
-   * 批 7.5：把 UI 编辑的元素字段写回经典版 v31 项目 JSON 并下载。
-   * 合并当前 edits 进项目视图，经 core additive-only 写回（保留未知字段、不新增实体）。
-   */
-  const handleSaveProject = () => {
-    if (!session) return
-    try {
-      const view = buildWriteView(session.project, elements, resolution)
-      const result = saveProjectJson(
-        session.adapter, session.originalJson, view,
-        `${session.project.name || 'project'}-v31.json`,
-      )
-      if (result.ok) setErrorText(null)
-      else setErrorText(result.message)
-      setMediaStatus(result.message)
-    } catch (error) {
-      setErrorText(`项目写回异常：${formatCoreError(error)}`)
-    }
-  }
-
-  /** UI 第三批：加载快照并恢复工作区（校验失败给中文提示，不改动现状）。 */
-  const handleLoadSnapshot = async (file: File | undefined) => {
-    if (!file || !session) return
-    const parsed = parseSnapshot(await file.text())
-    if (!parsed.ok) {
-      setErrorText(`项目快照不兼容：${parsed.error}`)
-      return
-    }
-    const restored: CoreElement[] = parsed.snapshot.elements.map((item) => ({ ...item }))
-    setElements(restored)
-    clipHistory.record(restored, '加载项目快照')
-    setSelectedId(null)
-    setAdjustments([])
-    setPlaying(false)
-    setFrameIndex(0)
-    setFrameCount(plannedFrameCount(restored, session.adapter, session.profile))
-    setSourceName(parsed.snapshot.name)
-    setErrorText(null)
-  }
-
   /**
    * 生成当前帧像素：正式 UI 显示真实素材或纯色空白帧，绝不出现演示色块；
    * P0 起按当前时间命中片段的 params 做真实变换（位移/缩放/旋转/透明度）与文字栅格化，
@@ -660,125 +594,23 @@ export function Editor() {
           applyClipEdit('播放头不在选中片段内部，无法设置出点',
             (cs, ctx) => trimClipOutAt(cs, ctx.clipId, ctx.playhead))
           break
+        case 'copySelected':
+          selection.handleCopy()
+          break
+        case 'pasteAtPlayhead':
+          selection.handlePaste()
+          break
+        case 'duplicateSelected':
+          selection.handleDuplicate()
+          break
+        case 'selectAll':
+          selection.handleSelectAll()
+          break
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   })
-
-  /** 真实导出：同一帧源/音源编码为 MP4（H.264+AAC）或 WebM（VP9/AV1 + Opus）。 */
-  const handleExport = async () => {
-    if (!session) return
-    const container = exportSettings.container
-    if (!isExportSupported()) {
-      setExportState({ status: 'error', done: 0, total: 0, message: '当前浏览器不支持 WebCodecs 导出', url: null, bytes: 0 })
-      return
-    }
-    if (exportState.url) URL.revokeObjectURL(exportState.url)
-    setExportState({ status: 'running', done: 0, total: frameCount, message: '', url: null, bytes: 0 })
-    try {
-      let audioSource: PcmAudio | undefined
-      if (exportSettings.includeAudio && media?.audio && await (container !== 'mp4' ? isOpusEncodingSupported() : isAacEncodingSupported())) {
-        audioSource = buildTimelineAudio({
-          clips: elements,
-          frameCount,
-          fps: session.fps,
-          ticksPerFrame: session.ticksPerFrame,
-          sourceAudio: media.audio,
-          ticksPerSecond: TICKS_PER_SECOND,
-        })
-      }
-      const exporter = container === 'mp4' ? exportProjectToMp4
-        : container === 'webm' ? exportProjectToWebM : exportProjectToAv1WebM
-      const result = await exporter({
-        width: resolution.width, height: resolution.height,
-        fps: session.fps, frameCount, ticksPerFrame: session.ticksPerFrame,
-        profile: buildExportProfile(session.profile, exportSettings), params: PRODUCTION_FRAME_PARAMS,
-        frameSource,
-        audioSource,
-        onProgress: (done, total) => setExportState((previous) => ({ ...previous, done, total })),
-      })
-      setExportState({
-        status: 'done', done: result.frameCount, total: frameCount,
-        message: `已导出 ${result.frameCount} 帧 · ${result.durationSeconds.toFixed(2)}s${result.hasAudio ? (container !== 'mp4' ? ' · 含 Opus 音轨' : ' · 含 AAC 音轨') : ''}`,
-        filename: exportFilename(exportSettings),
-        url: URL.createObjectURL(result.blob), bytes: result.bytes,
-      })
-    } catch (error) {
-      setExportState({
-        status: 'error', done: 0, total: frameCount,
-        message: error instanceof Error ? error.message : String(error), url: null, bytes: 0,
-      })
-    }
-  }
-
-  /** 生成 3840×2160 素材，导入后测量代理帧 scrub 的量化基准。 */
-  const handleBenchmark = async () => {
-    if (!session) return
-    setErrorText(null)
-    setBenchmarkInfo('正在生成 3840×2160 基准素材…')
-    try {
-      const started = performance.now()
-      const file = await createBenchmarkVideoFile()
-      const encodeMs = Math.round(performance.now() - started)
-      await readFile(file)
-      await new Promise((resolve) => window.setTimeout(resolve, 200))
-      const result = measureFrameCost((index) => frameSource(index), 30)
-      setBenchmarkInfo(`4K 源 ${file.size} 字节 · 编码 ${encodeMs}ms · ${formatBenchmark(result)}`)
-    } catch (error) { setBenchmarkInfo(formatCoreError(error)) }
-  }
-
-  /** 把当前代理帧编码成低分辨率 MP4 供下载或跨设备复用。 */
-  const handleProxyExport = async () => {
-    if (!media) return
-    try {
-      if (proxyUrl) URL.revokeObjectURL(proxyUrl)
-      setProxyUrl(URL.createObjectURL(await createProxyFile(media)))
-    } catch (error) {
-      setErrorText(error instanceof Error ? error.message : String(error))
-    }
-  }
-
-  /** 清空内存与持久化代理缓存。 */
-  const handleClearCache = async () => {
-    if (proxyUrl) URL.revokeObjectURL(proxyUrl)
-    setProxyUrl(null)
-    await clearFrameCache()
-    await refreshCacheInfo()
-  }
-
-  /** 导入 OTIO 交换文件，按其视频轨重建时间轴（素材仍用当前已导入媒体）。 */
-  const handleOtioImport = async (file: File | undefined) => {
-    if (!session || !file) return
-    setErrorText(null)
-    try {
-      const clips = otioImportToClips(await file.text(), session.adapter)
-      if (clips.length === 0) {
-        setErrorText('OTIO 文件没有可用的视频轨片段（Gap 或空轨道不会导入）')
-        return
-      }
-      setElements(clips)
-      setSelectedId(null)
-      setAdjustments([])
-      setFrameIndex(0)
-      setPlaying(false)
-      setSourceName(file.name)
-      clipHistory.record(clips, '导入 OTIO')
-      setFrameCount(plannedFrameCount(clips, session.adapter, session.profile))
-    } catch (error) {
-      setErrorText(formatCoreError(error))
-    }
-  }
-
-  /** 把当前剪辑导出为 OTIO 交换文件（仅视频轨的剪辑决策）。 */
-  const handleOtioExport = async () => {
-    if (!session) return
-    try {
-      const text = clipsToOtioText(elements, sourceName, session.fps, media?.name ?? null, session.adapter)
-      if (otioUrl) URL.revokeObjectURL(otioUrl)
-      setOtioUrl(URL.createObjectURL(new Blob([text], { type: 'application/json' })))
-    } catch (error) { setErrorText(formatCoreError(error)) }
-  }
 
   /** 读取用户选择/拖入的文件：视频走解码，其余按项目 JSON 处理。 */
   const readFile = async (file: File | undefined) => {
@@ -834,6 +666,24 @@ export function Editor() {
     }
     await loadProject(await file.text(), file.name)
   }
+
+  /**
+   * P1 重构：导出/高级工具 handler 由工厂注入（依赖 readFile/frameSource 已就绪）。
+   * 与原地定义行为等价，闭包捕获当期状态。
+   */
+  const {
+    handleExport, handleBenchmark, handleProxyExport,
+    handleClearCache, handleOtioImport, handleOtioExport,
+    handleSaveSnapshot, handleSaveProject, handleLoadSnapshot,
+  } = createEditorActions({
+    session, elements, media, frameCount, resolution, exportSettings, exportState,
+    proxyUrl, otioUrl, sourceName,
+    setExportState, setErrorText, setMediaStatus, setProxyUrl, setOtioUrl, setBenchmarkInfo,
+    setElements, setSelectedId, setAdjustments, setFrameIndex, setPlaying,
+    setSourceName, setFrameCount,
+    frameSource, readFile, refreshCacheInfo,
+    recordHistory: (clips, label) => clipHistory.record(clips, label),
+  })
 
   /**
    * 批 7.2：切换帧分辨率。旧代理帧的像素尺寸与新分辨率不匹配，
@@ -984,6 +834,10 @@ export function Editor() {
       onClick: () => applyClipEdit('片段已在时间轴起点', (cs, ctx) => moveClipBy(cs, ctx.clipId, -ctx.ticksPerFrame)) },
     { label: '右移一帧', icon: 'duplicate', disabled: !selectedId,
       onClick: () => applyClipEdit('片段无法再右移', (cs, ctx) => moveClipBy(cs, ctx.clipId, ctx.ticksPerFrame)) },
+    // P1：剪贴板与复制品（按钮与 Ctrl/Cmd+C/V/D 等价）。
+    { label: '复制', icon: 'duplicate', disabled: !selectedId && selection.selectedIds.length === 0, onClick: selection.handleCopy },
+    { label: '粘贴到播放头', icon: 'duplicate', disabled: !session, onClick: selection.handlePaste },
+    { label: '创建副本', icon: 'duplicate', disabled: !selectedId && selection.selectedIds.length === 0, onClick: () => selection.handleDuplicate() },
   ]
 
   return (
@@ -1061,7 +915,9 @@ export function Editor() {
                 <ResizableHandle withHandle />
                 <ResizablePanel defaultSize={String(CLASSIC_PANEL_CONFIG.properties)}
                   minSize={String(CLASSIC_PANEL_LIMITS.properties.min)} maxSize={String(CLASSIC_PANEL_LIMITS.properties.max)}>
-                  <PropertiesPanel selected={selectedElement} onChange={applyPropertyPatch} />
+                  <PropertiesPanel selected={selectedElement}
+                    selectedCount={selection.selectedIds.length || (selectedElement ? 1 : 0)}
+                    onChange={applyPropertyPatch} />
                 </ResizablePanel>
               </ResizablePanelGroup>
             </ResizablePanel>
@@ -1077,7 +933,8 @@ export function Editor() {
             waveforms={waveforms}
             videoThumbnails={videoThumbnails}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            selectedIds={selection.selectedIds}
+            onSelect={selection.handleSelectClip}
             onDropAsset={handleTimelineDrop}
             adjustments={adjustments}
             frameIndex={frameIndex}
@@ -1088,7 +945,9 @@ export function Editor() {
             onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
             onMoveClip={(id, start) => applyClipEdit('片段被相邻片段挡住，无法移动到该位置', (cs) => moveClipClamped(cs, id, start), id, '拖拽片段')}
             onResizeClip={(id, edge, delta) => applyClipEdit('片段已到时长边界', (cs) => resizeClipEdge(cs, id, edge, delta, session?.ticksPerFrame ?? 4000), id, '边缘裁剪')}
-            statusText={`${selectedId ? `已选中 ${selectedId}` : '未选中片段'} · 剩余 ${elements.length} 个`}
+            statusText={selection.selectedIds.length > 1
+              ? `已选中 ${selection.selectedIds.length} 个片段 · 剩余 ${elements.length} 个`
+              : `${selectedId ? `已选中 ${selectedId}` : '未选中片段'} · 剩余 ${elements.length} 个`}
             actions={timelineActions}
           />
             </ResizablePanel>
