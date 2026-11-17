@@ -96,3 +96,7 @@
 **追加（core 扩展 · 批 7.4 帧缩略图）**：`ocx-render/src/thumbnail.rs` 的 RGBA box filter 下采样纯函数、WASM `thumbnail_rgba`、TS `thumbnail.ts`（LRU 缓存与 canvas data URL 转换）、素材卡与时间轴 `.classic-timeline-thumbnail` 渲染均为本地新写实现，未复制经典版任何样式值、字体或图标资源，也未引入第三方依赖；缩略图尺寸（112×63）与样式为本工程自行选定/设计，非经典版缩略图组件拷贝。缩略图数据来自本仓库已解码的代理帧经 core 确定性下采样生成，非经典版素材。经典版 MIT © 2025-2026 声明继续保留。
 
 **追加（core 扩展 · 批 7.5 项目格式写回接线，批 7 收官）**：TS `project-write.ts` 的 view 合并纯函数与写回下载封装、属性面板 Name/Content 输入、`project_write.rs` 新增往返用例、WASM 契约新增检查均为本地新写实现，未复制经典版任何样式值、字体或图标资源，也未引入第三方依赖；写回逻辑沿用本仓库 7.1 已有的 additive-only core 实现（`write_classic_project`），未改动经典版文件格式 schema 或字段语义。经典版 MIT © 2025-2026 声明继续保留。
+
+**追加（批 8 全量对齐与移动端 gate，UI 改造收官）**：`classic-ui/mobile-gate.tsx` 为本地新写实现，仅按经典版公开可见的文案、断点（1024px）与交互逻辑做对照复刻，未拷贝经典版 React/zustand 源码、样式表、字体或图标文件，也未引入第三方依赖；门禁的箭头符号、圆角/间距 token 均为本工程自有绘制。批 8 的并排截图与 computed style 比对仅用于验证布局尺寸一致性，未将经典版任何资源文件复制进本仓库。经典版 MIT © 2025-2026 声明继续保留。
+
+**追加（批 8 补丁 · 演示色块分层）**：`apps/web/src/local/frame-source.ts` 的验证模式判定与帧源决策纯函数为本地新写实现，仅用于把本仓库 `ocx-render` 的确定性演示帧（W-07 程序化色块）与正式 UI 画面分层，未复制经典版任何样式值、字体、图标或渲染代码，也未引入第三方依赖；`?verifyDemoFrame=1` 验证开关为工程自有约定，经典版无此机制。core 帧渲染契约与 golden master 未改动。经典版 MIT © 2025-2026 声明继续保留。

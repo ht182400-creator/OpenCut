@@ -12,11 +12,15 @@ import {
   thumbnailCache,
 } from '../local/thumbnail'
 import { buildWriteView, saveProjectJson } from '../local/project-write'
+import {
+  PRODUCTION_FRAME_PARAMS,
+  isVerificationFrameMode,
+  resolvePreviewPixels,
+} from '../local/frame-source'
 import { useClipHistory } from '../local/clip-history'
 import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
 import {
   BASE_PROFILE,
-  DEMO_PARAMS,
   PANEL_STYLE,
   SCRUB_THRESHOLD_MS,
   SURFACE_STYLE,
@@ -57,6 +61,7 @@ import type { AssetDragPayload, AssetItem } from '../local/classic-ui/assets-pan
 import { PropertiesPanel } from '../local/classic-ui/properties-panel'
 import { PreviewSection } from '../local/classic-ui/preview-section'
 import { ShortcutsDialog } from '../local/classic-ui/shortcuts-dialog'
+import { MobileGate } from '../local/classic-ui/mobile-gate'
 import {
   createSnapshot,
   parseSnapshot,
@@ -459,31 +464,33 @@ function Editor() {
     setErrorText(null)
   }
 
-  /** 生成当前帧像素：按片段 trimStart 取代理帧，交给 core 合成。 */
+  /**
+   * 生成当前帧像素：正式 UI 显示真实素材或纯色空白帧，绝不出现演示色块；
+   * 仅当 URL 带 ?verifyDemoFrame=1 时交给 core 叠加用于 golden master 定位的演示块。
+   */
   const frameSource = (index: number): Uint8Array => {
     if (!session) throw new Error('会话尚未就绪')
     const timeTicks = index * session.ticksPerFrame
+    let basePixels: Uint8Array | null = null
     if (media) {
       const mapping = mapProjectFrame(elements, timeTicks, session.fps, media.frames.length)
-      const base = mapping.sourceFrameIndex === null
+      basePixels = mapping.sourceFrameIndex === null
         ? blankFrame(resolution.width, resolution.height)
         : mediaFrameAt(media, mapping.sourceFrameIndex)
-      return session.adapter.compositeFrameRgba(base, {
-        width: resolution.width,
-        height: resolution.height,
+    }
+    return resolvePreviewPixels(
+      session.adapter,
+      session.profile,
+      basePixels,
+      {
         frameIndex: index,
         timeTicks,
         durationTicks: session.ticksPerFrame,
-        params: DEMO_PARAMS,
-      })
-    }
-    return session.adapter.renderFrameRgba({
-      frameIndex: index,
-      timeTicks,
-      durationTicks: session.ticksPerFrame,
-      profile: session.profile,
-      params: DEMO_PARAMS,
-    })
+        width: resolution.width,
+        height: resolution.height,
+      },
+      isVerificationFrameMode(),
+    )
   }
 
   /** 逐帧预览：帧号、会话、片段或素材变化时重新向 core 取像素并绘制。 */
@@ -594,7 +601,7 @@ function Editor() {
       const result = await exporter({
         width: resolution.width, height: resolution.height,
         fps: session.fps, frameCount, ticksPerFrame: session.ticksPerFrame,
-        profile: buildExportProfile(session.profile, exportSettings), params: DEMO_PARAMS,
+        profile: buildExportProfile(session.profile, exportSettings), params: PRODUCTION_FRAME_PARAMS,
         frameSource,
         audioSource,
         onProgress: (done, total) => setExportState((previous) => ({ ...previous, done, total })),
@@ -833,6 +840,7 @@ function Editor() {
   ]
 
   return (
+    <MobileGate>
     <main style={SURFACE_STYLE} className={`classic-ui-root classic-shell${dark ? ' dark' : ''}`}>
       <TopBar
         projectName={session?.project.name ?? '未加载'}
@@ -940,5 +948,6 @@ function Editor() {
         </div>
       )}
     </main>
+    </MobileGate>
   )
 }

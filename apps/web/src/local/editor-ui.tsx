@@ -78,7 +78,11 @@ export const BASE_PROFILE: Record<string, unknown> = {
   audioChannels: 2,
 }
 
-/** core 合成帧参数：深蓝底 + 半透明橙色前景矩形。 */
+/**
+ * W-07 验证台专用演示帧参数：深蓝底 + 半透明橙色前景矩形。
+ * 仅供 `frame-source.ts` 在 `?verifyDemoFrame=1` 验证模式下传给 core 做像素定位；
+ * 正式 UI 不得直接引用，否则预览/导出会出现与经典版不符的褐色演示块。
+ */
 export const DEMO_PARAMS = {
   backgroundRgba: [17, 24, 39, 255],
   accentRgba: [249, 115, 22, 255],
