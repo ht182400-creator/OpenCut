@@ -149,6 +149,8 @@ export function ClassicTimeline(props: {
   onResizeClip?: (clipId: string, edge: 'left' | 'right', deltaTicks: number) => void
   /** 批 7.3：元素 id → 真实峰值数组（0~255）；缺省时对 audio 轨渲染占位线。 */
   waveforms?: ReadonlyMap<string, Uint8Array>
+  /** 批 7.4：元素 id → 真实帧缩略图 data URL；缺省时视频片段保留纯色占位。 */
+  videoThumbnails?: ReadonlyMap<string, string>
 }) {
   const [zoomLevel, setZoomLevel] = useState(1)
   const [snapping, setSnapping] = useState(true)
@@ -528,6 +530,14 @@ export function ClassicTimeline(props: {
                           }}
                           onClick={() => props.onSelect(element.id)}
                           onMouseDown={(event) => startDrag(event, element, 'move', readOnly)}>
+                          {(() => {
+                            const thumbnailUrl = props.videoThumbnails?.get(element.id)
+                            if (!thumbnailUrl || trackType !== 'video') return null
+                            return (
+                              <img className="classic-timeline-thumbnail" src={thumbnailUrl}
+                                alt="" aria-hidden="true" draggable={false} />
+                            )
+                          })()}
                           {(() => {
                             const peaks = props.waveforms?.get(element.id)
                             if (!peaks || peaks.length === 0) return null

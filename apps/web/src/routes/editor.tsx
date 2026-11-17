@@ -4,6 +4,13 @@ import '../local/classic-ui/theme.css'
 import { CLASSIC_PANEL_CONFIG, CLASSIC_PANEL_LIMITS } from '../local/classic-ui/tokens'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../components/ui/resizable'
 import { buildTimelineAudio, isAacEncodingSupported, mixdownToMono, type PcmAudio } from '../local/audio'
+import {
+  ASSET_THUMBNAIL_HEIGHT,
+  ASSET_THUMBNAIL_WIDTH,
+  buildThumbnailCacheKey,
+  makeThumbnailDataUrl,
+  thumbnailCache,
+} from '../local/thumbnail'
 import { useClipHistory } from '../local/clip-history'
 import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
 import {
@@ -138,6 +145,8 @@ function Editor() {
   const [mediaStatus, setMediaStatus] = useState('未加载素材')
   /** 批 7.3：元素 id → 真实 PCM 峰值数组，供时间轴绘制波形。 */
   const [waveforms, setWaveforms] = useState<ReadonlyMap<string, Uint8Array>>(() => new Map())
+  /** 批 7.4：元素 id → 真实帧缩略图 data URL，供时间轴视频片段显示画面。 */
+  const [videoThumbnails, setVideoThumbnails] = useState<ReadonlyMap<string, string>>(() => new Map())
 
   /**
    * 批 7.3：素材音轨加载后，用 core 把真实 PCM 抽样成峰值，绑定到当前场景的音频/主轨元素。
@@ -163,6 +172,36 @@ function Editor() {
     } catch (error) {
       setWaveforms(new Map())
       setErrorText(`波形抽样失败：${formatCoreError(error)}`)
+    }
+  }, [session, media])
+
+  /**
+   * 批 7.4：素材帧加载后，用 core 把首帧下采样成缩略图，绑定到当前场景的视频/主轨元素。
+   * 缓存按素材指纹 + 帧索引 + 尺寸隔离；core 失败或代表性帧缺失时不绑定，时间轴保持占位。
+   */
+  useEffect(() => {
+    if (!session || !media || media.frames.length === 0) {
+      setVideoThumbnails(new Map())
+      return
+    }
+    try {
+      const scene = session.project.scenes.find((item) => item.id === session.project.currentSceneId)
+        ?? session.project.scenes[0]
+      const bindings = new Map<string, string>()
+      const videoElements = (scene?.tracks ?? [])
+        .filter((track) => track.trackType === 'video')
+        .flatMap((track) => track.elements)
+      if (videoElements.length > 0) {
+        const url = makeThumbnailDataUrl(
+          session.adapter, media.frames[0], media.width, media.height,
+          ASSET_THUMBNAIL_WIDTH, ASSET_THUMBNAIL_HEIGHT,
+        )
+        if (url) for (const element of videoElements) bindings.set(element.id, url)
+      }
+      setVideoThumbnails(bindings)
+    } catch (error) {
+      setVideoThumbnails(new Map())
+      setErrorText(`缩略图生成失败：${formatCoreError(error)}`)
     }
   }, [session, media])
   /** 批 3：素材面板网格数据；导入视频后追加，供 112px 卡片网格展示。 */
@@ -631,10 +670,25 @@ function Editor() {
           ? `${decoded.cacheDetail}命中 · ${decoded.decodeMilliseconds}ms`
           : `解码 ${decoded.decodeMilliseconds}ms${decoded.persisted ? ' · 已持久化' : ''}`
         setMedia(decoded)
-        // 批 3：追加到素材网格；core 暂无帧缩略图接口，thumbnailUrl 留空由卡片占位图标兜底（见台账 §4）。
+        // 批 7.4：用 core 把首帧下采样成素材卡缩略图（缓存 key 含指纹+帧+尺寸）。
+        let thumbnailUrl: string | undefined
+        if (session && decoded.frames.length > 0) {
+          const fingerprint = `${file.name}|${file.size}|${file.lastModified}`
+          const cacheKey = buildThumbnailCacheKey({
+            fingerprint, frameIndex: 0, width: ASSET_THUMBNAIL_WIDTH, height: ASSET_THUMBNAIL_HEIGHT,
+          })
+          thumbnailUrl = thumbnailCache.get(cacheKey) ?? makeThumbnailDataUrl(
+            session.adapter, decoded.frames[0], decoded.width, decoded.height,
+            ASSET_THUMBNAIL_WIDTH, ASSET_THUMBNAIL_HEIGHT,
+          )
+          if (thumbnailUrl) thumbnailCache.set(cacheKey, thumbnailUrl)
+        }
         setAssets((prev) => prev.some((item) => item.id === decoded.name)
           ? prev
-          : [...prev, { id: decoded.name, name: decoded.name, type: 'video', duration: decoded.durationSeconds }])
+          : [...prev, {
+            id: decoded.name, name: decoded.name, type: 'video',
+            duration: decoded.durationSeconds, thumbnailUrl,
+          }])
         setMediaStatus(
           `已载入 ${decoded.name} · ${decoded.frames.length} 代理帧 · ${decoded.durationSeconds.toFixed(2)}s · ${decoded.audio ? '含音轨' : '无音轨'} · ${cost}`,
         )
@@ -831,6 +885,7 @@ function Editor() {
             mainTrackId="main"
             sceneName={session.project.scenes.find((item) => item.id === session.project.currentSceneId)?.name ?? '主场景'}
             waveforms={waveforms}
+            videoThumbnails={videoThumbnails}
             selectedId={selectedId}
             onSelect={setSelectedId}
             adjustments={adjustments}

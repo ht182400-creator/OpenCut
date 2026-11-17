@@ -26,6 +26,7 @@ import init, {
   schema_version,
   write_classic_project,
   waveform_peaks_from_pcm,
+  thumbnail_rgba,
 } from "./wasm/ocx_bindings_wasm.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -455,6 +456,46 @@ try {
     JSON.stringify({ params: { bins: 2 } }),
   );
   check("波形非有限样本按静音处理", () => assert.deepEqual(Array.from(waveNonFinite), [0, 0]));
+
+  // 批 7.4：RGBA 帧 → 缩略图（box filter 下采样，Uint8Array 直传）
+  const thumbReq = JSON.stringify({ srcWidth: 2, srcHeight: 2, width: 1, height: 1 });
+  const src2x2 = new Uint8Array([
+    0, 0, 0, 255, 100, 100, 100, 255,
+    200, 200, 200, 255, 255, 255, 255, 255,
+  ]);
+  const thumb1 = thumbnail_rgba(src2x2, thumbReq);
+  check("缩略图返回 Uint8Array 且长度正确", () => {
+    assert.equal(thumb1 instanceof Uint8Array, true);
+    assert.equal(thumb1.length, 4);
+  });
+  check("缩略图按区域平均取色", () =>
+    assert.deepEqual(Array.from(thumb1), [138, 138, 138, 255]),
+  );
+  const thumbSame = thumbnail_rgba(src2x2, JSON.stringify({
+    srcWidth: 2, srcHeight: 2, width: 2, height: 2,
+  }));
+  check("源尺寸等于目标时原样返回", () => assert.deepEqual(Array.from(thumbSame), Array.from(src2x2)));
+  check("缩略图缺字段被拒绝", () =>
+    assert.throws(() => thumbnail_rgba(src2x2, JSON.stringify({ srcWidth: 2 })), /缩略图/),
+  );
+  check("缩略图底图长度不符被拒绝", () =>
+    assert.throws(
+      () => thumbnail_rgba(new Uint8Array(3), thumbReq),
+      /INVALID_THUMBNAIL_INPUT|生成缩略图/,
+    ),
+  );
+  check("缩略图尺寸为零被拒绝", () =>
+    assert.throws(
+      () => thumbnail_rgba(src2x2, JSON.stringify({ srcWidth: 2, srcHeight: 2, width: 0, height: 1 })),
+      /INVALID_THUMBNAIL_SIZE|生成缩略图/,
+    ),
+  );
+  check("缩略图超出像素上限被拒绝", () =>
+    assert.throws(
+      () => thumbnail_rgba(src2x2, JSON.stringify({ srcWidth: 2, srcHeight: 2, width: 1024, height: 1024 })),
+      /THUMBNAIL_TOO_LARGE|生成缩略图/,
+    ),
+  );
 
   // W-05 第五批：经典版项目 JSON 无损写回（真实 WASM 产物）
   const classicProject = readFileSync(path.resolve(HERE, "../../public/fixtures/classic-project-v31.json"), "utf8");

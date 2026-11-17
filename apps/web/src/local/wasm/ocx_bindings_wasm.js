@@ -336,6 +336,36 @@ export function schema_version() {
 }
 
 /**
+ * 把 RGBA 源帧按 box filter 缩小成缩略图（批 7.4，供素材卡/时间轴显示真实画面）。
+ *
+ * `pixels` 以 `Uint8Array` 直传（避免 base64 膨胀）；`request_json` 含
+ * `srcWidth`/`srcHeight`/`width`/`height`。返回缩略图 RGBA8 `Uint8Array`（长度 width*height*4）。
+ * @param {Uint8Array | number[]} pixels
+ * @param {string} request_json
+ * @returns {Uint8Array}
+ */
+export function thumbnail_rgba(pixels, request_json) {
+    let ptr0, len0, ptr1, len1;
+    try {
+        ptr0 = passArray8ToWasm0(pixels, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passStringToWasm0(request_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        len1 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr1) { wasm.__wbindgen_free(ptr1, len1 * 1, 1); }
+        if (ptr0) { wasm.__wbindgen_free(ptr0, len0 * 1, 1); }
+        throw e;
+    }
+    const ret = wasm.thumbnail_rgba(ptr0, len0, ptr1, len1);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v3;
+}
+
+/**
  * 把浏览器解码的单声道 PCM 抽样成固定条数峰值（批 7.3，供时间轴绘制真实波形）。
  *
  * `pcm_samples` 以 `Float32Array` 直接传入（避免 JSON 膨胀），`request_json` 仅含

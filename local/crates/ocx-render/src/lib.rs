@@ -10,6 +10,7 @@
 pub mod frame;
 pub mod plan;
 pub mod profile;
+pub mod thumbnail;
 pub mod waveform;
 
 /// 跨语言浮点比较容差（秒）；帧时长由整数 ticks 推导，误差仅来自 f64 表示。
@@ -26,6 +27,7 @@ pub use profile::{
     MAX_VIDEO_BITRATE_BPS, MIN_VIDEO_BITRATE_BPS, ProfileError, SUPPORTED_AUDIO_SAMPLE_RATES,
     validate_export_profile,
 };
+pub use thumbnail::{MAX_THUMBNAIL_PIXELS, ThumbnailError, thumbnail_rgba};
 pub use waveform::{
     DEFAULT_WAVEFORM_BINS, MAX_PCM_SAMPLES, MAX_WAVEFORM_BINS, WaveformError, WaveformParams,
     waveform_peaks,

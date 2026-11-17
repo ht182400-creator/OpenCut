@@ -23,7 +23,7 @@ use ocx_editor_api::{
 use ocx_io::{EditTimeline, export_otio, import_otio};
 use ocx_render::{
     ExportProfile, FrameParams, WaveformParams, build_frame_plan, composite_frame, render_frame,
-    validate_export_profile, waveform_peaks,
+    thumbnail_rgba as thumbnail_rgba_core, validate_export_profile, waveform_peaks,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -276,6 +276,28 @@ pub fn waveform_peaks_from_pcm(
     let peaks =
         waveform_peaks(pcm_samples, &params).map_err(|error| js_error("生成波形", error))?;
     Ok(peaks)
+}
+
+/// 把 RGBA 源帧按 box filter 缩小成缩略图（批 7.4，供素材卡/时间轴显示真实画面）。
+///
+/// `pixels` 以 `Uint8Array` 直传（避免 base64 膨胀）；`request_json` 含
+/// `srcWidth`/`srcHeight`/`width`/`height`。返回缩略图 RGBA8 `Uint8Array`（长度 width*height*4）。
+#[wasm_bindgen]
+pub fn thumbnail_rgba(pixels: &[u8], request_json: &str) -> Result<Vec<u8>, JsValue> {
+    let request: Value = serde_json::from_str(request_json)
+        .map_err(|error| js_error("解析缩略图请求 JSON", error))?;
+    let field = |name: &str| -> Result<u32, JsValue> {
+        let value = request[name]
+            .as_u64()
+            .ok_or_else(|| JsValue::from_str(&format!("缩略图请求缺少正整数 {name}")))?;
+        u32::try_from(value).map_err(|_| JsValue::from_str(&format!("缩略图 {name} 超出范围")))
+    };
+    let src_width = field("srcWidth")?;
+    let src_height = field("srcHeight")?;
+    let width = field("width")?;
+    let height = field("height")?;
+    thumbnail_rgba_core(pixels, src_width, src_height, width, height)
+        .map_err(|error| js_error("生成缩略图", error))
 }
 
 /// 通道类型探测（供前端在提交请求前校验 fallback 类型，避免无谓的 WASM 调用）。

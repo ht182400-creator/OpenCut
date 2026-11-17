@@ -523,6 +523,17 @@
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
   pointer-events: none;
 }
+/* 批 7.4：视频片段真实缩略图，铺满片段作为背景，名称/手柄浮在其上。 */
+.classic-timeline-thumbnail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.7;
+  pointer-events: none;
+  user-select: none;
+}
 /* 批 7.3：音频片段真实波形（峰值竖条），铺在片段背景上、名称之下。 */
 .classic-timeline-waveform {
   position: absolute;

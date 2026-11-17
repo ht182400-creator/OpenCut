@@ -83,6 +83,14 @@ export function render_frame_rgba(request_json: string): Uint8Array;
 export function schema_version(): string;
 
 /**
+ * 把 RGBA 源帧按 box filter 缩小成缩略图（批 7.4，供素材卡/时间轴显示真实画面）。
+ *
+ * `pixels` 以 `Uint8Array` 直传（避免 base64 膨胀）；`request_json` 含
+ * `srcWidth`/`srcHeight`/`width`/`height`。返回缩略图 RGBA8 `Uint8Array`（长度 width*height*4）。
+ */
+export function thumbnail_rgba(pixels: Uint8Array | number[], request_json: string): Uint8Array;
+
+/**
  * 把浏览器解码的单声道 PCM 抽样成固定条数峰值（批 7.3，供时间轴绘制真实波形）。
  *
  * `pcm_samples` 以 `Float32Array` 直接传入（避免 JSON 膨胀），`request_json` 仅含
@@ -112,6 +120,7 @@ export interface InitOutput {
     readonly read_classic_project: (a: number, b: number) => [number, number, number, number];
     readonly render_frame_rgba: (a: number, b: number) => [number, number, number, number];
     readonly schema_version: () => [number, number];
+    readonly thumbnail_rgba: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly waveform_peaks_from_pcm: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly write_classic_project: (a: number, b: number) => [number, number, number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;

@@ -9,6 +9,9 @@
 /** WASM 静态资源路径（由 wasm-bindgen 生成后放入 public/wasm/）。 */
 export const CORE_WASM_URL = '/wasm/ocx_bindings_wasm_bg.wasm';
 
+/** 缩略图目标像素上限（镜像 core `ocx-render::thumbnail::MAX_THUMBNAIL_PIXELS`）。 */
+export const MAX_THUMBNAIL_PIXELS = 512 * 512;
+
 /** core 支持的请求类型，与 Rust `domain_eval` 的分支一一对应。 */
 export const SUPPORTED_KINDS = [
   'rippleAdjustments',
@@ -101,6 +104,16 @@ export interface CoreCompositeRequest {
 export interface CoreWaveformRequest {
   /** 峰值条数（1~4096），缺省 16。 */
   bins?: number;
+}
+
+/** 缩略图请求（批 7.4）：源帧像素单独以 Uint8Array 传，尺寸参数走 JSON。 */
+export interface CoreThumbnailRequest {
+  /** 源帧宽高（像素）。 */
+  srcWidth: number;
+  srcHeight: number;
+  /** 目标缩略图宽高（像素）。 */
+  width: number;
+  height: number;
 }
 
 /** 经典版项目只读视图的元素。 */
@@ -259,6 +272,28 @@ export function validateWaveformRequest(request: unknown): asserts request is Co
 }
 
 /**
+ * 校验缩略图请求（四个尺寸字段均为正整数，目标像素不超过上限）。
+ * @param request 待校验的未知输入
+ * @returns {void}
+ */
+export function validateThumbnailRequest(request: unknown): asserts request is CoreThumbnailRequest {
+  if (!request || typeof request !== 'object') {
+    throw new Error('缩略图请求必须是对象；请检查调用参数后重试。');
+  }
+  const candidate = request as Record<string, unknown>;
+  for (const field of ['srcWidth', 'srcHeight', 'width', 'height']) {
+    const value = candidate[field];
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+      throw new Error(`缩略图 ${field} 必须是正整数；请检查后重试。`);
+    }
+  }
+  const pixels = (candidate.width as number) * (candidate.height as number);
+  if (pixels > MAX_THUMBNAIL_PIXELS) {
+    throw new Error('缩略图像素数超出上限；请检查后重试。');
+  }
+}
+
+/**
  * 把 core 抛出的异常整理成用户可理解的中文提示。
  * @param error 未知异常
  * @returns {string} 友好错误文案
@@ -307,6 +342,8 @@ export interface EditorAdapter {
   compositeFrameRgba(basePixels: Uint8Array, request: CoreCompositeRequest): Uint8Array;
   /** 批 7.3：把单声道 PCM 抽样成固定条数峰值（0~255），供时间轴绘制真实波形。 */
   waveformPeaksFromPcm(pcmSamples: Float32Array, request: CoreWaveformRequest): Uint8Array;
+  /** 批 7.4：把 RGBA 源帧下采样成缩略图，供素材卡/时间轴显示真实画面。 */
+  makeThumbnail(pixels: Uint8Array, request: CoreThumbnailRequest): Uint8Array;
   /** 读取经典版项目 JSON（只读）。 */
   readClassicProject(projectJson: string): ProjectResult;
   /** 写回经典版项目 JSON（按 id 合并、保留未知字段）。 */
@@ -360,6 +397,13 @@ export async function createEditorAdapter(): Promise<EditorAdapter> {
         ): Uint8Array => {
           validateWaveformRequest(request);
           return glue.waveform_peaks_from_pcm(pcmSamples, JSON.stringify(request));
+        },
+        makeThumbnail: (
+          pixels: Uint8Array,
+          request: CoreThumbnailRequest,
+        ): Uint8Array => {
+          validateThumbnailRequest(request);
+          return glue.thumbnail_rgba(pixels, JSON.stringify(request));
         },
         readClassicProject: (projectJson: string): ProjectResult =>
           JSON.parse(glue.read_classic_project(projectJson)) as ProjectResult,
