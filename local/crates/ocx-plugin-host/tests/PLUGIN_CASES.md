@@ -44,9 +44,45 @@
 | P12 | host 未授予 `effect` 时调用 | `PERMISSION_DENIED`（权限是 host 实例级） |
 | P13 | 处理器返回 Err | `HANDLER_FAILED` |
 
+## W-12 第三批：wasmi 运行时 + 细粒度权限
+
+执行：`cargo test -p ocx-plugin-host --test runtime`（7 项）；示例 wasm 为 `apps/web/public/fixtures/sample-plugin.wasm`（116,313B，与浏览器侧同一产物）。
+
+### 新增稳定错误码
+
+| 错误码 | 触发 |
+| --- | --- |
+| `INVALID_WASM` | 模块无法解析/校验，或缺少 `memory`/`ocx_alloc`/`ocx_dealloc` 导出 |
+| `DISALLOWED_IMPORT` | 模块声明了宿主未提供的导入（沙箱要求零导入） |
+| `EXPORT_NOT_DECLARED` | 调用的导出名无 `effect_`/`command_` 前缀，或去前缀后的逻辑名未在 manifest 声明 |
+| `FUEL_EXHAUSTED` | 单次调用 fuel 耗尽（死循环/算力 DoS 防护） |
+| `INVALID_OUTPUT` | 输出指针为 0、长度为 0 或超过 `MAX_OUTPUT_BYTES` |
+| `INPUT_TOO_LARGE` | 输入 JSON 超过 `MAX_INPUT_BYTES` |
+| `MEMORY_OUT_OF_BOUNDS` | ptr+len 越出插件线性内存 |
+
+### 细粒度权限（沙箱层）
+
+1. **零宿主导入**：`Linker` 不注册任何 host 函数，模块含 import 即实例化失败；
+2. **导出白名单**：调用前按导出名前缀推导所需权限（`effect_`/`command_`），去前缀后校验 manifest 逻辑名 + host 授予权限（不信任调用方传入的 is_effect 标记）；
+3. **fuel 上限**：默认 10,000,000，每次调用重置，耗尽即中断；
+4. **内存边界**：所有 ptr/len 访问前校验 `offset+len <= memory.len()`；
+5. **输入输出上限**：各 1 MiB，防巨型 payload OOM。
+
+### 运行用例
+
+| 用例 | 输入 | 预期 |
+| --- | --- | --- |
+| R01 | 真实 wasm 调 `effect_brightness(amount=0.25)` / `command_ping(value=7)` | `brightness=0.5` / `pong=7`（wasmi 真实执行） |
+| R02 | 注册后 granted 为空再调用 | `PERMISSION_DENIED` |
+| R03 | 调内部 ABI `ocx_alloc` | `EXPORT_NOT_DECLARED` |
+| R04 | fuel 上限设为 1 后调用 | `FUEL_EXHAUSTED` |
+| R05 | 非 wasm 字节 | `INVALID_WASM` |
+| R06 | WAT 模块含 `host.log` 导入 | `DISALLOWED_IMPORT` |
+| R07 | 输入 JSON > 1 MiB | `INPUT_TOO_LARGE` |
+
 ## 诚实边界
 
-本批**不加载真实 WASM 插件**：示例插件的处理器由 Rust 侧 `bind_handlers` 绑定到已注册项，host 能真实调用，但没有 Extism / WIT 运行时、没有插件沙箱、没有跨进程 ABI。manifest 只描述权限与注册项，插件代码本身不在仓库内。后续批次接 WIT 时，应保持本节的错误码与校验顺序不变。
+第一批只做契约与处理器绑定（不加载 wasm）；第三批补上 wasmi 真实运行时与细粒度权限，前后两批的错误码与校验顺序保持不变。**WIT 组件模型下一批**：当前 ABI 仍为手写 `(ptr,len)→i64`（与浏览器侧一致），未引入 WIT/component-model；WASM glue 与 TS 侧尚未暴露 wasmi 运行时入口（本批只交付 Rust core 能力，避免重复重编 wasm）。
 
 ## W-12 第二批：原生 WASM 插件运行时
 

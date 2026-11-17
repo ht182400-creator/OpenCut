@@ -10,9 +10,12 @@
 
 pub mod model;
 pub mod registry;
+pub mod runtime;
 
 pub use model::{
-    PERMISSION_COMMAND, PERMISSION_EFFECT, PLUGIN_MANIFEST_VERSION, PLUGIN_PERMISSIONS,
-    PluginError, PluginManifest, RegisterResult, Registration,
+    DEFAULT_FUEL_LIMIT, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, PERMISSION_COMMAND, PERMISSION_EFFECT,
+    PLUGIN_MANIFEST_VERSION, PLUGIN_PERMISSIONS, PluginError, PluginManifest, RegisterResult,
+    Registration,
 };
 pub use registry::{Handler, PluginHost, check_manifest};
+pub use runtime::{load_plugin, load_plugin_with_fuel};

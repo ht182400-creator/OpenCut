@@ -24,6 +24,16 @@ pub const PERMISSION_COMMAND: &str = "command";
 /// manifest 契约版本。
 pub const PLUGIN_MANIFEST_VERSION: u32 = 1;
 
+// ---- W-12 第三批：wasmi 运行时的细粒度权限与资源上限 ----
+/// 单次插件调用的默认 fuel 上限（防死循环/算力 DoS）。
+pub const DEFAULT_FUEL_LIMIT: u64 = 10_000_000;
+/// 插件返回 JSON 的最大字节数（防恶意巨型输出 OOM）。
+pub const MAX_OUTPUT_BYTES: usize = 1_048_576;
+/// 插件输入 JSON 的最大字节数。
+pub const MAX_INPUT_BYTES: usize = 1_048_576;
+/// 指针为 0 视为空指针（宿主不读取/解引用）。
+pub const NULL_POINTER: i64 = 0;
+
 /// 插件清单；camelCase 与 WASM / TS 侧一致。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +70,21 @@ pub enum PluginError {
     UnknownEffect,
     UnknownCommand,
     HandlerFailed,
+    // ---- 运行时细粒度权限错误 ----
+    /// 插件 WASM 模块无法解析/校验。
+    InvalidWasm,
+    /// 模块含宿主未提供的导入（沙箱要求零导入）。
+    DisallowedImport,
+    /// 调用超出 manifest 声明的 effect/command 白名单。
+    ExportNotDeclared(String),
+    /// fuel 耗尽（死循环或超算力）。
+    FuelExhausted,
+    /// 插件输出指针/长度越界或超过上限。
+    InvalidOutput,
+    /// 插件输入超过上限。
+    InputTooLarge,
+    /// 线性内存访问越界。
+    MemoryOutOfBounds,
 }
 
 impl PluginError {
@@ -79,6 +104,13 @@ impl PluginError {
             Self::UnknownEffect => "UNKNOWN_EFFECT",
             Self::UnknownCommand => "UNKNOWN_COMMAND",
             Self::HandlerFailed => "HANDLER_FAILED",
+            Self::InvalidWasm => "INVALID_WASM",
+            Self::DisallowedImport => "DISALLOWED_IMPORT",
+            Self::ExportNotDeclared(_) => "EXPORT_NOT_DECLARED",
+            Self::FuelExhausted => "FUEL_EXHAUSTED",
+            Self::InvalidOutput => "INVALID_OUTPUT",
+            Self::InputTooLarge => "INPUT_TOO_LARGE",
+            Self::MemoryOutOfBounds => "MEMORY_OUT_OF_BOUNDS",
         }
     }
 
@@ -109,6 +141,15 @@ impl fmt::Display for PluginError {
             Self::UnknownEffect => "未注册的 effect",
             Self::UnknownCommand => "未注册的 command",
             Self::HandlerFailed => "插件处理器执行失败",
+            Self::InvalidWasm => "WASM 模块无法解析或校验",
+            Self::DisallowedImport => "插件声明了宿主未提供的导入（沙箱要求零导入）",
+            Self::ExportNotDeclared(name) => {
+                return write!(formatter, "{}：导出 {name} 未在 manifest 声明", self.code());
+            }
+            Self::FuelExhausted => "插件执行 fuel 耗尽（疑似死循环或超算力）",
+            Self::InvalidOutput => "插件输出指针/长度非法或超过上限",
+            Self::InputTooLarge => "插件输入超过上限",
+            Self::MemoryOutOfBounds => "插件线性内存访问越界",
         };
         write!(formatter, "{}：{detail}", self.code())
     }

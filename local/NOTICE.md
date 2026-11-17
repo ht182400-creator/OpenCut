@@ -103,4 +103,6 @@
 
 **追加（tsc 基线清零维护）**：`DiagnosticsPanel` 的 `actions` 高级工具入口为本地新写实现，恢复的是本仓库 W-08/W-09/W-10 既有的 4K 基准 / 代理导出 / 清缓存 / OTIO 导出功能入口（非经典版代码拷贝）。`calendar.tsx` 的 `table`→`month_grid` 与 `spinner.tsx` 的 strokeWidth 归一化仅为对齐本工程已安装依赖（`react-day-picker@3.8.0` / `@hugeicons/react`）的公开类型定义，未复制第三方实现代码。经典版 MIT © 2025-2026 声明继续保留。
 
+**追加（W-12 第三批 · wasmi 运行时）**：`local/crates/ocx-plugin-host/src/runtime.rs` 为本仓库本地新写实现，使用第三方解释器 crate `wasmi`（MIT/Apache-2.0，crates.io 公开依赖，已由 Cargo.lock 固定版本）加载并调用本仓库 `ocx-plugin-sample` 的 WASM 产物；沙箱、fuel、权限白名单与错误码均为本地新写，未拷贝 Extism / Wasmtime / WIT 组件模型的实现代码。测试 WAT 片段为内联的最小模块样例，不含第三方内容。经典版 MIT © 2025-2026 声明继续保留。
+
 **追加（W-13 第三批 · Headless PNG/音频）**：`apps/local-cli/src/_png.rs` 与 `src/_wav.rs` 为本地新写实现——PNG（stored DEFLATE + CRC32/Adler32 + IHDR/IDAT/IEND）与 WAV（RIFF/fmt/data，f32→i16 PCM）均按公开标准格式手写编码，未引入 `png`/`flate2`/`crc32fast` 或任何图像/音频库代码，也未拷贝经典版或第三方编码器实现。`frame-png`/`batch-png`/`audio-export` 子命令与 `parse_pcm_json` 为本地新写；测试 PCM 为程序生成的示例采样，不含第三方音频素材。经典版 MIT © 2025-2026 声明继续保留。

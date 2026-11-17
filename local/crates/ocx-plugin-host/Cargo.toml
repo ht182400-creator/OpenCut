@@ -13,3 +13,4 @@ crate-type = ["rlib"]
 ocx-editor-api = { path = "../ocx-editor-api" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+wasmi = "2.0.0"
