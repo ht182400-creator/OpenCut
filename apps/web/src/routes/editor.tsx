@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import '../local/classic-ui/theme.css'
 import { CLASSIC_PANEL_CONFIG, CLASSIC_PANEL_LIMITS } from '../local/classic-ui/tokens'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../components/ui/resizable'
-import { buildTimelineAudio, isAacEncodingSupported, mixdownToMono, type PcmAudio } from '../local/audio'
+import { buildTimelineAudio, downsampleForWaveform, isAacEncodingSupported, mixdownToMono, type PcmAudio } from '../local/audio'
 import {
   ASSET_THUMBNAIL_HEIGHT,
   ASSET_THUMBNAIL_WIDTH,
@@ -134,7 +134,7 @@ function buildTimelineTracks(
  * 所有 core 调用都经 `editor-adapter`（I-01），错误统一友好提示。
  * @returns {React.ReactElement} 页面
  */
-function Editor() {
+export function Editor() {
   const [session, setSession] = useState<Session | null>(null)
   const [errorText, setErrorText] = useState<string | null>(null)
   const [elements, setElements] = useState<CoreElement[]>([])
@@ -155,7 +155,8 @@ function Editor() {
 
   /**
    * 批 7.3：素材音轨加载后，用 core 把真实 PCM 抽样成峰值，绑定到当前场景的音频/主轨元素。
-   * 多声道先降混为单声道；core 抽样失败或非 PCM 素材则清空波形并给出友好提示。
+   * 多声道先降混为单声道；超长素材（如 2 分钟视频）先峰值保真降采样到 core 上限，
+   * 避免 TOO_MANY_PCM_SAMPLES；core 抽样失败或非 PCM 素材则清空波形并给出友好提示。
    */
   useEffect(() => {
     if (!session || !media?.audio) {
@@ -163,7 +164,7 @@ function Editor() {
       return
     }
     try {
-      const mono = mixdownToMono(media.audio)
+      const mono = downsampleForWaveform(mixdownToMono(media.audio))
       const peaks = session.adapter.waveformPeaksFromPcm(mono, { bins: 16 })
       const scene = session.project.scenes.find((item) => item.id === session.project.currentSceneId)
         ?? session.project.scenes[0]

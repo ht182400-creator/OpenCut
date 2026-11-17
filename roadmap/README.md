@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | [`README.md`](README.md)（本文件） | 调研、对比、架构完善计划、线路图、Fork 同步策略、风险与决策日志 | 架构决策变化时 |
 | [`HOTSPOTS.md`](HOTSPOTS.md) | **热点进程文档**：当前阻塞点、关键路径、进度台账、开放问题、更新日志 | 每完成一个动作即更新 |
+| [`FEATURE_PARITY.md`](FEATURE_PARITY.md) | **功能对照清单**：经典版 vs 本版本逐项「已实现 / 部分 / 占位 / 未覆盖」，含经典版「新增文字」实证；做能力闭环前的差距基线 | 能力闭环进展时 |
 | [`PRIORITY.md`](PRIORITY.md) | **改造优先级方案表（Web-first）**、W0~W5 里程碑、导出后端决策、`.codebuddy/` 决策 | 优先级或决策变化时 |
 | [`COMPAT.md`](COMPAT.md) | **C→B 兼容层基石**：不变量、接口契约、判据、状态机、迁移 Runbook、实现清单 | 契约变更时 |
 | [`compat-contract.json`](compat-contract.json) | 兼容层机器可读真相源（命名空间 / 判据 / 六项能力 / 状态机 / 导出决策） | 每次新增能力或上游同步 |

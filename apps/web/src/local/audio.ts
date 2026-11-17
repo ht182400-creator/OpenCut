@@ -22,6 +22,11 @@ export const AUDIO_BITRATE = 128000;
 export const AAC_FRAME_SAMPLES = 1024;
 /** 演示音源频率（Hz）。 */
 export const DEMO_TONE_FREQUENCY = 440;
+/**
+ * 波形抽样允许的最大 PCM 样本数，与 Rust core `ocx-render::waveform::MAX_PCM_SAMPLES` 对齐。
+ * 超过此值 core 返回 TOO_MANY_PCM_SAMPLES，故送 core 前先等距降采样到该上限。
+ */
+export const WAVEFORM_MAX_PCM_SAMPLES = 4_096_000;
 
 /** 解码后的 planar PCM 音频。 */
 export interface PcmAudio {
@@ -214,6 +219,36 @@ export function mixdownToMono(audio: PcmAudio): Float32Array {
     mono[index] = peak;
   }
   return mono;
+}
+
+/**
+ * 波形抽样前的等距降采样：样本数超过上限时，按等比分桶、每桶取绝对值最大的样本（保留符号），
+ * 保证峰值不丢失且与 core 的峰值检测语义一致；未超限则原样返回（不复制）。
+ * 这样任意时长的素材（如 2 分钟视频 ≈ 576 万样本 @48kHz）都能生成真实波形，
+ * 不会触发 core 的 TOO_MANY_PCM_SAMPLES。
+ * @param samples 已降混的单声道 PCM
+ * @param maxSamples 输出样本数上限，缺省为核心上限
+ * @returns 长度不超过 maxSamples 的 Float32Array
+ */
+export function downsampleForWaveform(
+  samples: Float32Array,
+  maxSamples: number = WAVEFORM_MAX_PCM_SAMPLES,
+): Float32Array {
+  if (maxSamples <= 0) return new Float32Array(0);
+  if (samples.length <= maxSamples) return samples;
+  const output = new Float32Array(maxSamples);
+  for (let index = 0; index < maxSamples; index += 1) {
+    // 整数区间，避免浮点累积误差；与 core waveform_peaks 的分桶方式一致。
+    const start = Math.floor((samples.length * index) / maxSamples);
+    const end = Math.floor((samples.length * (index + 1)) / maxSamples);
+    let peak = 0;
+    for (let cursor = start; cursor < end; cursor += 1) {
+      const value = samples[cursor];
+      if (Number.isFinite(value) && Math.abs(value) > Math.abs(peak)) peak = value;
+    }
+    output[index] = peak;
+  }
+  return output;
 }
 
 /** 构建时间轴音频的选项。 */

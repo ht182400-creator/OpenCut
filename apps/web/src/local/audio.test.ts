@@ -8,6 +8,7 @@ import {
   buildTimelineAudio,
   createToneAudio,
   cumulativeSamples,
+  downsampleForWaveform,
   mixdownToMono,
   planarChunk,
   samplesForFrame,
@@ -148,5 +149,46 @@ describe('mixdownToMono 波形降混', () => {
     expect(mono).toHaveLength(2);
     expect(mono[0]).toBeCloseTo(0.9, 6);
     expect(mono[1]).toBeCloseTo(0.1, 6);
+  });
+});
+
+/** 批 7.3 修复：超长素材送 core 前峰值保真降采样，避免 TOO_MANY_PCM_SAMPLES。 */
+describe('downsampleForWaveform 降采样', () => {
+  it('未超限原样返回（同一引用，不复制）', () => {
+    const samples = new Float32Array([0.1, -0.5, 0.9]);
+    expect(downsampleForWaveform(samples, 10)).toBe(samples);
+  });
+
+  it('超限时按等比分桶、每桶取绝对值最大并保留符号', () => {
+    // 8 样本降到 4：桶 [0,2)=0.1,-0.8→-0.8；[2,4)=0.3,0→0.3；[4,6)=0,-0.2→-0.2；[6,8)=1,0.3→1。
+    const samples = new Float32Array([0.1, -0.8, 0.3, 0, 0, -0.2, 1, 0.3]);
+    const out = Array.from(downsampleForWaveform(samples, 4));
+    expect(out).toHaveLength(4);
+    expect(out[0]).toBeCloseTo(-0.8, 6);
+    expect(out[1]).toBeCloseTo(0.3, 6);
+    expect(out[2]).toBeCloseTo(-0.2, 6);
+    expect(out[3]).toBeCloseTo(1, 6);
+  });
+
+  it('峰值不丢失：满幅样本所在桶仍为满幅', () => {
+    const samples = new Float32Array(1000).fill(0.01);
+    samples[777] = 1;
+    const out = downsampleForWaveform(samples, 10);
+    expect(Math.max(...out)).toBeCloseTo(1, 6);
+  });
+
+  it('边界：maxSamples<=0 返回空数组；空输入原样返回', () => {
+    expect(downsampleForWaveform(new Float32Array([1, 2]), 0).length).toBe(0);
+    expect(downsampleForWaveform(new Float32Array([1, 2]), -3).length).toBe(0);
+    const empty = new Float32Array(0);
+    expect(downsampleForWaveform(empty, 4)).toBe(empty);
+  });
+
+  it('非有限值按 0 处理，不传播 NaN', () => {
+    const samples = new Float32Array([Number.NaN, Number.POSITIVE_INFINITY, -0.5, 0.2]);
+    const out = downsampleForWaveform(samples, 2);
+    expect(Array.from(out).every(Number.isFinite)).toBe(true);
+    expect(out[0]).toBe(0);
+    expect(out[1]).toBeCloseTo(-0.5, 6);
   });
 });
