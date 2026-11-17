@@ -206,29 +206,36 @@ function readTrimEnd(element: CoreElement): number {
   return (element as CoreElement & { trimEnd?: number }).trimEnd ?? 0
 }
 
-/** 工程专属 Timing tab：真实可编辑的 4 个时间字段（core 唯一支持的属性编辑）。 */
+/** 工程专属 Timing tab：真实可编辑的时间字段 + 批 7.5 文本字段（name/content）。 */
 function TimingSection({ selected, onChange }: {
   selected: CoreElement
   onChange?: (patch: ClipPatch) => void
 }) {
-  const [draft, setDraft] = useState<Record<keyof ClipPatch, string>>(() => ({
+  const initialDraft = (): Record<keyof ClipPatch, string> => ({
     startTime: String(selected.startTime), duration: String(selected.duration),
     trimStart: String(selected.trimStart), trimEnd: String(readTrimEnd(selected)),
-  }))
+    name: selected.name ?? '', content: selected.content ?? '',
+  })
+  const [draft, setDraft] = useState<Record<keyof ClipPatch, string>>(initialDraft)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
-    setDraft({
-      startTime: String(selected.startTime), duration: String(selected.duration),
-      trimStart: String(selected.trimStart), trimEnd: String(readTrimEnd(selected)),
-    })
+    setDraft(initialDraft())
     setError(null)
   }, [selected])
-  const fields: Array<{ key: keyof ClipPatch; label: string }> = [
+  // 数值字段子集：key 限定为四个 tick 字段，避免把 name/content 当数字解析。
+  type NumericKey = 'startTime' | 'duration' | 'trimStart' | 'trimEnd'
+  const fields: Array<{ key: NumericKey; label: string }> = [
     { key: 'startTime', label: 'Start (ticks)' },
     { key: 'duration', label: 'Duration (ticks)' },
     { key: 'trimStart', label: 'Trim In (ticks)' },
     { key: 'trimEnd', label: 'Trim Out (ticks)' },
   ]
+  const numberInputStyle: CSSProperties = {
+    width: '100%', height: PROPERTIES_NUMBER_FIELD_HEIGHT_PX, boxSizing: 'border-box',
+    background: 'var(--accent)', color: 'var(--foreground)',
+    border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
+    padding: `0 ${PROPERTIES_NUMBER_ICON_SIZE_PX / 2}px`, fontSize: 'var(--text-sm)',
+  }
   return (
     <div style={{ padding: PROPERTIES_SECTION_CONTENT_PADDING_PX, display: 'flex', flexDirection: 'column', gap: PROPERTIES_SECTION_FIELDS_GAP_PX }}>
       {fields.map(({ key, label }) => (
@@ -236,14 +243,22 @@ function TimingSection({ selected, onChange }: {
           <span style={{ height: PROPERTIES_LABEL_ROW_HEIGHT_PX, fontSize: 'var(--text-xs)', color: 'var(--muted-foreground)' }}>{label}</span>
           <input type="number" min={0} step={1000} aria-label={label} value={draft[key]}
             onChange={(event) => setDraft((prev) => ({ ...prev, [key]: event.target.value }))}
-            style={{
-              width: '100%', height: PROPERTIES_NUMBER_FIELD_HEIGHT_PX, boxSizing: 'border-box',
-              background: 'var(--accent)', color: 'var(--foreground)',
-              border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
-              padding: `0 ${PROPERTIES_NUMBER_ICON_SIZE_PX / 2}px`, fontSize: 'var(--text-sm)',
-            }} />
+            style={numberInputStyle} />
         </div>
       ))}
+      {/* 批 7.5：类型特化文本字段，编辑后经 core 写回经典版 JSON。 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: PROPERTIES_FIELD_INNER_GAP_PX }}>
+        <span style={{ height: PROPERTIES_LABEL_ROW_HEIGHT_PX, fontSize: 'var(--text-xs)', color: 'var(--muted-foreground)' }}>Name</span>
+        <input type="text" aria-label="Element Name" value={draft.name}
+          onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
+          style={numberInputStyle} />
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: PROPERTIES_FIELD_INNER_GAP_PX }}>
+        <span style={{ height: PROPERTIES_LABEL_ROW_HEIGHT_PX, fontSize: 'var(--text-xs)', color: 'var(--muted-foreground)' }}>Content</span>
+        <input type="text" aria-label="Element Content" value={draft.content}
+          onChange={(event) => setDraft((prev) => ({ ...prev, content: event.target.value }))}
+          style={numberInputStyle} />
+      </div>
       <div style={{ display: 'flex', gap: PROPERTIES_FIELD_INNER_GAP_PX }}>
         <button type="button" className="classic-button" disabled={!onChange} onClick={() => {
           const patch: ClipPatch = {}
@@ -252,14 +267,14 @@ function TimingSection({ selected, onChange }: {
             if (!Number.isFinite(value) || value < 0) { setError('Fields must be non-negative numbers'); return }
             patch[key] = Math.round(value)
           }
+          // 批 7.5：仅当文本字段与选中值不同才写入，避免误覆盖原值。
+          if (draft.name !== (selected.name ?? '')) patch.name = draft.name
+          if (draft.content !== (selected.content ?? '')) patch.content = draft.content
           setError(null)
           onChange?.(patch)
         }}>Apply</button>
         <button type="button" className="classic-button" onClick={() => {
-          setDraft({
-            startTime: String(selected.startTime), duration: String(selected.duration),
-            trimStart: String(selected.trimStart), trimEnd: String(readTrimEnd(selected)),
-          })
+          setDraft(initialDraft())
           setError(null)
         }}>Reset</button>
       </div>

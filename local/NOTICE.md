@@ -94,3 +94,5 @@
 **追加（core 扩展 · 批 7.3 波形抽样）**：`ocx-render/src/waveform.rs` 的 PCM→峰值纯函数、WASM `waveform_peaks_from_pcm`、TS `mixdownToMono` 与时间轴 `.classic-timeline-waveform` 竖条渲染均为本地新写实现，未复制经典版任何样式值、字体或图标资源，也未引入第三方依赖；波形条样式为本工程自行设计（白色半透明竖条、按峰值映射高度），非经典版波形组件拷贝。PCM 经浏览器 Web Audio 解码为本仓库自有 `PcmAudio` 数据，降混与峰值算法为确定性自实现。经典版 MIT © 2025-2026 声明继续保留。
 
 **追加（core 扩展 · 批 7.4 帧缩略图）**：`ocx-render/src/thumbnail.rs` 的 RGBA box filter 下采样纯函数、WASM `thumbnail_rgba`、TS `thumbnail.ts`（LRU 缓存与 canvas data URL 转换）、素材卡与时间轴 `.classic-timeline-thumbnail` 渲染均为本地新写实现，未复制经典版任何样式值、字体或图标资源，也未引入第三方依赖；缩略图尺寸（112×63）与样式为本工程自行选定/设计，非经典版缩略图组件拷贝。缩略图数据来自本仓库已解码的代理帧经 core 确定性下采样生成，非经典版素材。经典版 MIT © 2025-2026 声明继续保留。
+
+**追加（core 扩展 · 批 7.5 项目格式写回接线，批 7 收官）**：TS `project-write.ts` 的 view 合并纯函数与写回下载封装、属性面板 Name/Content 输入、`project_write.rs` 新增往返用例、WASM 契约新增检查均为本地新写实现，未复制经典版任何样式值、字体或图标资源，也未引入第三方依赖；写回逻辑沿用本仓库 7.1 已有的 additive-only core 实现（`write_classic_project`），未改动经典版文件格式 schema 或字段语义。经典版 MIT © 2025-2026 声明继续保留。

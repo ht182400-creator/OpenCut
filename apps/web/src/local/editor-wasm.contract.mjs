@@ -523,6 +523,26 @@ try {
     const el = writtenRaw.scenes[0].tracks.audio[0].elements[0];
     assert.equal(el.mediaId, "media-music");
   });
+  // 批 7.5：UI 编辑 name/content 后经 view 写回，往返保真。
+  // 注意：写回/再读裸调用必须放进 check，避免失败时抛错中断整轮（经典版契约此前踩过）。
+  check("批7.5 UI 编辑写回与往返保真", () => {
+    const editedView = JSON.parse(read_classic_project(classicProject));
+    // read 返回的是归一化 view：tracks 是数组，按 trackType/id 定位，不是原始 JSON 的 tracks 对象。
+    const titleTrack = editedView.scenes[0].tracks.find((track) => track.elementCount > 0
+      && track.elements[0].elementType === "text");
+    const title = titleTrack.elements[0];
+    title.name = "UI 重命名标题";
+    title.content = "UI 编辑的正文";
+    const editedWrite = writeReq(editedView);
+    assert.equal(editedWrite.ok, true, `写回失败：${editedWrite.error}`);
+    const editedReread = JSON.parse(read_classic_project(editedWrite.project));
+    const rereadTitle = editedReread.scenes[0].tracks
+      .find((track) => track.elements.some((el) => el.id === title.id))
+      .elements.find((el) => el.id === title.id);
+    assert.equal(rereadTitle.name, "UI 重命名标题");
+    assert.equal(rereadTitle.content, "UI 编辑的正文");
+    assert.equal(editedWrite.project.includes("timelineViewState"), true);
+  });
   const reread = JSON.parse(read_classic_project(writeResult.project));
   check("写回后再读名称生效", () => assert.equal(reread.name, "WASM 写回验证"));
   check("写回后再读剪辑决策生效", () => {

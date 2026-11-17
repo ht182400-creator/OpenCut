@@ -11,6 +11,7 @@ import {
   makeThumbnailDataUrl,
   thumbnailCache,
 } from '../local/thumbnail'
+import { buildWriteView, saveProjectJson } from '../local/project-write'
 import { useClipHistory } from '../local/clip-history'
 import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
 import {
@@ -257,6 +258,10 @@ function Editor() {
         duration: element.duration,
         trimStart: element.trimStart,
         trimEnd: element.trimEnd,
+        // 批 7.5：保留类型特化字段，使属性面板编辑与写回不丢原值。
+        name: element.name,
+        content: element.content,
+        elementType: element.elementType,
       }))
       if (mainElements.length === 0) throw new Error('项目中没有可编辑的主轨片段')
 
@@ -273,6 +278,7 @@ function Editor() {
       const codecs = await probeWebCodecsSupport()
       setSession({
         adapter, project, info: adapter.discover(), codecs, fps,
+        originalJson: text,
         ticksPerFrame: plan.ticksPerFrame, profile, projectTrackCount: tracks.length,
       })
       setOriginalElements(mainElements)
@@ -375,9 +381,17 @@ function Editor() {
       if (patch.duration !== undefined && patch.duration !== current.duration) {
         next = resizeClipEdge(next, ctx.clipId, 'right', patch.duration - current.duration, ctx.ticksPerFrame)
       }
-      if (patch.trimStart !== undefined || patch.trimEnd !== undefined) {
+      if (patch.trimStart !== undefined || patch.trimEnd !== undefined
+        || patch.name !== undefined || patch.content !== undefined) {
         next = next.map((item) => item.id === ctx.clipId
-          ? { ...item, trimStart: patch.trimStart ?? item.trimStart, trimEnd: patch.trimEnd ?? item.trimEnd }
+          ? {
+            ...item,
+            trimStart: patch.trimStart ?? item.trimStart,
+            trimEnd: patch.trimEnd ?? item.trimEnd,
+            // 批 7.5：name/content 为 undefined 时保留原值，仅覆盖显式传入的字段。
+            ...(patch.name !== undefined ? { name: patch.name } : {}),
+            ...(patch.content !== undefined ? { content: patch.content } : {}),
+          }
           : item)
       }
       return next
@@ -403,6 +417,26 @@ function Editor() {
     anchor.click()
     setTimeout(() => URL.revokeObjectURL(url), 0)
     setErrorText(null)
+  }
+
+  /**
+   * 批 7.5：把 UI 编辑的元素字段写回经典版 v31 项目 JSON 并下载。
+   * 合并当前 edits 进项目视图，经 core additive-only 写回（保留未知字段、不新增实体）。
+   */
+  const handleSaveProject = () => {
+    if (!session) return
+    try {
+      const view = buildWriteView(session.project, elements, resolution)
+      const result = saveProjectJson(
+        session.adapter, session.originalJson, view,
+        `${session.project.name || 'project'}-v31.json`,
+      )
+      if (result.ok) setErrorText(null)
+      else setErrorText(result.message)
+      setMediaStatus(result.message)
+    } catch (error) {
+      setErrorText(`项目写回异常：${formatCoreError(error)}`)
+    }
   }
 
   /** UI 第三批：加载快照并恢复工作区（校验失败给中文提示，不改动现状）。 */
@@ -809,6 +843,7 @@ function Editor() {
           { label: '撤销', disabled: !clipHistory.canUndo, onClick: clipHistory.undo },
           { label: '重做', disabled: !clipHistory.canRedo, onClick: clipHistory.redo },
           { label: '保存项目', disabled: !session, onClick: handleSaveSnapshot },
+          { label: '写回经典版 JSON', disabled: !session, onClick: handleSaveProject },
           { label: '加载快照', disabled: !session, onClick: () => snapshotFileRef.current?.click() },
           { label: 'Shortcuts', onClick: () => setShortcutsOpen(true) },
         ]}

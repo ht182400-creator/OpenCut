@@ -146,12 +146,16 @@ export function TopBar(props: {
   )
 }
 
-/** 属性面板可编辑的片段字段（ticks）。 */
+/** 属性面板可编辑的片段字段（ticks + 批 7.5 文本字段）。 */
 export interface ClipPatch {
   startTime?: number
   duration?: number
   trimStart?: number
   trimEnd?: number
+  /** 批 7.5：元素名称（undefined 表示不改该字段）。 */
+  name?: string
+  /** 批 7.5：文字内容（undefined 表示不改该字段）。 */
+  content?: string
 }
 
 /** 通用输入控件样式（ExportSettingsPanel 仍在使用）。 */
@@ -261,12 +265,20 @@ export interface ToolbarAction {
   disabled?: boolean
 }
 
-/** 时间轴片段：在 core 的 TimedElement 之外额外携带素材裁剪起点。 */
+/** 时间轴片段：在 core 的 TimedElement 之外额外携带素材裁剪起点与批 7.5 可编辑字段。 */
 export interface CoreElement extends TimelineClip {
   id: string
   startTime: number
   duration: number
   trimStart: number
+  /** 素材内结束时间（ticks）；loadProject 时写入，TimelineClip 基类未声明故在此补齐。 */
+  trimEnd?: number
+  /** 批 7.5：元素名称（读自经典版 JSON，可编辑并写回）。 */
+  name?: string
+  /** 批 7.5：文本内容（文字元素，读自经典版 JSON，可编辑并写回）。 */
+  content?: string
+  /** 批 7.5：元素类型（用于写回时定位轨道/类型，缺省保持原值）。 */
+  elementType?: string
 }
 
 /** core ripple 计算出的单条位移建议。 */
@@ -296,6 +308,8 @@ export interface FramePlanView {
 export interface Session {
   adapter: EditorAdapter
   project: ProjectView
+  /** 批 7.5：原始经典版项目 JSON 文本，供 writeClassicProject 写回时保留未知字段。 */
+  originalJson: string
   info: DiscoverResult
   codecs: WebCodecsSupport
   fps: number

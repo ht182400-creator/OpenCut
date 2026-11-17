@@ -176,3 +176,44 @@ fn malformed_original_is_rejected_before_merge() {
         CompatError::MissingScenes
     );
 }
+
+/// 批 7.5：UI 编辑元素的 name/content 后写回，再读往返保真且未知字段不丢。
+#[test]
+fn ui_edited_element_fields_roundtrip() {
+    let mut view = read_classic_project(FIXTURE).unwrap();
+    // 归一化 view 的 tracks 是数组；按元素类型定位文字片段（模拟属性面板编辑）。
+    let title_track = view.scenes[0]
+        .tracks
+        .iter_mut()
+        .find(|track| {
+            track
+                .elements
+                .iter()
+                .any(|element| element.element_type == "text")
+        })
+        .unwrap();
+    let title = title_track
+        .elements
+        .iter_mut()
+        .find(|element| element.element_type == "text")
+        .unwrap();
+    title.name = Some("UI 重命名标题".to_owned());
+    title.content = Some("UI 编辑的正文".to_owned());
+
+    let written = write_classic_project(FIXTURE, &view).unwrap();
+    let root: serde_json::Value = serde_json::from_str(&written).unwrap();
+    let title_raw = &root["scenes"][0]["tracks"]["overlay"][0]["elements"][0];
+    assert_eq!(title_raw["name"], "UI 重命名标题");
+    assert_eq!(title_raw["content"], "UI 编辑的正文");
+    // 未知字段原样保留（不因 UI 编辑写回而丢失）。
+    assert!(root.get("timelineViewState").is_some());
+
+    let reread = read_classic_project(&written).unwrap();
+    let reread_title = reread.scenes[0]
+        .tracks
+        .iter()
+        .flat_map(|track| track.elements.iter())
+        .find(|element| element.name.as_deref() == Some("UI 重命名标题"))
+        .unwrap();
+    assert_eq!(reread_title.content.as_deref(), Some("UI 编辑的正文"));
+}
