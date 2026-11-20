@@ -963,6 +963,7 @@ export function Editor() {
             selectedId={selectedId}
             selectedIds={selection.selectedIds}
             onSelect={selection.handleSelectClip}
+            onBoxSelect={selection.handleBoxSelect}
             onDropAsset={handleTimelineDrop}
             adjustments={adjustments}
             frameIndex={frameIndex}

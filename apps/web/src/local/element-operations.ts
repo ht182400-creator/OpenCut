@@ -113,6 +113,36 @@ export function selectAll(orderedIds: readonly string[]): SelectionResult {
 }
 
 /**
+ * P2 框选：按框命中的 id 集合归约选择状态。
+ * additive=true 时与既有集合取并集（Shift/Cmd 加框）；否则替换为命中集合。
+ * 命中为空时：加框保持不变，普通框清空选择（与经典版橡皮筋一致）。
+ * @param context 选择上下文
+ * @param hitIds 框命中的 id（未排序、可重复）
+ * @param additive 是否为加框
+ * @returns {SelectionResult} 归约后的选择状态
+ */
+export function selectFromBox(
+  context: SelectionContext,
+  hitIds: readonly string[],
+  additive: boolean,
+): SelectionResult {
+  const hit = new Set(hitIds)
+  const orderedHits = context.orderedIds.filter((id) => hit.has(id))
+  if (additive) {
+    const merged = new Set([...context.selectedIds, ...orderedHits])
+    const selectedIds = context.orderedIds.filter((id) => merged.has(id))
+    const primaryId = orderedHits[0] ?? context.primaryId
+    return { selectedIds, anchorId: context.anchorId, primaryId }
+  }
+  if (orderedHits.length === 0) return clearSelection()
+  return {
+    selectedIds: orderedHits,
+    anchorId: orderedHits[0],
+    primaryId: orderedHits[0],
+  }
+}
+
+/**
  * 复制选中元素为剪贴板快照（深拷贝 params，不复用引用）。
  * @param elements 当前全部元素
  * @param selectedIds 选中 id 集合

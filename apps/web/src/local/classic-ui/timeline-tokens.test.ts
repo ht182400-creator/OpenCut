@@ -43,16 +43,19 @@ import {
   getTotalTracksHeight,
   getTrackHeight,
   getZoomPercent,
+  normalizeTimelineRect,
+  rectsIntersect,
   shouldShowLabel,
   sliderToZoom,
   snapPixelToDeviceGrid,
+  timelinePixelsToTicks,
   timelineTimeToPixels,
   zoomToSlider,
 } from './timeline-tokens';
 
-/** 参照物根目录可用环境变量覆盖；源码不在本机时退回内置期望值。 */
+/** 参照物根目录可用环境变量覆盖；源码不在本机时退回内置期望值（不写死本机绝对路径）。 */
 const CLASSIC_ROOT =
-  process.env.OPENCUT_CLASSIC_ROOT ?? 'E:/AI_Studio/opencut-classic';
+  process.env.OPENCUT_CLASSIC_ROOT ?? '<classic-source>';
 const TIMELINE_SOURCES = {
   layout: 'apps/web/src/timeline/components/layout.ts',
   theme: 'apps/web/src/timeline/components/theme.ts',
@@ -99,6 +102,7 @@ describe('经典版时间轴 1:1 · 尺寸/层级/主题 token（批 2）', () =
   it('层级、描边、书签与波形配色一致', () => {
     expect(TIMELINE_LAYERS).toEqual({
       trackContent: 10, dragLine: 20, playhead: 30, snapIndicator: 40,
+      marquee: 50, // P2 新增框选层，位于最上层
     });
     expect(ELEMENT_RING_WIDTH_PX).toBe(1.5);
     expect(TIMELINE_INDICATOR_LINE_WIDTH_PX).toBe(2);
@@ -182,6 +186,35 @@ describe('经典版时间轴 1:1 · 纯函数（批 2）', () => {
     expect(timelineTimeToPixels(120000, 1, 120000)).toBe(50);
     expect(timelineTimeToPixels(120000, 2, 120000)).toBe(100);
     expect(timelineTimeToPixels(0, 1, 120000)).toBe(0);
+  });
+
+  it('timelinePixelsToTicks 与 timelineTimeToPixels 往返一致', () => {
+    expect(timelinePixelsToTicks(50, 1, 120000)).toBe(120000);
+    expect(timelinePixelsToTicks(100, 2, 120000)).toBe(120000);
+    expect(timelinePixelsToTicks(24, 3, 30000)).toBeCloseTo(4800, 5);
+  });
+
+  it('timelinePixelsToTicks 非法入参安全回落 0', () => {
+    expect(timelinePixelsToTicks(Number.NaN, 1, 120000)).toBe(0);
+    expect(timelinePixelsToTicks(50, 1, 0)).toBe(0);
+    expect(timelinePixelsToTicks(50, 0, 120000)).toBe(120000); // 非法缩放回落到 1×
+  });
+
+  it('normalizeTimelineRect 支持反向拖拽规范化', () => {
+    expect(normalizeTimelineRect(100, 80, 20, 30)).toEqual({
+      left: 20, top: 30, right: 100, bottom: 80,
+    });
+    expect(normalizeTimelineRect(0, 0, 0, 0)).toEqual({
+      left: 0, top: 0, right: 0, bottom: 0,
+    });
+  });
+
+  it('rectsIntersect 覆盖相交/相离/边界接触/零面积', () => {
+    const a = { left: 0, top: 0, right: 10, bottom: 10 };
+    expect(rectsIntersect(a, { left: 5, top: 5, right: 15, bottom: 15 })).toBe(true);
+    expect(rectsIntersect(a, { left: 11, top: 0, right: 20, bottom: 10 })).toBe(false);
+    expect(rectsIntersect(a, { left: 10, top: 0, right: 20, bottom: 10 })).toBe(true); // 边界接触算相交
+    expect(rectsIntersect(a, { left: 2, top: 2, right: 2, bottom: 2 })).toBe(false); // 零面积
   });
 
   it('snapPixelToDeviceGrid 处理非法 dpr 与边界', () => {

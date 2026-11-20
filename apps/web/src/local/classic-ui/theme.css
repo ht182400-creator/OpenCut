@@ -1,7 +1,7 @@
 /*
  * 经典版 UI 像素级 1:1 改造 · 批 0 主题基线
  *
- * 来源：E:\AI_Studio\opencut-classic\apps\web\src\app\globals.css
+ * 来源：<classic-source>/apps/web/src/app/globals.css
  * （:root / .dark / .panel / .dark .panel 变量与 @theme inline 的尺寸 token 原样复制）
  * 经典版 MIT © 2025-2026，声明见 local/NOTICE.md。
  *
@@ -488,6 +488,14 @@
 
 .classic-timeline-tracks { position: relative; flex: 0 0 auto; }
 .classic-timeline-track { position: absolute; left: 0; right: 0; overflow: hidden; }
+/* P2：框选橡皮筋矩形（内容坐标绝对定位，随滚动同步）。 */
+.classic-timeline-marquee {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid var(--primary);
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  box-sizing: border-box;
+}
 .classic-timeline-empty {
   position: absolute;
   inset: 3px;

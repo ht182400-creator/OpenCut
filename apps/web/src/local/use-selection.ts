@@ -14,6 +14,7 @@ import {
   duplicateElements,
   pasteElements,
   selectAll,
+  selectFromBox,
   selectRange,
   selectSingle,
   toggleSelection,
@@ -40,6 +41,8 @@ export interface UseSelectionDeps {
 export interface SelectionApi {
   selectedIds: string[]
   handleSelectClip: (id: string, additive: boolean, range: boolean) => void
+  /** P2：框选命中的 id 集合（additive=加框取并集）。 */
+  handleBoxSelect: (hitIds: readonly string[], additive: boolean) => void
   handleCopy: () => void
   handlePaste: () => void
   handleDuplicate: (ids?: string[]) => void
@@ -79,6 +82,14 @@ export function useSelection(deps: UseSelectionDeps): SelectionApi {
     if (range) applySelection(selectRange(context(), id))
     else if (additive) applySelection(toggleSelection(context(), id))
     else applySelection(selectSingle(id))
+  }
+
+  const handleBoxSelect = (hitIds: readonly string[], additive: boolean) => {
+    const result = selectFromBox(context(), hitIds, additive)
+    applySelection(result)
+    if (result.selectedIds.length > 0) {
+      deps.setMediaStatus(`框选 ${result.selectedIds.length} 个片段`)
+    }
   }
 
   const handleCopy = () => {
@@ -135,7 +146,7 @@ export function useSelection(deps: UseSelectionDeps): SelectionApi {
   }
 
   return {
-    selectedIds, handleSelectClip, handleCopy, handlePaste,
+    selectedIds, handleSelectClip, handleBoxSelect, handleCopy, handlePaste,
     handleDuplicate, handleSelectAll, handleClear, resetSelection,
   }
 }

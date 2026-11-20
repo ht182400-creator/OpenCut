@@ -19,8 +19,11 @@ import {
   ELEMENT_RING_WIDTH_PX,
   FALLBACK_CONTAINER_WIDTH,
   MIN_TICK_SPACING_PX,
+  TIMELINE_BOOKMARK_ROW_HEIGHT_PX,
+  TIMELINE_CONTENT_TOP_PADDING_PX,
   TIMELINE_INDICATOR_LINE_WIDTH_PX,
   TIMELINE_LAYERS,
+  TIMELINE_MARQUEE_MIN_PX,
   TIMELINE_RULER_HEIGHT_PX,
   TIMELINE_TRACK_HEIGHTS_PX,
   TIMELINE_ZOOM_BUTTON_FACTOR,
@@ -33,12 +36,14 @@ import {
   getTotalTracksHeight,
   getTrackHeight,
   formatRulerLabel,
+  normalizeTimelineRect,
+  rectsIntersect,
   shouldShowLabel,
   sliderToZoom,
   timelineTimeToPixels,
   zoomToSlider,
 } from './timeline-tokens'
-import type { ClassicTrackType } from './timeline-tokens'
+import type { ClassicTrackType, TimelineRect } from './timeline-tokens'
 
 /** 时间轴单条轨道视图（main 轨用可编辑 elements，其余轨只读展示）。 */
 export interface ClassicTimelineTrack {
@@ -131,6 +136,47 @@ function toTrackType(value: string): ClassicTrackType {
   return value in TIMELINE_TRACK_HEIGHTS_PX ? (value as ClassicTrackType) : 'text'
 }
 
+/**
+ * P2 框选命中纯函数：按矩形与片段几何（ticks→px、轨道累计高度）求交。
+ * 与渲染位置同一口径，独立成函数便于单测。
+ * @param tracks 轨道视图
+ * @param zoom 当前缩放
+ * @param ticksPerSecond 每秒 ticks
+ * @param rect 框选矩形（内容坐标 px）
+ * @returns {string[]} 命中的片段 id
+ */
+function collectMarqueeHits(
+  tracks: readonly ClassicTimelineTrack[],
+  zoom: number,
+  ticksPerSecond: number,
+  rect: TimelineRect,
+): string[] {
+  // 框选矩形是相对滚动视口的内容坐标，含 ruler + bookmarks 的顶部偏移；
+  // 片段 top 从 tracks 容器算起，需扣除该偏移才能同一口径比较。
+  const trackAreaTop = TIMELINE_RULER_HEIGHT_PX + TIMELINE_BOOKMARK_ROW_HEIGHT_PX
+  const hitRect: TimelineRect = {
+    left: rect.left,
+    right: rect.right,
+    top: rect.top - trackAreaTop,
+    bottom: rect.bottom - trackAreaTop,
+  }
+  const types = tracks.map((track) => toTrackType(track.trackType))
+  const hits: string[] = []
+  tracks.forEach((track, trackIndex) => {
+    const trackType = types[trackIndex]
+    const top = getCumulativeHeightBefore(types, trackIndex) + TIMELINE_CONTENT_TOP_PADDING_PX
+    const height = getTrackHeight(trackType)
+    track.elements.forEach((element) => {
+      const left = timelineTimeToPixels(element.startTime, zoom, ticksPerSecond)
+      const width = Math.max(2, timelineTimeToPixels(element.duration, zoom, ticksPerSecond))
+      if (rectsIntersect(hitRect, { left, top, right: left + width, bottom: top + height })) {
+        hits.push(element.id)
+      }
+    })
+  })
+  return hits
+}
+
 /** 时间轴面板：多轨 + 标尺 + 播放头 + 吸附指示 + 缩放拖拽。 */
 export function ClassicTimeline(props: {
   tracks: ClassicTimelineTrack[]
@@ -141,6 +187,8 @@ export function ClassicTimeline(props: {
   selectedIds?: readonly string[]
   /** P1：点击片段；additive=Cmd/Ctrl 加选，range=Shift 区间选。 */
   onSelect: (id: string, additive: boolean, range: boolean) => void
+  /** P2：空白处框选命中片段；additive=Shift 加框取并集。 */
+  onBoxSelect?: (hitIds: string[], additive: boolean) => void
   /** P0：素材卡拖放到轨道时，按落点 ticks 回调插入（载荷经经典版 MIME 传递）。 */
   onDropAsset?: (payload: AssetDragPayload, atTicks: number) => void
   actions: TimelineAction[]
@@ -165,10 +213,24 @@ export function ClassicTimeline(props: {
   const [snapLine, setSnapLine] = useState<number | null>(null)
   const [mutedTracks, setMutedTracks] = useState<ReadonlySet<string>>(() => new Set())
   const [hiddenTracks, setHiddenTracks] = useState<ReadonlySet<string>>(() => new Set())
+  /** P2：框选橡皮筋的当前矩形（内容坐标 px），null 表示未框选。 */
+  const [marquee, setMarquee] = useState<TimelineRect | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<TimelineDrag | null>(null)
+  /** P2：框选起点（内容坐标 px）与是否加框，null 表示未开始。 */
+  const marqueeStartRef = useRef<{ x: number; y: number; additive: boolean } | null>(null)
+  /** P2：框选当前矩形 ref（供全局 mouseup 读取，避免 stale closure）。 */
+  const marqueeRectRef = useRef<TimelineRect | null>(null)
+  /** P2：命中计算所需的渲染快照 ref。 */
+  const marqueeDataRef = useRef({
+    tracks: props.tracks,
+    trackTypes: [] as ClassicTrackType[],
+    zoom: 1,
+    ticksPerSecond: props.ticksPerSecond,
+  })
+  const boxSelectRef = useRef(props.onBoxSelect)
   const moveRef = useRef(props.onMoveClip)
   const resizeRef = useRef(props.onResizeClip)
   const seekRef = useRef(props.onSeek)
@@ -191,6 +253,7 @@ export function ClassicTimeline(props: {
     ticksPerSecond: props.ticksPerSecond,
     frameCount: props.frameCount,
   }
+  boxSelectRef.current = props.onBoxSelect
 
   const trackTypes = useMemo(
     () => props.tracks.map((track) => toTrackType(track.trackType)),
@@ -213,6 +276,13 @@ export function ClassicTimeline(props: {
   const contentWidth = timelineTimeToPixels(durationTicks, safeZoom, props.ticksPerSecond)
   const paddingPx = getTimelinePaddingPx(containerWidth, safeZoom, minZoom)
   const timelineWidth = Math.max(contentWidth + paddingPx, containerWidth)
+  // P2：框选命中计算依赖的渲染快照，每次渲染同步到 ref。
+  marqueeDataRef.current = {
+    tracks: props.tracks,
+    trackTypes,
+    zoom: safeZoom,
+    ticksPerSecond: props.ticksPerSecond,
+  }
 
   const rulerConfig = useMemo(
     () => getRulerConfig(safeZoom, props.fps),
@@ -248,6 +318,35 @@ export function ClassicTimeline(props: {
     seekRef.current(Math.max(0, Math.min(frame, configRef.current.frameCount - 1)))
   }
 
+  /**
+   * P2：把鼠标事件换算为滚动内容坐标（含 scrollLeft/Top），供框选矩形使用。
+   * @param clientX 视口 x
+   * @param clientY 视口 y
+   * @returns {ContentPoint | null} 内容坐标，滚动容器缺失时返回 null
+   */
+  const toContentPoint = (clientX: number, clientY: number) => {
+    const viewport = scrollRef.current
+    if (!viewport) return null
+    const rect = viewport.getBoundingClientRect()
+    return {
+      x: clientX - rect.left + viewport.scrollLeft,
+      y: clientY - rect.top + viewport.scrollTop,
+    }
+  }
+
+  /**
+   * P2：轨道空白处按下开始框选；additive=Shift 加框。片段按下不触发（由 startDrag 处理）。
+   * @param event 鼠标事件
+   */
+  const startMarquee = (event: ReactMouseEvent) => {
+    if (!props.onBoxSelect || event.button !== 0) return
+    const point = toContentPoint(event.clientX, event.clientY)
+    if (!point) return
+    event.preventDefault()
+    marqueeStartRef.current = { x: point.x, y: point.y, additive: event.shiftKey }
+    setMarquee({ left: point.x, top: point.y, right: point.x, bottom: point.y })
+  }
+
   /** 片段按下：开始移动/裁剪/播放头拖拽（只读轨道禁止编辑）。 */
   const startDrag = (
     event: ReactMouseEvent,
@@ -278,6 +377,24 @@ export function ClassicTimeline(props: {
   /** 全局 mouse 事件：拖拽预览与提交；依赖 ref 避免 stale closure。 */
   useEffect(() => {
     const onMove = (event: MouseEvent) => {
+      const start = marqueeStartRef.current
+      if (start) {
+        const viewport = scrollRef.current
+        if (viewport && boxSelectRef.current) {
+          const rect = viewport.getBoundingClientRect()
+          const point = {
+            x: event.clientX - rect.left + viewport.scrollLeft,
+            y: event.clientY - rect.top + viewport.scrollTop,
+          }
+          const delta = Math.abs(point.x - start.x) + Math.abs(point.y - start.y)
+          if (delta >= TIMELINE_MARQUEE_MIN_PX) {
+            const next = normalizeTimelineRect(start.x, start.y, point.x, point.y)
+            marqueeRectRef.current = next
+            setMarquee(next)
+          }
+        }
+        return
+      }
       const drag = dragRef.current
       if (!drag) return
       if (drag.mode === 'playhead') {
@@ -323,6 +440,19 @@ export function ClassicTimeline(props: {
       }
     }
     const onUp = () => {
+      const start = marqueeStartRef.current
+      if (start) {
+        marqueeStartRef.current = null
+        const rect = marqueeRectRef.current
+        marqueeRectRef.current = null
+        setMarquee(null)
+        if (rect && boxSelectRef.current) {
+          const data = marqueeDataRef.current
+          const hits = collectMarqueeHits(data.tracks, data.zoom, data.ticksPerSecond, rect)
+          if (hits.length > 0 || !start.additive) boxSelectRef.current(hits, start.additive)
+        }
+        return
+      }
       const drag = dragRef.current
       if (!drag) return
       dragRef.current = null
@@ -537,7 +667,10 @@ export function ClassicTimeline(props: {
                         ? 'var(--accent)' : undefined,
                     }}
                     onMouseDown={(event) => {
-                      if (event.target === event.currentTarget) startDrag(
+                      if (event.target !== event.currentTarget) return
+                      // P2：有框选回调时空白处拖动框选；否则退回定位播放头。
+                      if (props.onBoxSelect) startMarquee(event)
+                      else startDrag(
                         event, { id: '', startTime: 0, duration: 0, trimStart: 0 }, 'playhead', false,
                       )
                     }}>
@@ -627,6 +760,16 @@ export function ClassicTimeline(props: {
                   timelineTimeToPixels(snapLine, safeZoom, props.ticksPerSecond),
                 ),
                 zIndex: TIMELINE_LAYERS.snapIndicator,
+              }} />
+          )}
+          {marquee && (
+            <div className="classic-timeline-marquee" data-testid="classic-timeline-marquee"
+              style={{
+                left: marquee.left,
+                top: marquee.top,
+                width: marquee.right - marquee.left,
+                height: marquee.bottom - marquee.top,
+                zIndex: TIMELINE_LAYERS.marquee,
               }} />
           )}
         </div>

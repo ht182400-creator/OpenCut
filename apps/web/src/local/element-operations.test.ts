@@ -11,6 +11,7 @@ import {
   duplicateElements,
   pasteElements,
   selectAll,
+  selectFromBox,
   selectRange,
   selectSingle,
   toggleSelection,
@@ -71,6 +72,28 @@ describe('选择操作', () => {
 
   it('清空选择', () => {
     expect(clearSelection()).toEqual({ selectedIds: [], anchorId: null, primaryId: null })
+  })
+
+  it('框选普通模式：命中按时间顺序、锚点取首个', () => {
+    const result = selectFromBox(context(), ['m1', 't2'], false)
+    expect(result).toEqual({ selectedIds: ['t2', 'm1'], anchorId: 't2', primaryId: 't2' })
+  })
+
+  it('框选加框模式：与既有集合取并集、保留原锚点', () => {
+    const result = selectFromBox(context({ selectedIds: ['t1'] }), ['m1'], true)
+    expect(result.selectedIds).toEqual(['t1', 'm1'])
+    expect(result.anchorId).toBe('t1')
+    expect(result.primaryId).toBe('m1')
+  })
+
+  it('框选空命中：普通框清空、加框保持', () => {
+    expect(selectFromBox(context(), [], false).selectedIds).toEqual([])
+    expect(selectFromBox(context({ selectedIds: ['t1'] }), [], true).selectedIds).toEqual(['t1'])
+  })
+
+  it('框选忽略未知 id 与重复 id', () => {
+    const result = selectFromBox(context(), ['missing', 't2', 't2'], false)
+    expect(result.selectedIds).toEqual(['t2'])
   })
 })
 

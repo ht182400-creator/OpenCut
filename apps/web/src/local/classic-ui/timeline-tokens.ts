@@ -57,7 +57,11 @@ export const TIMELINE_LAYERS = {
   dragLine: 20,
   playhead: 30,
   snapIndicator: 40,
+  marquee: 50,
 } as const;
+
+/** 框选橡皮筋：超过该像素位移才视为框（低于阈值仍按单击定位播放头）。 */
+export const TIMELINE_MARQUEE_MIN_PX = 4;
 
 /** 各类型轨道元素的背景色（经典版 components/theme.ts）。 */
 export const TIMELINE_TRACK_THEME = {
@@ -147,6 +151,69 @@ export function timelineTimeToPixels(
   ticksPerSecond: number,
 ): number {
   return (timeTicks / ticksPerSecond) * BASE_TIMELINE_PIXELS_PER_SECOND * zoomLevel;
+}
+
+/**
+ * 把像素换算为 ticks（timelineTimeToPixels 的逆运算，供框选落点/时间段计算）。
+ * 非法缩放或 ticksPerSecond 时返回 0，避免除零产生 Infinity 污染后续吸附。
+ * @param pixel 内容坐标像素（已含 scrollLeft）
+ * @param zoomLevel 缩放倍数
+ * @param ticksPerSecond 每秒 ticks
+ * @returns {number} ticks（可含小数，调用方按需吸附帧网格）
+ */
+export function timelinePixelsToTicks(
+  pixel: number,
+  zoomLevel: number,
+  ticksPerSecond: number,
+): number {
+  if (!Number.isFinite(pixel) || !Number.isFinite(ticksPerSecond) || ticksPerSecond <= 0) return 0;
+  const safeZoom = Number.isFinite(zoomLevel) && zoomLevel > 0 ? zoomLevel : 1;
+  return (pixel / (BASE_TIMELINE_PIXELS_PER_SECOND * safeZoom)) * ticksPerSecond;
+}
+
+/** 矩形相交计算用的轴对齐矩形（内容坐标，px）。 */
+export interface TimelineRect {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+/**
+ * 由拖拽起点/终点构造规范化矩形（保证 left<=right、top<=bottom，支持反向框选）。
+ * @param startX 起点 x
+ * @param startY 起点 y
+ * @param endX 终点 x
+ * @param endY 终点 y
+ * @returns {TimelineRect} 规范化矩形
+ */
+export function normalizeTimelineRect(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+): TimelineRect {
+  return {
+    left: Math.min(startX, endX),
+    top: Math.min(startY, endY),
+    right: Math.max(startX, endX),
+    bottom: Math.max(startY, endY),
+  };
+}
+
+/**
+ * 判断两个轴对齐矩形是否相交（边界接触算相交，零面积矩形返回 false）。
+ * @param a 矩形 a
+ * @param b 矩形 b
+ * @returns {boolean} 是否相交
+ */
+export function rectsIntersect(a: TimelineRect, b: TimelineRect): boolean {
+  const aWidth = a.right - a.left
+  const aHeight = a.bottom - a.top
+  const bWidth = b.right - b.left
+  const bHeight = b.bottom - b.top
+  if (aWidth <= 0 || aHeight <= 0 || bWidth <= 0 || bHeight <= 0) return false;
+  return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top;
 }
 
 /**
