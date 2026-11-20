@@ -57,6 +57,7 @@ import {
   VISUAL_ELEMENT_PARAMS,
   type ParamDefinition,
 } from './properties-tokens';
+import { CurveEditor } from './curve-editor';
 
 /** 属性面板支持的元素类型（与注册表 key 对齐）。 */
 type PropertiesElementType = keyof typeof PROPERTIES_TABS_BY_TYPE;
@@ -371,6 +372,8 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
   )
   const defaultTab = PROPERTIES_DEFAULT_TAB_BY_TYPE[elementType] as string
   const [activeTab, setActiveTab] = useState<string>(defaultTab)
+  /** P3 批 3：曲线编辑器视图开关（与参数 tab 并列，由关键帧轨道存在性启用）。 */
+  const [showCurves, setShowCurves] = useState(false)
 
   // 元素类型变化时切到该类型的默认 tab，避免停留在不存在的 tab（如 text 的 Content）。
   useEffect(() => { setActiveTab(defaultTab) }, [defaultTab])
@@ -478,7 +481,9 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
   ]
 
   let content: ReactNode
-  if (activeTab === 'timing') {
+  if (showCurves) {
+    content = <CurveEditor selected={selected} playheadTicks={props.playheadTicks} onChange={props.onChange} />
+  } else if (activeTab === 'timing') {
     content = <TimingSection selected={selected} onChange={props.onChange} />
   } else if (activeTab === 'transform') {
     content = <ParamsSection params={params} keys={['transform.positionX', 'transform.positionY', 'transform.scaleX', 'transform.scaleY', 'transform.rotate']} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
@@ -509,11 +514,24 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
             aria-selected={activeTab === tab} data-active={activeTab === tab}
             title={tab === 'timing' ? 'Timing' : PROPERTIES_TAB_LABELS[tab]}
             aria-label={tab === 'timing' ? 'Timing' : PROPERTIES_TAB_LABELS[tab]}
-            style={{ width: PROPERTIES_TAB_SIZE_PX, height: PROPERTIES_TAB_SIZE_PX }}
-            onClick={() => setActiveTab(tab)}>
+            style={{ width: PROPERTIES_TAB_SIZE_PX, height: PROPERTIES_TAB_SIZE_PX,
+              opacity: showCurves ? 0.5 : 1 }}
+            onClick={() => { setShowCurves(false); setActiveTab(tab) }}>
             <TabIcon name={tab} />
           </button>
         ))}
+        {/* P3 批 3：曲线编辑器切换（有关键帧轨道时可用）。 */}
+        <button type="button" className="classic-tab" role="tab"
+          data-testid="properties-curves-toggle"
+          aria-selected={showCurves} data-active={showCurves}
+          title="Animation Curves" aria-label="Animation Curves"
+          style={{ width: PROPERTIES_TAB_SIZE_PX, height: PROPERTIES_TAB_SIZE_PX }}
+          onClick={() => setShowCurves((v) => !v)}>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
+            <path d="M3 17l5-6 4 3 5-8 4 4" />
+          </svg>
+        </button>
       </div>
       <div className="classic-tab-separator" />
       <div className="classic-panel-content" role="tabpanel">{content}</div>
