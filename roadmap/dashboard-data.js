@@ -44,11 +44,11 @@ const MILESTONES = [
 
 /** 热点：与 HOTSPOTS.md §1 的 H 编号一致；milestone 为「全程」时不计入单里程碑完成度。 */
 const HOTSPOTS = [
-  { id: "H01", title: "GPUI(blade) 与 wgpu 纹理不互通", priority: "P0", milestone: "M1", status: "阻塞", action: "【2026-11-14 校准】仍阻塞 W-14 桌面 GPUI：Q01/ADR-04 未产出，离屏 readback spike 未做；CPU 帧路径与跨栈像素一致已由 Headless CLI 验证（与 GPU 纹理无关）" },
+  { id: "H01", title: "GPUI(blade) 与 wgpu 纹理不互通", priority: "P0", milestone: "M1", status: "已完成", action: "【2026-11-20 W-14 spike 完成】实测 CPU 合成帧 → BGRA → GPUI ImageSource::Render 显示：1080p 单帧 59~63ms（Debug），checksum 0x9a3e68dede39ed25 与 Headless CLI 逐像素一致，原生窗口截图确认渲染正确。Q01/ADR-04 已书面决策：M1~M3 走 CPU 帧 BGRA 直传过渡，暂不引入 wgpu 纹理 readback（仓库尚无 wgpu 合成器）。边界：未做 wgpu→CPU 纹理读出的后半段，见 ADR-04" },
   { id: "H02", title: "领域逻辑翻译缺回归网", priority: "P0", milestone: "M2", status: "已完成", action: "【2026-11-14 校准】四套对齐 107/88/100/64 全绿，经典版项目读写闭环（W-05 五批）、官方 OTIO 实文件往返 42/42（W-10 六批），命令层版本化 schema 已由 W-11 冻结" },
   { id: "H03", title: "本机工具链缺失且版本不符", priority: "P0", milestone: "M0", status: "已完成", action: "proto 0.63.2 已纳管 bun/moon/rust；moon 官方包校验通过；无需 FORCE_GLOBALS 旁路" },
   { id: "H04", title: "上游架构未定，长期分叉风险", priority: "P1", milestone: "全程", status: "进行中", action: "落地新增优先 + 差异台账 + git rerere，每 2~4 周小步同步" },
-  { id: "H05", title: "原生 Rust 渲染路径从未验证", priority: "P0", milestone: "M1", status: "未开始", action: "【2026-11-14 校准】CPU 帧路径已验证：Headless CLI 与 WASM core 同帧同指纹（MCP 18/18）；仍未做 GPU 纹理 render_frame_to_texture → Vec<u8> 用例与原生 CI" },
+  { id: "H05", title: "原生 Rust 渲染路径从未验证", priority: "P0", milestone: "M1", status: "已完成", action: "【2026-11-20 W-14 spike 完成】apps/desktop/src/spike.rs 4 项原生用例（1080p 尺寸/RGBA 长度、checksum 可复现、BGRA 通道保持、非法参数返回错误而非 panic），cargo test --workspace 全绿；新增 desktop:test moon task 使三平台 CI 跑原生用例（此前桌面 moon.yml 无 test task）。边界：GPU 纹理 render_frame_to_texture → Vec<u8> 因无 wgpu 合成器仍未做，按 ADR-04 后置" },
   { id: "H06", title: "workspace 未启用 crates/*", priority: "P0", milestone: "M0", status: "进行中", action: "七个 ocx-* crate 已在隔离目录编译通过，rust 1.97 与 moon ci 已实跑；剩余上游 crates/* 启用（按隔离策略待上游同步复核）" },
   { id: "H07", title: "插件运行时未选型", priority: "P1", milestone: "M3", status: "已完成", action: "【2026-11-17 更新】W-12 五批：契约层（manifest/权限/越权拒绝 13 项）+ 浏览器原生 WebAssembly 运行时（示例插件 116,313B 真实调用）+ Rust wasmi 2.0 运行时（零宿主导入沙箱、导出白名单、fuel、内存边界、输入输出上限）+ WIT 契约层（官方查证 wasmi 仅 core wasm，内嵌 .wit 作 IDL 单一事实来源、导出白名单双重校验）+ 声明式权限（deny-by-default 资源 scope、按授予注入 ocx.resource_len、越权 SCOPE_DENIED；6 项端到端用例）。不谎称组件运行时；完整 component-model 仍后置" },
   { id: "H08", title: "MCP 规范版本与长任务模型", priority: "P2", milestone: "M5", status: "已完成", action: "【2026-11-14 校准】W-13 两批落地：本地 MCP server（stdio JSON-RPC、ocx.* 8 工具、18/18）、长任务 ocx.render.batch/status 可查进度、Headless CLI 跨栈像素一致" },
@@ -59,13 +59,13 @@ const HOTSPOTS = [
   { id: "H13", title: "上游落地六项能力导致双实现收敛（L3）", priority: "P1", milestone: "全程", status: "进行中", action: "按 README.md §7.9 做命名空间隔离、upstream-mirror、能力台账与 merge-tree 预演" },
   { id: "H14", title: "C→B 兼容层基石尚未落到代码", priority: "P0", milestone: "M0", status: "已完成", action: "【2026-11-17 更新】基石已落地（10 crate + editor-adapter 适配层 + MCP/插件/Headless CLI），标题所述风险解除；core 阶段收尾：W-05 五批 + W-07 四批 + W-08 六批 + W-09 四批 + W-10 六批 + W-11 一批 + W-12 两批 + W-13 三批（新增 Headless PNG/音频导出）落地经典版项目读写闭环、三容器导出、剪辑闭环、4K scrub、官方 OTIO 往返、契约冻结、插件 host 与原生 WASM 运行时、MCP server 与 Headless CLI（跨栈像素一致）；暂停项见 PRIORITY「core 阶段结论」。经典版 UI 像素级 1:1 复刻（台账 UI_REPLICA_PLAN.md）批 0~8 全部完成：主框架/时间轴/素材/属性/预览/命令对话框 + core 扩展 7.1~7.5（多元素字段、分辨率、波形、缩略图、项目写回）+ 批 8 全量对齐与移动端 gate；批 8 补丁去除正式 UI 褐色演示块（验证模式 ?verifyDemoFrame=1 保留）；tsc 基线 9 错误清零。" },
   { id: "H15", title: "移动端可打开同一项目 JSON 未验证", priority: "P1", milestone: "M6", status: "未开始", action: "【2026-11-14 新增】W-15 移动端评估（UniFFI / flutter_rust_bridge 原型）完全未开始；core 阶段结论标为暂停，不得由 H12 的已完成状态误推导 M6 完成" },
-  { id: "H16", title: "headless PNG 与桌面输出一致性未验证", priority: "P1", milestone: "M3", status: "进行中", action: "【2026-11-17 更新】PNG 侧已完成：Headless CLI 新增手写 `_png.rs`（RGBA8/stored DEFLATE/CRC32）与 `frame-png`/`batch-png`，浏览器 `<img>` 解码验证通过；音频侧新增 `_wav.rs` 与 `audio-export`（f32→i16 PCM），PNG/PPM 同帧 FNV checksum 一致。剩余：桌面 GPUI 像素一致帧比对仍受 H01 GPU 决策阻塞；M3 因此保持部分完成" },
+  { id: "H16", title: "headless PNG 与桌面输出一致性未验证", priority: "P1", milestone: "M3", status: "已完成", action: "【2026-11-20 W-14 spike 补齐桌面侧】PNG/PPM 同帧 FNV 一致早已达成；桌面 GPUI 显示帧的 checksum 0x9a3e68dede39ed25 与 Headless CLI 同参数帧逐字节一致，原生窗口截图确认画面正确。三方（Web/WASM core、headless CLI、桌面 GPUI）同一帧指纹对齐达成；边界：桌面比对取 GPUI 纹理上传前的 CPU 帧，未做 GPU 输出屏幕回读，见 ADR-04" },
   { id: "H17", title: "Rust core 迁入与跨栈像素一致", priority: "P0", milestone: "M1", status: "已完成", action: "【2026-11-14 新增】10 个隔离 crate 编译/测试全绿，WASM 绑定与浏览器共用 core，Headless CLI（Rust 原生）与 WASM 同帧同 FNV 指纹（MCP 18/18）；M1 剩余阻塞仅 H01 的 GPU 决策" },
 ];
 
 /** 数据版本：页面显示该值，用于确认浏览器加载的是最新数据层。 */
-const DATA_VERSION = "2026-11-08-r63";
-const DATA_UPDATED_AT = "2026-11-17 18:20";
+const DATA_VERSION = "2026-11-20-r64";
+const DATA_UPDATED_AT = "2026-11-20 W-14 H01/H05 spike";
 const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
 
 /**
@@ -74,7 +74,7 @@ const DECISION_STATUS = { OPEN: "待决", DECIDED: "已决" };
  * 与 compat-contract.json 的 decisions 保持一致（由 compat.test.cjs 交叉校验）。
  */
 const QUESTIONS = [
-  { id: "Q01", text: "桌面 GPU 后端走哪条路？（readback / 独立窗口 / 换后端）", status: DECISION_STATUS.OPEN, due: "M1 结束", decision: "", source: "HOTSPOTS.md" },
+  { id: "Q01", text: "桌面 GPU 后端走哪条路？（readback / 独立窗口 / 换后端）", status: DECISION_STATUS.DECIDED, due: "2026-11-20 已决", decision: "M1~M3 走 CPU RGBA8→BGRA→GPUI ImageSource::Render 直传过渡（1080p 59~63ms，checksum 与 CLI/WASM 一致）；仓库无 wgpu 合成器，暂不引入 wgpu 纹理 readback / 换后端。见 ADR-04", source: "README.md §9 ADR-04" },
   { id: "Q02", text: "移动端 UI 用 Flutter 还是原生？", status: DECISION_STATUS.OPEN, due: "M6 开始前", decision: "", source: "HOTSPOTS.md" },
   { id: "Q03", text: "现在引入 Loro CRDT 吗？", status: DECISION_STATUS.OPEN, due: "M2 结束", decision: "", source: "HOTSPOTS.md" },
   { id: "Q04", text: "插件运行时用 Extism 还是自研 Component Model？", status: DECISION_STATUS.OPEN, due: "M2 并行 spike", decision: "", source: "HOTSPOTS.md" },

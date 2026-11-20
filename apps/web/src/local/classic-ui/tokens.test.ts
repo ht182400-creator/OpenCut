@@ -17,10 +17,10 @@ import {
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const themeCss = readFileSync(path.join(HERE, 'theme.css'), 'utf8');
-/** 参照物路径可用环境变量覆盖；源码不存在时退回内置期望值。 */
+/** 参照物路径可用环境变量 OPENCUT_CLASSIC_GLOBALS 覆盖；默认占位符不指向任何本机路径，源码不存在时退回内置期望值。 */
 const CLASSIC_GLOBALS =
   process.env.OPENCUT_CLASSIC_GLOBALS ??
-  'E:/AI_Studio/opencut-classic/apps/web/src/app/globals.css';
+  '<classic-source>/apps/web/src/app/globals.css';
 
 /** 从 CSS 文本里按选择器提取 `--变量: 值` 对。 */
 function block(css: string, selector: string): Record<string, string> {

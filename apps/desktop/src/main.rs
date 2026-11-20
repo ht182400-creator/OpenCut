@@ -6,6 +6,7 @@ use gpui::{
 mod components;
 mod panels;
 mod shell;
+mod spike;
 mod theme;
 
 use shell::Shell;

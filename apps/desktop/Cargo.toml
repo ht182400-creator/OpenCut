@@ -11,3 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 gpui = { workspace = true }
+# H01 spike：与 GPUI 0.2.2 对齐的 image 版本，用于把 CPU RGBA 帧转成 GPUI 纹理。
+image = "0.25.1"
+# H01 spike：复用 core 的确定性 CPU 合成帧与 FNV checksum。
+ocx-render = { path = "../../local/crates/ocx-render" }

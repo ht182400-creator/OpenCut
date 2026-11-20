@@ -52,7 +52,7 @@ flowchart LR
 
 ## 2. 基线复核（实测）
 
-| 项 | 重写版 `E:/AI_Studio/OpenCut` | 经典版 `E:/AI_Studio/opencut-classic` |
+| 项 | 重写版 `<repo>` | 经典版 `<classic-source>` |
 | --- | --- | --- |
 | 状态 | 脚手架：`web` 两个占位路由、`api` 三个示例端点、`desktop` GPUI 四面板文字占位 | 已归档，8.2 万行可用编辑器 + 已启动的 Rust 化 |
 | Rust | `Cargo.toml` 只有 `apps/desktop`，`'crates/*'` 被注释，`resolver = "3"` | `rust/` 6 crate + wasm 绑定，34 个 `.rs/.wgsl`，**4,335 行** |
@@ -230,7 +230,7 @@ flowchart LR
 | 用途 | 桌面/headless 合成 | Web 合成 | 桌面 UI 框架 | 矢量/文字/贴纸 |
 | 与经典版资产 | 直接复用 WGSL | 直接复用 | 不兼容 | 需新接 |
 | 主要障碍 | 原生 surface 未验证 | 已验证 | **纹理互通需 readback** | 与 wgpu 集成 |
-| 结论 | M1~M3 | **Web 优先** | UI 壳，不承载视频 | M3 后补 2D |
+| 结论 | M1~M3 | **Web 优先** | UI 壳 + CPU 帧 BGRA 直传预览（W-14/ADR-04）；不承载 wgpu 纹理 | M3 后补 2D |
 
 ### 4.7 现状 → 建议 → 收益 / 成本
 
@@ -692,7 +692,7 @@ git push origin main                                  # 绝不 --force
 
 | ID | 风险 | 证据 | 影响 | 缓解 | 负责里程碑 |
 | --- | --- | --- | --- | --- | --- |
-| R1 | GPUI(blade) 与 wgpu 纹理不互通 | 实测 `Cargo.lock` | 桌面预览性能/架构 | M1 spike：离屏 readback 实测；备选独立 wgpu 窗口 | M1 |
+| R1 | GPUI(blade) 与 wgpu 纹理不互通 | 实测 `Cargo.lock` + 2026-11-20 W-14 spike | 桌面预览性能/架构 | 已用 CPU 帧 BGRA 直传绕过（ADR-04），1080p 59~63ms 且跨栈指纹一致；wgpu 纹理 readback 后置到 M4 原生合成器落地后重估 | M1（已缓解） |
 | R2 | 4.6 万行领域逻辑翻译无回归网 | 经典版 30 个测试全为纯函数 | 语义漂移 | 先建 golden master（JSON 数据驱动）再翻译 | M0/M2 |
 | R3 | 上游架构大改导致语义漂移 | 官方 README「架构仍在设计中」 | 合并后编译失败 | §7 的 L3 流程 + 新增优先 + 差异台账 | 全程 |
 | R4 | FFmpeg LGPL 合规 | `ffmpeg.json`/`setup.ts` | 分发风险 | 动态链接、随附许可证/BUILD.md；CI 校验 | M4 |
@@ -713,7 +713,7 @@ git push origin main                                  # 绝不 --force
 | ADR-01 | 目标仓库定为重写版，经典版只读参考 | 经典版已归档；重写版是上游方向 | 在经典版继续改 | 已定 |
 | ADR-02 | 内部 serde schema + 外部 OTIO 适配双轨 | 不让外部标准限制内部演进，同时获得互通 | 全用 OTIO | 建议 |
 | ADR-03 | 插件运行时选 WASM（Extism 优先 spike） | 跨端一致、默认沙箱、能力可控 | 进程内 / iframe / Worker | 建议 |
-| ADR-04 | 桌面 GPU 后端待 spike 结论 | blade 与 wgpu 不互通，无实测数据 | 直接 readback / 换后端 | 待决 |
+| ADR-04 | 桌面 M1~M3 走 CPU RGBA8→BGRA→GPUI `ImageSource::Render` 直传；wgpu 纹理 readback / 换后端后置 | 2026-11-20 W-14 spike 实测 1080p 单帧 59~63ms（Debug 构建），checksum `0x9a3e68dede39ed25` 与 Headless CLI 同参数帧逐字节一致；GPUI 0.2.2 `RenderImage` 要求 BGRA，转换后原生窗口截图画面正确。仓库无 wgpu 合成器，真正的「wgpu 纹理→CPU readback」后半段暂不可测 | 独立 wgpu 窗口 / 换渲染后端 | **已定**（W-14 spike，2026-11-20；边界见 `apps/desktop/src/spike.rs` 模块注释） |
 | ADR-05 | 协同（CRDT）延后但命令层保持可映射 | 避免早期引入复杂度 | 现在引入 Loro | 建议 |
 | ADR-06 | fork 采用「新增优先 + 隔离目录 + 差异台账」 | 最小化冲突、与插件架构同构 | 直接改 main / 双分支 | 建议 |
 | ADR-07 | 文档放 `roadmap/` 而非 `docs/` | `.gitignore:7` 忽略 `docs/` | 改 `.gitignore` | 已定 |
@@ -797,8 +797,9 @@ git push origin main                                  # 绝不 --force
 | **经典版 UI 同步第二批 / 时间轴产品化** | `agent-browser` 真实浏览器交互 + 截图 + `vitest run` | 时间标尺（0~3s 刻度）、红色播放头（点击/拖动标尺定位，与预览帧联动）、片段 16 条程序化波形与时长标签、1~8× 缩放 + 横向滚动、吸附开关（帧网格量化 + 8px 阈值内吸附片段/时间轴边界）、播放头跑出视口自动居中；实测放大 4× 后 seek 到 `00:01.27` 时 `scrollLeft=2407`（播放头居中可见）；`rulerTicks` / `snapTicks` / `formatTimecode` 单测 +5 项；vitest 120/120、tsc 本次 0 错误、`vite build` 0、10 crate 全绿、WASM 契约 99/99、官方 OTIO 往返 42/42、MCP 18/18 |
 | **看板热点 / 里程碑进度校准** | `node dashboard.test.cjs`（78/78）+ `node compat.test.cjs`（45/45）+ 浏览器截图 | 用户指出里程碑依赖图与进度和真实交付相反（M6 100% 已完成而 W-14/W-15 未做）。校准 `dashboard-data.js`：H02/H07/H08/H11/H14 → 已完成、H12 归属 M6→M4、新增 H15/H16/H17；`HOTSPOTS.md` 台账与「热点分布」同步；推导结果 M0 75% 进行中 / M1 33% 阻塞 / M2 100% / M3 50% / M4 100% / M5 100% / M6 0% 未开始，与 `PRIORITY.md` core 阶段结论一致 |
 | **经典版 UI 同步第三批 / 交互与状态** | `agent-browser` 真实浏览器交互 + 截图 + `vitest run`（130/130） | 快捷键（空格播放/暂停、←/→ 逐帧、Home/End 首尾、Delete 删除、S 分割、I/O 入出点，输入框与 Ctrl/Cmd+Z 不劫持）；属性面板 4 个 ticks 字段可编辑并提交（时间/时长仍走 core 约束函数）；项目快照 `opencut-snapshot v1` 保存/加载闭环（保存得到 2 片段 JSON、加载恢复名称与入点 9999）；导出设置面板（容器 MP4/WebM/AV1、音轨开关、码率覆盖、分辨率只读说明、快捷键帮助），`export.ts` 新增 `profileBitrate` 让码率真正生效。实测：`ArrowRight` 帧 1→2、空格按钮播放↔暂停、入点改为 8000 生效、容器切到 `WebM（AV1 + Opus）`；tsc 0 错误、`vite build` 0、10 crate 全绿 |
-| **像素级 1:1 改造 · 批 0 基线固化** | `vitest src/local/classic-ui/tokens.test.ts`（10/10）+ 浏览器 `getComputedStyle` | 用户指定参照物 `E:\AI_Studio\opencut-classic` 并指示像素级 1:1；新建 [UI_REPLICA_PLAN.md](UI_REPLICA_PLAN.md) 批次进度台账；`classic-ui/theme.css` 从经典版 `globals.css` 逐项复制 `:root`/`.dark`/`.panel`/`.dark .panel` 变量与 radius/字号/断点 token，`tokens.ts` 固化 `PANEL_CONFIG`(25/50/25、50/50)、gap(0.18/0.19rem)、header(3.4rem) 等；`tokens.test.ts` 在源码可用时**逐变量比对经典版原文件**，抓出并修正 `.dark --input` 一处抄写偏差；`/editor` 建立 `.classic-ui-root` 作用域（本批不改视觉）。浏览器确认亮/暗变量生效；vitest **140/140**、tsc 0 错误、`vite build` 0 |
+| **像素级 1:1 改造 · 批 0 基线固化** | `vitest src/local/classic-ui/tokens.test.ts`（10/10）+ 浏览器 `getComputedStyle` | 用户指定参照物 `<classic-source>` 并指示像素级 1:1；新建 [UI_REPLICA_PLAN.md](UI_REPLICA_PLAN.md) 批次进度台账；`classic-ui/theme.css` 从经典版 `globals.css` 逐项复制 `:root`/`.dark`/`.panel`/`.dark .panel` 变量与 radius/字号/断点 token，`tokens.ts` 固化 `PANEL_CONFIG`(25/50/25、50/50)、gap(0.18/0.19rem)、header(3.4rem) 等；`tokens.test.ts` 在源码可用时**逐变量比对经典版原文件**，抓出并修正 `.dark --input` 一处抄写偏差；`/editor` 建立 `.classic-ui-root` 作用域（本批不改视觉）。浏览器确认亮/暗变量生效；vitest **140/140**、tsc 0 错误、`vite build` 0 |
 | **像素级 1:1 改造 · 批 1 主框架** | `agent-browser` computed style 实测 + 亮/暗截图 + vitest 140/140 | 可调整五面板（垂直 mainContent/timeline 50/50、水平 tools/preview/properties 25/50/25，含 min/max 与 gap 0.18/0.19rem），顶栏 `3.4rem` 项目菜单 + 主题切换 + 导出，竖排 9 图标 tab 栏（诊断与导出设置收进 settings tab），预览画布 `object-fit: contain` 等比居中，全量改由 `.classic-ui-root`/`.panel` 主题变量驱动并支持亮/暗切换。实测 header `54.39px`、三栏 `306/612/306`、垂直 `253/253`、3 个 resize handle、9 个 tab；亮色 `--background: hsl(0, 0%, 100%)`、暗色 `hsl(0, 0%, 5%)`、`.panel` 暗色 `hsl(0 0% 10%)` 均与经典版 `globals.css` 一致；`tokens.test.ts` 补齐 `properties 15~40`/`timeline 15~70` 约束并锁定。**诚实边界**：经典版参照服务（bun 1.2.18 pin / Turbopack panic / webpack 500）未就绪，**同视口并排截图未完成**，本批以源码级尺寸/变量逐项比对 + 当前页面 computed style 实测替代；面板内部控件仍为过渡形态（批次 2~5 替换）。vitest 140/140、tsc 0 错误、`vite build` 0 |
+| **W-14 / H01·H05 spike（UI 闭环后首个桌面批次）** | `cargo test --workspace` 全绿 + `moon run desktop:test`（8/8）+ 原生 GPUI 窗口截图 + Headless CLI 同参数帧对拍 | 新 `apps/desktop/src/spike.rs`：复用 `ocx_render::render_frame` 产 CPU RGBA8 帧 → 逐像素 `swap(0,2)` 转 BGRA → `RenderImage::new` → `img(ImageSource::Render(...))` 在 GPUI 预览面板显示；4 项原生用例覆盖 1080p 尺寸/RGBA 长度、checksum 可复现、BGRA 通道与 alpha 保持、非法 opacity 返回错误不 panic。实测 1080p 单帧 **63.28ms**（test）/ **59.46ms**（原生窗口），checksum `0x9a3e68dede39ed25`，与 `ocx-cli frame-png` 同参数帧输出**逐字节一致**；原生窗口截图确认深灰底 + 青绿矩形画面与通道正确。桌面 `moon.yml` 补 `test` task 关闭 H05 的 CI 缺口。**书面决策**：ADR-04 定为「M1~M3 走 CPU 帧 BGRA 直传过渡，wgpu 纹理 readback / 换后端后置」，Q01 待决→已决，H01 阻塞→已完成、H05 未开始→已完成、H16 进行中→已完成，看板 r63→r64。**诚实边界**：仓库无 wgpu 合成器，未做「wgpu 纹理→CPU readback」后半段；桌面指纹取纹理上传前的 CPU 帧，未做屏幕像素回读，均写入 ADR-04 |
 | 导入测试 | `node dashboard.test.cjs` 用零依赖 DOM 桩按页面顺序加载三个脚本并触发 `init()` | 通过 |
 | 看板回归 | 数据完整性、依赖图、状态机全循环、完成度、持久化往返、渲染、导出/导入 JSON、重置两分支、**决策台账状态/结论与 DOM 渲染、数据版本** | **44 通过 / 0 失败** |
 | **兼容契约回归** | `node compat.test.cjs`：不变量、命名空间、判据权重、状态机、六能力台账、导出决策、三项用户决策、**契约↔看板交叉校验** | **45 通过 / 0 失败** |

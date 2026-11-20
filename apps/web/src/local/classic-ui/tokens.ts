@@ -1,7 +1,7 @@
 /**
  * 经典版 UI 像素级 1:1 改造 · 批 0 尺寸基线。
  *
- * 来源：E:\AI_Studio\opencut-classic
+ * 来源：<classic-source>
  * - PANEL_CONFIG: apps/web/src/panels/layout.ts
  * - 面板约束/间隙: apps/web/src/app/editor/[project_id]/page.tsx (EditorLayout)
  * - 顶栏: apps/web/src/components/editor/editor-header.tsx

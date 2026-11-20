@@ -17,7 +17,7 @@ impl Shell {
     pub(crate) fn new(cx: &mut App) -> Self {
         Self {
             browser: cx.new(|_| Browser),
-            preview: cx.new(|_| Preview),
+            preview: cx.new(|_| Preview::new()),
             inspector: cx.new(|_| Inspector),
             timeline: cx.new(|_| Timeline),
         }

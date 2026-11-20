@@ -52,7 +52,7 @@
 | **W-11** | Editor API 稳定化 + 能力发现 | P1 | 插件与 MCP 的前置 | W-03/W-05 | 版本化命令/事件/快照、`discover` 式能力协商 | 接口冻结并写入契约；向后兼容用例通过 | T+26~32w | R11 |
 | **W-12** | 插件 host（Extism / WIT）+ 示例插件 | P2 | 路线图「一等插件」，也是 C→B 迁移的落点 | W-11 | `local/crates/ocx-plugin-host`、manifest、能力清单 | 越权被拒；示例插件可注册 effect/command | T+32~40w | H07/R8 |
 | **W-13** | MCP server + Headless + scripting | P2 | AI Agent / 批量渲染 | W-11 | `apps/local-mcp`（`ocx.*`）、`ocx-render`、脚本标签页 | MCP `tools/list` 可完成一次导出；长任务可查进度 | T+40~48w | H08 |
-| **W-14** | 桌面 GPUI 接入（spike 先行） | P2 | H01 决策后才有确定方案 | W-07 + M1 spike | GPUI 显示 wgpu 合成帧 | 桌面与 Web 输出像素一致帧 | T+48~56w | R1/H01 |
+| **W-14** | 桌面 GPUI 接入（spike 先行） | P2 | H01 已由 2026-11-20 spike 决策（ADR-04） | W-07 + M1 spike 完成 | GPUI 显示 wgpu 合成帧（wgpu 后半段后置，当前 CPU BGRA 直传） | 桌面与 Web 输出像素一致帧（1080p checksum 已与 CLI/WASM 对齐） | T+48~56w | R1/H01 已缓解 |
 | **W-15** | 移动端 / 协同评估 | P2 | 长线 | W-11 | UniFFI 或 flutter_rust_bridge 原型 | 移动端可打开同一项目 JSON | T+56w+ | Q02/Q03 |
 
 ### 进度快照（2026-11-08 开工首日）
@@ -72,7 +72,8 @@
 | W-11 | **第一批已完成（接口冻结与能力协商）** | `CommandEnvelope` / `Event` / `CommandOutcome` / `SceneSnapshot` 全部带 `schemaVersion`，旧 JSON 缺字段按 v1 兼容、未知字段忽略、未来版本明确拒绝；`DiscoverResult` 增 `supportedSchemaVersions`；新 `negotiation.rs` 提供 `discover` 式能力协商（取最高共同版本、返回缺失能力清单、4 个稳定 reason 码）；WASM 暴露 `api_negotiate`，`editor-adapter.ts` 按 I-01 接入。契约 `editor-api.contract.json` 升 **v2 并冻结**（`frozen` / `additive-only`，v1 字段全保留），`editor-api.contract.test.mjs` 7/7、`stability.rs` 13 项向后兼容用例、Node 真实 WASM 契约 68/68、vitest 105/105。**剩余**：WIT 插件 host（W-12）、MCP server（W-13）等生态接入 |
 | W-12 | **第一批已完成（契约与能力校验）** | 新 `local/crates/ocx-plugin-host`：`model.rs` 定义 additive-only `PluginManifest` 与 13 个稳定错误码、`registry.rs` 实现 manifest 校验 / 越权拒绝 / 重复注册检测 / effect·command 处理器真实分派；版本协商复用 W-11 冻结的 `ocx-editor-api::negotiate`；WASM 暴露 `plugin_register`，`editor-adapter.ts` 按 I-01 接入；`PLUGIN_CASES.md` P01~P13。验证：`stability.rs` **13/13**（越权 `PERMISSION_DENIED` 并列出越权项、缺能力声明、版本不匹配、未知权限、旧 manifest 兼容、示例插件 `brightness(0.25)→0.5` / `ping(7)→pong:7`、收回权限后拒绝调用）、Node WASM 契约 **99/99**、8 crate 全绿、vitest 109/109；重建 WASM（857,509 B）。**第二批（原生 WebAssembly 运行时）**：新 `ocx-plugin-sample` cdylib（wasm32，116,313 字节）实现 `ocx_alloc` / `ocx_dealloc` 与 `effect_brightness` / `command_ping` 导出（i64 打包 ptr/len 的 ABI，纯计算、零宿主导入，天然无网络/无文件系统）；新 `plugin-runtime.ts` 用浏览器与 Node 都原生支持的 `WebAssembly` API 加载并真实调用插件（**未引入 Extism / WIT**），错误映射到 core 稳定错误码；manifest 校验仍走第一批 `pluginRegister`。真实产物回归 `plugin-runtime.test.ts` 6 项、vitest **115/115**、9 crate 全绿。**第三批**：Rust 侧 wasmi 2.0 运行时 + 细粒度权限零依赖实现（见下）。**第四批（WIT 契约层）**：官方一手查证 wasmi 仅 core wasm、不支持组件模型，故以 WIT 为 IDL 单一事实来源而非组件运行时——内嵌 `wit/ocx-plugin.wit` + 零依赖解析器 `wit.rs` + 运行时导出白名单双重校验（新增 `INVALID_WIT`/`WIT_EXPORT_NOT_DECLARED`），wit 单元 6/6 + runtime 8/8。**第五批（声明式权限）**：deny-by-default 资源 scope——`permissionScopes`（additive-only）+ `permissions.rs` 纯函数校验/匹配 + 按授予用 `func_wrap` 注入受控 `ocx.resource_len`、越权 trap→`SCOPE_DENIED`；旧 `load_plugin` 零导入不变；permissions 4/4 + declarative 端到端 6/6 + runtime 8/8。**剩余**：完整 WebAssembly component model（wasmi 不原生支持，需另评估运行时/polyfill）、真实文件/网络 scope、WASM glue/TS 入口、MCP server PNG/WAV 接口（W-13） |
 | W-13 | **第一批已完成（MCP server）** | 新 `apps/local-mcp/server.mjs`：MCP over stdio（JSON-RPC 2.0，newline-delimited）**手写实现、零第三方依赖**，core 能力经真实 WASM 产物调用（与浏览器同一份 core）；工具集 `ocx.*` 共 8 个（capabilities、project.read/write、otio.import/export、render.frame/batch/status）。DoD 两条实测：`tools/list` → `ocx.otio.import` → `ocx.otio.export` **完成一次导出**且可再导入；`ocx.render.batch` 3 帧长任务 → `ocx.render.status` 轮询至 done，且批量帧指纹与单帧一致。`server.test.mjs` **17/17**（协议分发、工具异常、spawn 真实进程的 stdio 端到端）。**第二批（Headless CLI）**：新 `apps/local-cli`（`ocx-cli` bin + lib，workspace members 显式加入）：`frame` / `batch` / `project-info` 三个子命令，帧产物为 PPM（P6，RGB8，零压缩零依赖），指纹与 `RenderFrame::checksum()` 同算法；`server.test.mjs` 的 `ocx.render.frame` 增加 `fnvChecksum`（FNV-1a，与 ocx-render 同算法）实现**跨栈像素一致性**——Rust 原生 CLI 与 WASM core 对同一帧产出相同指纹（`cli.rs` / `cli_project.rs` 5 项 + MCP **18/18**）。**剩余**：脚本标签页 UI |
-| W-14 及以后 | 未开始 | — |
+| W-14 | **spike 已完成（2026-11-20）** | 新 `apps/desktop/src/spike.rs`：CPU RGBA8→BGRA→GPUI `ImageSource::Render` 显示 1080p 帧，4 项原生用例 + `desktop:test` moon task；实测 63.28ms（test）/ 59.46ms（窗口），checksum `0x9a3e68dede39ed25` 与 Headless CLI 同参数帧一致，原生窗口截图验收通过。ADR-04 定为「M1~M3 CPU 帧 BGRA 直传过渡，wgpu readback / 换后端后置」，H01/H05/H16 关闭、Q01 已决。**剩余**：按过渡方案接入更多桌面面板；wgpu 后半段待 M4 原生合成器 |
+| W-15 及以后 | 未开始 | — |
 
 ## core 阶段结论（2026-11-14，用户指示「core 先告一段落，未完成的标记，然后启动经典版 UI 同步」）
 
@@ -81,7 +82,7 @@
   - W-12：Rust 侧插件运行时（wasmi）、WIT 组件模型、声明式权限；
   - W-13：Headless CLI 的音频/PNG 编码与脚本标签页 UI；
   - 小项：快照导出/回溯列表 UI、导出进度条 UI、Firefox 音频兼容回归、AV1 之外的导出增强；
-  - W-14 桌面 GPUI spike（依赖 H01 阻塞决策）、W-15 移动端评估。
+  - W-15 移动端评估（W-14 桌面 GPUI spike 已于 2026-11-20 完成，H01/H05 关闭）。
 - **基线**：三端 `main`；10 crate 全绿、官方 OTIO 往返 42/42、MCP 18/18、vitest 115/115、看板 73/73、兼容 45/45。
 - **UI 阶段约定**：每批结束跑全套回归，UI 改动不回退 core 契约与测试；core 暂停项在 UI 阶段被阻塞时按原表恢复。
 - **批 7.1 core 扩展（2026-11-16，UI 1:1 批次 0~6 完成后恢复）**：`ocx-domain` 的 `ElementView` 新增 name/mediaId/content/params 四个可选字段（additive-only，`serde(default)`+`skip_serializing_if`），read→write 往返逐字段保真；`ElementType` 加 `Caption` 并映射到 text 轨；新增 `element_fields.rs` 5/5、WASM 契约 106/106（真实 wasm 重编）、10 crate test 全绿。7.2~7.5（可变分辨率、真实波形、帧缩略图、项目写回接线）仍按 UI_REPLICA_PLAN §4 边界推进，未开始。

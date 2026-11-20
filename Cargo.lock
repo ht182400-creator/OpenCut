@@ -3689,6 +3689,8 @@ name = "opencut-desktop"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "image",
+ "ocx-render",
 ]
 
 [[package]]

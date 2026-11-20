@@ -157,7 +157,7 @@ function main() {
     assertEqual("热点数量", api.HOTSPOTS.length, EXPECTED_HOTSPOTS);
     assertEqual("开放问题数量", api.QUESTIONS.length, EXPECTED_QUESTIONS);
     assertEqual("问题状态合法", api.QUESTIONS.every((q) => ["待决", "已决"].includes(q.status)), true);
-    assertEqual("已决问题数量", api.QUESTIONS.filter((q) => q.status === "已决").length, 2);
+    assertEqual("已决问题数量", api.QUESTIONS.filter((q) => q.status === "已决").length, 3);
     assertEqual("已决项含结论与来源", api.QUESTIONS.filter((q) => q.status === "已决").every((q) => q.decision && q.source), true);
     assertEqual("Q07 结论含 WebCodecs", api.QUESTIONS.find((q) => q.id === "Q07").decision.includes("WebCodecs"), true);
     assertEqual("Q08 结论含不加入", api.QUESTIONS.find((q) => q.id === "Q08").decision.includes("不加入"), true);
@@ -167,7 +167,7 @@ function main() {
     assertEqual("热点归属合法", api.HOTSPOTS.every((h) => h.milestone === "全程" || ids.has(h.milestone)), true);
 
     // 2. 单一数据源：热点是唯一可写状态，里程碑只读派生
-    assertEqual("H01 默认阻塞", api.statusOf("hotspots", "H01"), "阻塞");
+    assertEqual("H01 默认已完成（W-14 spike 关闭）", api.statusOf("hotspots", "H01"), "已完成");
     assertEqual("M0 状态由热点推导", api.statusOf("milestones", "M0"), "进行中");
     assertEqual("未知热点 ID 回退", api.statusOf("hotspots", "H999"), "未开始");
     assertEqual("未知里程碑 ID 回退", api.statusOf("milestones", "M999"), "未开始");
@@ -184,8 +184,8 @@ function main() {
 
     // 3. 完成度计算（2026-11-14 校准：M0 四个热点中 H03/H10/H14 已完成，H06 进行中）
     assertNear("M0 完成度", api.milestoneProgress("M0"), 3 / 4);
-    // M1 三个热点：H01 阻塞、H05 未开始、H17 已完成（Rust core 迁入）
-    assertNear("M1 完成度", api.milestoneProgress("M1"), 1 / 3);
+    // M1 三个热点：H01/H05/H17 均已完成（W-14 spike 关闭 H01/H05，H17 Rust core 迁入）
+    assertNear("M1 完成度", api.milestoneProgress("M1"), 1);
     assertNear("无关联热点里程碑完成度", api.milestoneProgress("M999"), 0);
 
     // 3b. 自动推导：改热点状态 → 里程碑立即变化，不存在人工覆盖路径
@@ -196,7 +196,7 @@ function main() {
     assertEqual("M0 推导状态", m0.status, "进行中");
     assertEqual("M0 汇总不含 manual", Object.prototype.hasOwnProperty.call(m0, "manual"), false);
     assertEqual("M0 汇总不含 conflict", Object.prototype.hasOwnProperty.call(m0, "conflict"), false);
-    assertEqual("M1 推导状态", api.derivedMilestoneStatus("M1"), "阻塞");
+    assertEqual("M1 推导状态", api.derivedMilestoneStatus("M1"), "已完成");
     // 2026-11-14 校准：H12 归属由 M6 修正为 M4；M6 只关联新增的 H15（移动端未开始）
     assertEqual("M6 推导状态", api.derivedMilestoneStatus("M6"), "未开始");
     assertNear("M6 完成度", api.milestoneProgress("M6"), 0);
@@ -204,9 +204,9 @@ function main() {
     assertEqual("M2 推导状态", api.derivedMilestoneStatus("M2"), "已完成");
     assertEqual("M4 推导状态", api.derivedMilestoneStatus("M4"), "已完成");
     assertEqual("M5 推导状态", api.derivedMilestoneStatus("M5"), "已完成");
-    // M3 仍有 H16（PNG 已完成 / 桌面像素一致未做，状态为进行中）未完成
-    assertEqual("M3 推导状态", api.derivedMilestoneStatus("M3"), "进行中");
-    assertEqual("H16 反映 PNG 已完成但桌面一致性未做", api.statusOf("hotspots", "H16"), "进行中");
+    // M3 的 H16 三方指纹对齐已由 W-14 spike 补齐，M3 完成
+    assertEqual("M3 推导状态", api.derivedMilestoneStatus("M3"), "已完成");
+    assertEqual("H16 反映桌面指纹对齐已完成", api.statusOf("hotspots", "H16"), "已完成");
     const hotspotState = api.getState().hotspots;
     for (const id of ["H03", "H06", "H10", "H14"]) hotspotState[id] = "已完成";
     assertEqual("热点全完成后 M0 变已完成", api.statusOf("milestones", "M0"), "已完成");
@@ -221,8 +221,8 @@ function main() {
     assertNoThrow("重复全量渲染", () => api.renderAll());
     // 直接验证决策台账 DOM 已更新，避免「数据改了但页面没渲染」的回归
     assertEqual("决策台账渲染卡片数", env.elements["question-list"].children.length, EXPECTED_QUESTIONS);
-    assertEqual("统计显示已决 2 项", env.elements["question-stats"].textContent.includes("已决 2"), true);
-    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-08-r63"), true);
+    assertEqual("统计显示已决 3 项", env.elements["question-stats"].textContent.includes("已决 3"), true);
+    assertEqual("页首显示数据版本", env.elements["data-version"].textContent.includes("2026-11-20-r64"), true);
     const svgTexts = [];
     const collectText = (node, target) => {
       if (node && typeof node.textContent === "string" && node.textContent) target.push(node.textContent);

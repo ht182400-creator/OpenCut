@@ -17,6 +17,15 @@ tasks:
       - '/Cargo.toml'
       - '/Cargo.lock'
 
+  # H05：原生渲染路径的离屏像素用例（H01 spike 的 BGRA/尺寸/checksum 断言）。
+  test:
+    command: 'cargo test -p opencut-desktop'
+    inputs:
+      - 'src/**/*'
+      - 'Cargo.toml'
+      - '/Cargo.toml'
+      - '/Cargo.lock'
+
   build:
     command: 'cargo build --release'
     inputs:
