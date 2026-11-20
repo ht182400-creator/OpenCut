@@ -98,3 +98,51 @@ export function getResizeCursor(degrees: number): string {
 export function formatZoomLabel(zoom: number): string {
   return Math.abs(zoom - 1) <= IS_AT_FIT_EPSILON ? 'Fit' : `${Math.round(zoom * 100)}%`
 }
+
+/** 时间码字段分隔与补位常量（editable-timecode.tsx）。 */
+export const TIMECODE_FIELDS = 4 as const
+export const TIMECODE_PAD_WIDTH = 2 as const
+export const SECONDS_PER_MINUTE = 60 as const
+export const MINUTES_PER_HOUR = 60 as const
+
+/**
+ * 帧号 → HH:MM:SS:FF（经典版 EditableTimecode 显示格式）。
+ * @param frameIndex 帧号（负值按 0）
+ * @param fps 帧率（非法回落 1）
+ * @returns {string} HH:MM:SS:FF
+ */
+export function formatFrameTimecode(frameIndex: number, fps: number): string {
+  const rate = Math.max(1, Math.round(Number.isFinite(fps) ? fps : 1))
+  const total = Math.max(0, Math.floor(Number.isFinite(frameIndex) ? frameIndex : 0))
+  const frames = total % rate
+  const seconds = Math.floor(total / rate) % SECONDS_PER_MINUTE
+  const minutes = Math.floor(total / (rate * SECONDS_PER_MINUTE)) % MINUTES_PER_HOUR
+  const hours = Math.floor(total / (rate * SECONDS_PER_MINUTE * MINUTES_PER_HOUR))
+  const pad = (value: number) => String(value).padStart(TIMECODE_PAD_WIDTH, '0')
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}:${pad(frames)}`
+}
+
+/**
+ * 解析 HH:MM:SS:FF → 帧号；非法/超范围返回 null 由调用方保持原值。
+ * 兼容 H:M:S:F（不补位）与纯秒数（当作 SS:FF 前的秒）。
+ * @param text 输入文本
+ * @param fps 帧率
+ * @returns {number | null} 帧号或 null
+ */
+export function parseFrameTimecode(text: string, fps: number): number | null {
+  const rate = Math.max(1, Math.round(Number.isFinite(fps) ? fps : 1))
+  const trimmed = text.trim()
+  if (trimmed.length === 0) return null
+  const parts = trimmed.split(':')
+  if (parts.length !== TIMECODE_FIELDS) return null
+  const nums = parts.map((part) => {
+    if (!/^\d+$/.test(part)) return Number.NaN
+    return Number.parseInt(part, 10)
+  })
+  if (nums.some((value) => !Number.isFinite(value))) return null
+  const [hours, minutes, seconds, frames] = nums
+  if (minutes >= MINUTES_PER_HOUR || seconds >= SECONDS_PER_MINUTE || frames >= rate) return null
+  const totalSeconds = hours * SECONDS_PER_MINUTE * MINUTES_PER_HOUR
+    + minutes * SECONDS_PER_MINUTE + seconds
+  return totalSeconds * rate + frames
+}

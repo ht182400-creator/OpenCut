@@ -36,8 +36,10 @@ import {
   TRANSFORM_EDGES,
   WHEEL_DELTA_CAP,
   WHEEL_ZOOM_DIVISOR,
+  formatFrameTimecode,
   formatZoomLabel,
   getResizeCursor,
+  parseFrameTimecode,
 } from './preview-tokens';
 
 /** 参照物根目录由环境变量提供；未设置时不执行源码比对（CI / 非作者机器）。 */
@@ -158,5 +160,35 @@ describe('经典版预览交互 1:1 · 尺寸/缩放/手柄 token（批 5）', (
     expect(formatZoomLabel(1.5)).toBe('150%');
     expect(formatZoomLabel(0.25)).toBe('25%');
     expect(formatZoomLabel(2)).toBe('200%');
+  });
+
+  it('formatFrameTimecode 按帧率格式化 HH:MM:SS:FF', () => {
+    expect(formatFrameTimecode(0, 30)).toBe('00:00:00:00');
+    expect(formatFrameTimecode(30, 30)).toBe('00:00:01:00');
+    expect(formatFrameTimecode(90, 30)).toBe('00:00:03:00');
+    expect(formatFrameTimecode(3600 * 30 + 2 * 30 + 15, 30)).toBe('01:00:02:15');
+  });
+
+  it('formatFrameTimecode 非法入参安全回落', () => {
+    expect(formatFrameTimecode(-5, 30)).toBe('00:00:00:00');
+    expect(formatFrameTimecode(Number.NaN, 30)).toBe('00:00:00:00');
+    expect(formatFrameTimecode(30, 0)).toBe('00:00:30:00'); // fps 非法回落 1，故 30 帧=30 秒
+  });
+
+  it('parseFrameTimecode 解析合法时间码并可往返', () => {
+    expect(parseFrameTimecode('00:00:01:00', 30)).toBe(30);
+    expect(parseFrameTimecode('01:00:02:15', 30)).toBe(3600 * 30 + 2 * 30 + 15);
+    expect(parseFrameTimecode(formatFrameTimecode(123, 30), 30)).toBe(123);
+    expect(parseFrameTimecode(' 00:00:03:10 ', 30)).toBe(100);
+  });
+
+  it('parseFrameTimecode 非法/超范围输入返回 null', () => {
+    expect(parseFrameTimecode('', 30)).toBeNull();
+    expect(parseFrameTimecode('00:00:01', 30)).toBeNull(); // 字段不足
+    expect(parseFrameTimecode('00:00:01:30', 30)).toBeNull(); // FF 超帧率
+    expect(parseFrameTimecode('00:60:00:00', 30)).toBeNull(); // 分钟超范围
+    expect(parseFrameTimecode('00:00:60:00', 30)).toBeNull(); // 秒超范围
+    expect(parseFrameTimecode('aa:bb:cc:dd', 30)).toBeNull();
+    expect(parseFrameTimecode('00:00:01:00', 0)).toBe(1); // fps 非法回落 1
   });
 });

@@ -76,13 +76,13 @@
 | 功能 | 经典版 | 本版本 | 状态 | 判定依据 |
 | --- | --- | --- | --- | --- |
 | 播放 / 暂停 | 真实 | 真实 | ✅ | 时间码推进已验收 |
-| 时间码 HH:MM:SS:FF | 可编辑并驱动 seek | 只读显示 | 🔴 | 编辑闭环缺失 |
+| 时间码 HH:MM:SS:FF | 可编辑并驱动 seek | 可编辑（回车/失焦提交，越界 clamp 到末帧） | ✅ | 批 4：`preview-tokens.ts` `parseFrameTimecode`/`formatFrameTimecode`（9 项单测），浏览器输入 `00:00:01:15` 精确 seek |
 | 缩放预设 + Fit + 全屏 | 真实 | 真实 | ✅ | 批 5 验收 |
 | 选框/手柄/对齐参考线 | 真实（改 transform） | 视觉叠加 + 本地拖拽，不改 core 画面 | 🔴 | §7 批 5 |
 | 遮罩手柄 | 真实 | P2：矩形遮罩参数（mask.*）经属性面板可编辑 + 像素裁剪生效；无可视化拖拽手柄 | 🟡 | P2：`element-composite.ts` `applyVisualEffects`，曲线/手柄归 P2 长尾 |
 | 双击文字就地编辑 | 真实 | 无 | ⚪ | 依赖文字元素可编辑 |
 | 画面合成 | 真实（canvas renderer） | 真实（core `composite_frame` + 真实素材帧） | ✅ | 批 7 + 正式模式去演示色块 |
-| 右键菜单（Fit/Full screen/Snapshot） | 真实 | token 固化但未接 OnContextMenu | 🔴 | §7 批 6 |
+| 右键菜单（Fit/Full screen/Snapshot） | 真实 | 真实（Fit/Full screen/Save snapshot/Copy snapshot） | ✅ | 批 4：`preview-section.tsx` onContextMenu + 自定义菜单，canvas.toDataURL 下载 / ClipboardItem 复制，浏览器验收 4 项菜单显示与点击关闭，`oc-p4-timecode-menu.png` |
 
 ## 5. 属性面板
 
@@ -138,12 +138,12 @@
 
 | 状态 | 数量 | 分布（§） | 主要条目 |
 | --- | --- | --- | --- |
-| ✅ 已实现 | 34 | §1:5 §2:4 §3:11 §4:3 §5:4 §6:4 §7:3 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、MP4/WebM 导出、质量档位 |
+| ✅ 已实现 | 36 | §1:5 §2:4 §3:11 §4:5 §5:4 §6:4 §7:3 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、MP4/WebM 导出、质量档位 |
 | 🟡 部分闭环 | 8 | §1:0 §2:1 §3:1 §4:1 §5:1 §6:3 §7:1 | 网格卡片/无排序、三轨结构固定、遮罩手柄（参数化无拖拽）、Masks/Effects 基础参数（无 GPU 效果）、撤销重做、自动保存（localStorage）、拖拽排序、导出进度无取消 |
-| 🔴 占位 | 10 | §2:4 §3:3 §4:3 | Sounds/Stickers/Effects/Settings 数据源、静音隐藏、overlay/audio 编辑、书签、时间码编辑、选框/手柄/对齐参考线、右键菜单 |
+| 🔴 占位 | 8 | §2:4 §3:3 §4:1 | Sounds/Stickers/Effects/Settings 数据源、静音隐藏、overlay/audio 编辑、书签、时间码编辑、选框/手柄/对齐参考线、右键菜单 |
 | ⚪ 未覆盖 | 15 | §1:5 §2:5 §3:2 §4:1 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、双击文字就地编辑、素材右键 Export clips、剪贴板直接贴媒体 |
 
-> 合计 67 项（34+8+10+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算，与表格严格一致。
+> 合计 67 项（36+8+8+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算，与表格严格一致。
 > **2026-11-17 P0 完成后变化**：✅ 20→23（Text/Media 加轨、落轨拖放），🟡 7→9（参数编辑、自动保存由 🔴 升级），🔴 19→14。详见 `UI_REPLICA_PLAN.md` §8「P0 闭环实现」。
 > **2026-11-17 P1 完成后变化**：✅ 23→25（Duplicate、复制/粘贴），🟡 9→11（多选、快捷键分发升级），🔴 14→13（Duplicate 出占位），⚪ 20→17（多选/复制粘贴出未覆盖）。数据源接入（Sounds/Stickers/Effects）依赖服务端素材库，本仓库无此后端且超出 UI 闭环范围，记 🔴 并写入 `UI_REPLICA_PLAN.md` §7 差异台账；不伪造数据。
 > **2026-11-17 P2 完成后变化**：新增 GPU 项（总 66→67）；✅ 25→28（Transform/Text 参数修复 key 映射升 ✅、GPU 提示、WebM 文档更正），🟡 11→13（遮罩/效果基础参数、关键帧真实数据模型），🔴 13→11（参数/关键帧出占位），⚪ 17→15（WebM/GPU 出未覆盖）。AI 字幕、项目管理页无后端，保持 ⚪ 并写入台账；曲线编辑器、GPU 效果、框选橡皮筋归长尾。
@@ -154,6 +154,7 @@
 - **P1（接近经典版交互）— ✅ 2026-11-17 完成（数据源接入除外）**：多选（Cmd/Ctrl 加选 + Shift 区间 + Ctrl+A）、复制粘贴（Ctrl+C/V/D 内存剪贴板）、快捷键分发（Ctrl/Cmd 组合键）。tsc 0 / vitest 326 / build 通过 + 浏览器截图验收（`oc-p1-multiselect.png`）。**未做**：Sounds/Stickers/Effects 数据源接入 —— 依赖服务端素材库（本仓库无后端），框选橡皮筋、快捷键重绑定归 P2；均写入 `UI_REPLICA_PLAN.md` 台账，不伪造数据。
 - **P2（长尾）— ✅ 2026-11-17 完成（可闭环项）**：关键帧曲线（真实动画轨道 + 播放头插值驱动画面，无曲线编辑器 UI）、遮罩/效果编辑（矩形裁剪 + brightness/contrast/saturate 纯像素运算，无 GPU 效果）、GPU 提示（WebGL2/WebGPU/硬件编码能力探测）、WebM 导出（核实早已实现，更正文档）。tsc 0 / vitest 357 / build 通过 + 浏览器截图验收（`oc-p2-keyframes.png`）。**Blocked（无后端，写入台账不伪造）**：项目管理页（无多项目持久化）、AI 字幕（无转写服务）。**归长尾**：可视化曲线编辑器、GPU 效果、框选橡皮筋、快捷键重绑定。
 - **P3（UI 长尾三件套，2026-11-20 起逐批推送）— 进行中**：用户选「框选橡皮筋 + 快捷键重绑定 + 可视化关键帧曲线编辑器」逐批提交。① 框选橡皮筋 ✅：`timeline.tsx` 空白拖框 + `selectFromBox` 归约，§3/§6 多选行由 🟡 升 ✅（统计 ✅28→30、🟡13→11），vitest 365、浏览器验收 `oc-p3-marquee.png`。② 快捷键重绑定 ✅：新增 `shortcut-bindings.ts` 作单一事实来源，统一 kebab 动作 id/camel 分发/对话框已实现集（消除原 9 项硬编码错位），`matchShortcut(event, bindings)` 读用户绑定、`ShortcutsDialog` 录制经回调刷新分发，冲突检测拒绝覆盖，未实现动作诚实 disabled；补经典版定义表缺失的 trim-in/trim-out；§1/§6 两行 🟡→✅（统计 ✅30→32、🟡11→9），vitest 373、浏览器验收 k→播放 / space 旧键失效 / Reset 恢复 / 冲突提示，`oc-p3-keybinding.png`。③ 可视化关键帧曲线编辑器 ✅：新增 `curve-editor-model.ts`（坐标换算/命中/值域/折线采样/单帧删除纯函数，20 项单测）+ `curve-editor.tsx`（SVG 网格+曲线+播放头线+菱形关键点，拖动改 time/value、双击加点、右键删点、缓动切换），属性面板加「Animation Curves」入口（有轨道即可用）；修正 §3 L67 过时 🔴 行为 ✅（菱形早已真实写轨）；统计 ✅32→34 / 🟡9→8 / 🔴11→10，vitest 393（31 文件）、浏览器验收拖动关键点改 time/value 生效，`oc-p3-curve-editor.png`。**P3 三件套全部完成**。
+- **P4（UI 闭环收尾，2026-11-20 续）— 进行中**：用户「UI 闭环，然后 W-14」。批 4 ✅：预览时间码可编辑（`parseFrameTimecode`/`formatFrameTimecode` + 9 项单测，输入 `00:00:01:15` 精确 seek，越界 clamp 到末帧）+ 右键菜单（Fit/Full screen/Save snapshot/Copy snapshot，`oc-p4-timecode-menu.png`）；§4 两行 🔴→✅、统计 ✅34→36 / 🔴10→8，vitest 397、build 通过、浏览器验收。批 5（遮罩手柄 + 导出取消/重试）、批 6（书签 + 静音隐藏）待续；W-14 待 H01 spike 决策后启动。
 
 ## 附录 A：经典版「新增文字」实证（为什么不是 core 的事）
 

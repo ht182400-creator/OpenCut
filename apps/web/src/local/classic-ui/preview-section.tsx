@@ -46,9 +46,18 @@ import {
   TRANSFORM_EDGES,
   WHEEL_DELTA_CAP,
   WHEEL_ZOOM_DIVISOR,
+  formatFrameTimecode,
   formatZoomLabel,
   getResizeCursor,
+  parseFrameTimecode,
 } from './preview-tokens';
+import {
+  CONTEXT_MENU_ITEM_PADDING_X_PX,
+  CONTEXT_MENU_ITEM_PADDING_Y_PX,
+  CONTEXT_MENU_MIN_WIDTH_PX,
+  CONTEXT_MENU_PADDING_PX,
+  CONTEXT_MENU_PREVIEW_ITEMS,
+} from './commands-tokens';
 
 export interface PreviewSectionProps {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -79,18 +88,6 @@ interface LocalBox {
 
 const INITIAL_BOX: LocalBox = { left: 20, top: 20, width: 60, height: 60, rotation: 0 }
 
-/** 帧号 → HH:MM:SS:FF（经典版 EditableTimecode 显示格式）。 */
-function formatFrameTimecode(frameIndex: number, fps: number): string {
-  const rate = Math.max(1, Math.round(fps))
-  const total = Math.max(0, Math.floor(frameIndex))
-  const frames = total % rate
-  const seconds = Math.floor(total / rate) % 60
-  const minutes = Math.floor(total / (rate * 60)) % 60
-  const hours = Math.floor(total / (rate * 3600))
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}:${pad(frames)}`
-}
-
 /** 播放图标。 */
 function PlayIcon({ playing }: { playing: boolean }): ReactNode {
   return playing
@@ -117,6 +114,10 @@ export function PreviewSection(props: PreviewSectionProps) {
   const [zoom, setZoom] = useState(1)
   const [box, setBox] = useState<LocalBox>(INITIAL_BOX)
   const [snapLines, setSnapLines] = useState<{ vertical: boolean; horizontal: boolean }>({ vertical: false, horizontal: false })
+  /** 批 4：可编辑时间码的输入草稿（回车/失焦提交）。 */
+  const [timecodeDraft, setTimecodeDraft] = useState<string | null>(null)
+  /** 批 4：右键菜单开关与屏幕坐标。 */
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const dragRef = useRef<{ mode: string; startX: number; startY: number; orig: LocalBox } | null>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -126,6 +127,9 @@ export function PreviewSection(props: PreviewSectionProps) {
     setBox(INITIAL_BOX)
     setSnapLines({ vertical: false, horizontal: false })
   }, [props.selected])
+
+  // 帧号外部变化（播放/seek）时清空时间码草稿，避免显示与真实帧不一致。
+  useEffect(() => { setTimecodeDraft(null) }, [props.frameIndex])
 
   /** 缩放：步进 ×1.25，夹在 [0.25,16]。 */
   const applyZoom = (next: number) => {
@@ -213,6 +217,61 @@ export function PreviewSection(props: PreviewSectionProps) {
     }
   }
 
+  /**
+   * 批 4：提交编辑的时间码（回车/失焦），解析成功则 seek，失败则丢弃草稿回落显示。
+   * @param text 输入文本
+   */
+  const commitTimecode = (text: string) => {
+    const frame = parseFrameTimecode(text, props.fps ?? 30)
+    if (frame !== null) props.onSeek(Math.min(frame, Math.max(0, props.frameCount - 1)))
+    setTimecodeDraft(null)
+  }
+
+  /** 批 4：保存当前画布为 PNG（snapshot）；toDataURL 失败时静默降级。 */
+  const saveSnapshot = () => {
+    try {
+      const canvas = props.canvasRef.current
+      if (!canvas) return
+      const url = canvas.toDataURL('image/png')
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `snapshot-${formatFrameTimecode(props.frameIndex, props.fps ?? 30).replace(/:/g, '-')}.png`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch {
+      // 画布跨域/taint 时无法导出，静默降级不影响预览
+    }
+  }
+
+  /** 批 4：复制当前画布 PNG 到剪贴板（ClipboardItem 可用时）。 */
+  const copySnapshot = () => {
+    try {
+      const canvas = props.canvasRef.current
+      if (!canvas || typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return
+      canvas.toBlob((blob) => {
+        if (blob) void navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+      }, 'image/png')
+    } catch {
+      // 剪贴板权限受限时静默降级
+    }
+  }
+
+  /** 批 4：右键打开预览菜单（阻止浏览器默认菜单）。 */
+  const openContextMenu = (event: ReactMouseEvent) => {
+    event.preventDefault()
+    setContextMenu({ x: event.clientX, y: event.clientY })
+  }
+
+  /** 批 4：执行右键菜单项后关闭菜单。 */
+  const runContextAction = (action: string) => {
+    setContextMenu(null)
+    if (action === 'Fit to screen') applyZoom(1)
+    else if (action === 'Full screen') toggleFullscreen()
+    else if (action === 'Save snapshot') saveSnapshot()
+    else if (action === 'Copy snapshot') copySnapshot()
+  }
+
   const timecode = formatFrameTimecode(props.frameIndex, props.fps ?? 30)
   const totalTimecode = formatFrameTimecode(props.frameCount, props.fps ?? 30)
   const zoomPercent = Math.round(zoom * 100)
@@ -264,7 +323,7 @@ export function PreviewSection(props: PreviewSectionProps) {
         overflow: 'hidden', padding: PREVIEW_VIEWPORT_PADDING_PX,
         paddingBottom: PREVIEW_VIEWPORT_PADDING_BOTTOM_PX,
         background: 'var(--background)',
-      }} onWheel={onWheel}>
+      }} onWheel={onWheel} onContextMenu={openContextMenu}>
         <div ref={stageRef} data-testid="preview-stage" style={{
           position: 'relative', aspectRatio: '16 / 9',
           width: `${Math.min(100, 100 * zoom)}%`, height: '100%', maxWidth: '100%', maxHeight: '100%',
@@ -310,7 +369,17 @@ export function PreviewSection(props: PreviewSectionProps) {
         paddingLeft: PREVIEW_TOOLBAR_PADDING_X_PX, paddingRight: PREVIEW_TOOLBAR_PADDING_X_PX,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'monospace', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
-          <span style={{ color: 'var(--primary)' }}>{timecode}</span>
+          <input aria-label="Timecode" data-testid="preview-timecode-input"
+            value={timecodeDraft ?? timecode}
+            onChange={(event) => setTimecodeDraft(event.target.value)}
+            onBlur={(event) => commitTimecode(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') { commitTimecode(event.currentTarget.value); event.currentTarget.blur() }
+              else if (event.key === 'Escape') setTimecodeDraft(null)
+            }}
+            style={{ width: 78, color: 'var(--primary)', background: 'transparent',
+              border: '1px solid transparent', borderRadius: 'var(--radius-sm)', padding: '1px 2px',
+              fontFamily: 'inherit', fontSize: 'inherit', fontVariantNumeric: 'inherit' }} />
           <span style={{ color: 'var(--muted-foreground)' }}>/</span>
           <span style={{ color: 'var(--muted-foreground)' }}>{totalTimecode}</span>
           {props.timecode && <span style={{ color: 'var(--muted-foreground)', fontSize: 11 }}>{props.timecode}</span>}
@@ -362,6 +431,35 @@ export function PreviewSection(props: PreviewSectionProps) {
             }}><FullscreenIcon /></button>
         </div>
       </div>
+      {/* 批 4：预览右键菜单（Fit / Full screen / Save snapshot / Copy snapshot）。 */}
+      {contextMenu && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setContextMenu(null)} />
+          <div role="menu" data-testid="preview-context-menu" className="classic-menu"
+            style={{
+              position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 100,
+              minWidth: CONTEXT_MENU_MIN_WIDTH_PX, padding: CONTEXT_MENU_PADDING_PX,
+              background: 'var(--popover)', color: 'var(--popover-foreground)',
+              border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+              boxShadow: '0 4px 12px rgba(0,0,0,.2)',
+            }}>
+            {CONTEXT_MENU_PREVIEW_ITEMS.map((item) => (
+              <button key={item} type="button" role="menuitem" data-testid={`preview-menu-${item}`}
+                onClick={() => runContextAction(item)}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  padding: `${CONTEXT_MENU_ITEM_PADDING_Y_PX}px ${CONTEXT_MENU_ITEM_PADDING_X_PX}px`,
+                  border: 'none', borderRadius: 'var(--radius-sm)', background: 'transparent',
+                  color: 'inherit', cursor: 'pointer', fontSize: 'var(--text-sm)',
+                }}
+                onMouseEnter={(event) => { event.currentTarget.style.background = 'var(--accent)' }}
+                onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent' }}>
+                {item}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </section>
   )
 }
