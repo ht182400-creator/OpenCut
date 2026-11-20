@@ -12,6 +12,7 @@ import {
   isIdentityTransform,
   readColorAdjust,
   readRectMask,
+  resizeMask,
   resolveTextLayout,
   transformFromElement,
   type ColorAdjust,
@@ -167,6 +168,37 @@ describe('readRectMask / readColorAdjust（参数读取与边界）', () => {
     const element = buildTextElement({ id: 't', content: 'x', startTime: 0 })
     element.params = normalizeElementParams({ ...element.params, 'effects.brightness': Number.NaN } as never)
     expect(readColorAdjust(element).brightness).toBe(1)
+  })
+})
+
+describe('resizeMask（遮罩手柄拖拽）', () => {
+  const base: RectMask = { enabled: true, left: 0.2, top: 0.2, right: 0.8, bottom: 0.8 }
+
+  it('拖动左边改变 left，其它边不变', () => {
+    const next = resizeMask(base, 'left', 0.1, 0)
+    expect(next.left).toBeCloseTo(0.3, 5)
+    expect(next.right).toBe(0.8)
+    expect(next.top).toBe(0.2)
+    expect(base.left).toBe(0.2) // 不改入参
+  })
+
+  it('四边均可拖动', () => {
+    expect(resizeMask(base, 'right', -0.1, 0).right).toBeCloseTo(0.7, 5)
+    expect(resizeMask(base, 'top', 0, 0.1).top).toBeCloseTo(0.3, 5)
+    expect(resizeMask(base, 'bottom', 0, -0.1).bottom).toBeCloseTo(0.7, 5)
+  })
+
+  it('夹逼到 0..1 且保持最小间距', () => {
+    expect(resizeMask(base, 'left', -10, 0).left).toBe(0)
+    expect(resizeMask(base, 'right', 10, 0).right).toBe(1)
+    const flipped = resizeMask(base, 'left', 10, 0) // 企图拖过 right
+    expect(flipped.left).toBeLessThan(flipped.right)
+    expect(flipped.right - flipped.left).toBeGreaterThanOrEqual(0.01)
+  })
+
+  it('非法位移回落为 0', () => {
+    expect(resizeMask(base, 'left', Number.NaN, 0)).toEqual(base)
+    expect(resizeMask(base, 'right', Number.POSITIVE_INFINITY, 0)).toEqual(base)
   })
 })
 

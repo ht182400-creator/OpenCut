@@ -41,8 +41,19 @@ export const WEBM_AUDIO_CODEC = 'opus';
 export const WEBM_AUDIO_BITRATE = 96_000;
 /** WebM 容器使用 AV1 时的 codec 字符串（Main profile、level 2.0、8bit）。 */
 export const AV1_VIDEO_CODEC = 'av01.0.04M.08';
+/** 导出被用户取消时的错误消息（区别于真实编码失败，UI 据此不显示错误态）。 */
+export const EXPORT_ABORTED_MESSAGE = '导出已取消';
 /** 导出容器类型：`webm` 用 VP9，`webm-av1` 用 AV1，音频均为 Opus。 */
 export type ExportContainer = 'mp4' | 'webm' | 'webm-av1';
+
+/**
+ * 判断一个导出错误是否为「用户取消」（供 UI 区分取消与失败）。
+ * @param error 错误对象
+ * @returns {boolean} 是否为用户取消
+ */
+export function isExportAborted(error: unknown): boolean {
+  return error instanceof Error && error.message === EXPORT_ABORTED_MESSAGE;
+}
 
 interface VideoFrameLike {
   close(): void;
@@ -148,6 +159,8 @@ export interface ExportOptions {
   codec?: string;
   /** 进度回调：已完成帧数 / 总帧数。 */
   onProgress?: (done: number, total: number) => void;
+  /** P4 批 5：取消信号；abort 后停止编码并抛 EXPORT_ABORTED_MESSAGE。 */
+  signal?: AbortSignal;
 }
 
 /** 导出结果：可直接创建下载链接的 Blob 与统计信息。 */
@@ -338,6 +351,7 @@ async function runExport(
 
     for (let frameIndex = 0; frameIndex < options.frameCount; frameIndex += 1) {
       if (encoderError) throw encoderError;
+      if (options.signal?.aborted) throw new Error(EXPORT_ABORTED_MESSAGE);
       const pixels = framePixels(options, frameIndex);
       const frame = new FrameCtor(pixels, {
         format: 'RGBA',
@@ -358,6 +372,7 @@ async function runExport(
       const chunks = audioChunkCount(totalSamples);
       for (let index = 0; index < chunks; index += 1) {
         if (encoderError) throw encoderError;
+        if (options.signal?.aborted) throw new Error(EXPORT_ABORTED_MESSAGE);
         const data = planarChunk(
           options.audioSource.channels,
           index * AAC_FRAME_SAMPLES,
@@ -386,6 +401,8 @@ async function runExport(
       hasAudio,
     };
   } catch (error) {
+    // 用户取消不包装成「导出失败」，UI 据此回到 idle 而非 error 态。
+    if (isExportAborted(error)) throw error;
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`视频导出失败：${detail}`);
   } finally {

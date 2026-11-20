@@ -58,6 +58,7 @@ import {
   CONTEXT_MENU_PADDING_PX,
   CONTEXT_MENU_PREVIEW_ITEMS,
 } from './commands-tokens';
+import { resizeMask, type RectMask } from '../element-composite';
 
 export interface PreviewSectionProps {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -75,6 +76,10 @@ export interface PreviewSectionProps {
   /** 批 7.2：画布内部分辨率（RGBA 像素缓冲尺寸），默认 320×180。 */
   frameWidth?: number
   frameHeight?: number
+  /** 批 5（P4）：选中元素的矩形遮罩（归一化 0..1），启用时叠加可拖拽手柄。 */
+  mask?: RectMask
+  /** 批 5（P4）：遮罩拖拽变更回调（写回元素 mask.* 参数）。 */
+  onMaskChange?: (mask: RectMask) => void
 }
 
 /** 本地选框矩形（百分比坐标，0~100；旋转恒 0，见边界）。 */
@@ -118,6 +123,8 @@ export function PreviewSection(props: PreviewSectionProps) {
   const [timecodeDraft, setTimecodeDraft] = useState<string | null>(null)
   /** 批 4：右键菜单开关与屏幕坐标。 */
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  /** 批 5：遮罩手柄拖拽起点（像素 + 原始遮罩）。 */
+  const maskDragRef = useRef<{ edge: string; startX: number; startY: number; width: number; height: number; orig: RectMask } | null>(null)
   const dragRef = useRef<{ mode: string; startX: number; startY: number; orig: LocalBox } | null>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -206,6 +213,43 @@ export function PreviewSection(props: PreviewSectionProps) {
       window.removeEventListener('mouseup', onUp)
     }
   }, [])
+
+  // 批 5：遮罩手柄拖拽（props 用 ref 保持最新，避免空依赖 effect 的 stale closure）。
+  const maskChangeRef = useRef(props.onMaskChange)
+  maskChangeRef.current = props.onMaskChange
+  useEffect(() => {
+    const onMove = (event: MouseEvent) => {
+      const drag = maskDragRef.current
+      if (!drag || drag.width <= 0 || drag.height <= 0) return
+      const dxNorm = (event.clientX - drag.startX) / drag.width
+      const dyNorm = (event.clientY - drag.startY) / drag.height
+      maskChangeRef.current?.(resizeMask(drag.orig, drag.edge as 'left' | 'top' | 'right' | 'bottom', dxNorm, dyNorm))
+    }
+    const onUp = () => { maskDragRef.current = null }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  /**
+   * 批 5：开始拖拽遮罩某一边。
+   * @param event 鼠标事件
+   * @param edge 边
+   */
+  const startMaskDrag = (event: ReactMouseEvent, edge: 'left' | 'top' | 'right' | 'bottom') => {
+    if (!props.mask) return
+    event.stopPropagation()
+    const stage = stageRef.current
+    if (!stage) return
+    const rect = stage.getBoundingClientRect()
+    maskDragRef.current = {
+      edge, startX: event.clientX, startY: event.clientY,
+      width: rect.width, height: rect.height, orig: { ...props.mask },
+    }
+  }
 
   /** 全屏切换（浏览器 Fullscreen API，失败不影响主流程）。 */
   const toggleFullscreen = () => {
@@ -331,6 +375,29 @@ export function PreviewSection(props: PreviewSectionProps) {
         }}>
           <canvas ref={props.canvasRef} width={props.frameWidth ?? 320} height={props.frameHeight ?? 180}
             style={{ width: '100%', height: '100%', objectFit: 'contain', border: '1px solid var(--border)', background: '#000' }} />
+          {/* 批 5：遮罩矩形 + 4 边拖拽手柄（仅启用时显示，驱动 mask.* 参数）。 */}
+          {props.mask?.enabled && (
+            <div data-testid="preview-mask-overlay" style={{
+              position: 'absolute',
+              left: `${props.mask.left * 100}%`, top: `${props.mask.top * 100}%`,
+              width: `${(props.mask.right - props.mask.left) * 100}%`,
+              height: `${(props.mask.bottom - props.mask.top) * 100}%`,
+              border: '1px dashed var(--primary)', pointerEvents: 'none',
+            }}>
+              {(['left', 'top', 'right', 'bottom'] as const).map((edge) => (
+                <div key={edge} data-mask-handle={edge} title={`Mask ${edge}`}
+                  onMouseDown={(event) => startMaskDrag(event, edge)}
+                  style={{
+                    position: 'absolute',
+                    ...(edge === 'left' ? { left: 0, top: 0, bottom: 0, width: 8, cursor: 'ew-resize' }
+                      : edge === 'right' ? { right: 0, top: 0, bottom: 0, width: 8, cursor: 'ew-resize' }
+                      : edge === 'top' ? { top: 0, left: 0, right: 0, height: 8, cursor: 'ns-resize' }
+                      : { bottom: 0, left: 0, right: 0, height: 8, cursor: 'ns-resize' }),
+                    background: 'color-mix(in srgb, var(--primary) 60%, transparent)', pointerEvents: 'auto',
+                  }} />
+              ))}
+            </div>
+          )}
           {props.selected && (
             <div style={{ position: 'absolute', left: `${box.left}%`, top: `${box.top}%`, width: `${box.width}%`, height: `${box.height}%`, pointerEvents: 'none' }}>
               {/* 选框：SVG 白色描边 0.75 / 1px / non-scaling */}

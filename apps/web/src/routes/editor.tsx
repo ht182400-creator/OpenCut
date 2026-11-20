@@ -39,6 +39,7 @@ import {
   readRectMask,
   resolveTextLayout,
   transformFromElement,
+  type RectMask,
 } from '../local/element-composite'
 import {
   AUTOSAVE_DEBOUNCE_MS,
@@ -246,6 +247,8 @@ export function Editor() {
   const [exportState, setExportState] = useState<ExportState>({
     status: 'idle', done: 0, total: 0, message: '', url: null, bytes: 0,
   })
+  /** P4 批 5：导出取消控制器（每次开始导出重建，取消时 abort）。 */
+  const exportAbortRef = useRef<AbortController | null>(null)
   const [sourceName, setSourceName] = useState('内置示例项目')
   const [exportSettings, setExportSettings] = useState<ExportSettings>(DEFAULT_EXPORT_SETTINGS)
   /** 批 7.2：当前帧分辨率，贯穿解码/合成/预览/导出；默认 320×180 保持回归。 */
@@ -716,7 +719,18 @@ export function Editor() {
     setSourceName, setFrameCount,
     frameSource, readFile, refreshCacheInfo,
     recordHistory: (clips, label) => clipHistory.record(clips, label),
+    getExportSignal: () => exportAbortRef.current?.signal,
+    onExportSettled: () => { exportAbortRef.current = null },
   })
+
+  /** P4 批 5：开始导出（每次新建取消控制器），供顶栏/设置面板/重试共用。 */
+  const startExport = () => {
+    if (exportAbortRef.current) exportAbortRef.current.abort()
+    exportAbortRef.current = new AbortController()
+    void handleExport()
+  }
+  /** P4 批 5：取消当前导出（导出循环检测 signal 后停止）。 */
+  const cancelExport = () => exportAbortRef.current?.abort()
 
   /**
    * 批 7.2：切换帧分辨率。旧代理帧的像素尺寸与新分辨率不匹配，
@@ -812,6 +826,20 @@ export function Editor() {
 
   const activeClip = clipAtTime(elements, frameIndex * (session?.ticksPerFrame ?? 0))?.id ?? (session ? '空档' : '—')
   const selectedElement = elements.find((element) => element.id === selectedId) ?? null
+
+  /** P4 批 5：预览遮罩手柄变更写回元素 mask.* 参数（驱动预览与导出）。 */
+  const handleMaskChange = (mask: RectMask) => {
+    applyPropertyPatch({
+      params: {
+        'mask.enabled': mask.enabled,
+        'mask.left': mask.left,
+        'mask.top': mask.top,
+        'mask.right': mask.right,
+        'mask.bottom': mask.bottom,
+      } as ClipPatch['params'],
+    })
+  }
+
   const diagnosticsItems = session ? [
     { label: '代理帧缓存', value: cacheInfo },
     { label: '剪辑历史', value: clipHistory.label },
@@ -828,7 +856,7 @@ export function Editor() {
         open
         settings={exportSettings}
         onChange={setExportSettings}
-        onExport={() => void handleExport()}
+        onExport={startExport}
         exportDisabled={!session || exportState.status === 'running'}
         resolution={resolution}
         onResolutionChange={handleResolutionChange}
@@ -890,8 +918,10 @@ export function Editor() {
           { label: '加载快照', disabled: !session, onClick: () => snapshotFileRef.current?.click() },
           { label: 'Shortcuts', onClick: () => setShortcutsOpen(true) },
         ]}
-        onExport={() => void handleExport()}
+        onExport={startExport}
         exportDisabled={!session || exportState.status === 'running'}
+        onCancelExport={cancelExport}
+        onRetryExport={startExport}
         dark={dark}
         onToggleTheme={() => setDark((value) => !value)}
         exportState={exportState}
@@ -945,6 +975,8 @@ export function Editor() {
                     frameHeight={resolution.height}
                     onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
                     timecode={`片段 ${activeClip}`}
+                    mask={selectedElement ? readRectMask(selectedElement) : undefined}
+                    onMaskChange={handleMaskChange}
                   />
                 </ResizablePanel>
                 <ResizableHandle withHandle />

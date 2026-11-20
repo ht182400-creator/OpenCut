@@ -16,6 +16,7 @@ import {
   exportProjectToAv1WebM,
   exportProjectToMp4,
   exportProjectToWebM,
+  isExportAborted,
   isExportSupported,
   isOpusEncodingSupported,
 } from './export';
@@ -74,6 +75,10 @@ export interface EditorActionsDeps {
   readFile: (file: File | undefined) => Promise<void>
   refreshCacheInfo: () => Promise<void>
   recordHistory: (clips: CoreElement[], label: string) => void
+  /** P4 批 5：取当前取消信号（getter 避免闭包捕获旧 controller），传给导出循环。 */
+  getExportSignal?: () => AbortSignal | undefined
+  /** P4 批 5：导出结束（含取消）回调，供调用方清理 controller。 */
+  onExportSettled?: () => void
 }
 
 /** 工厂返回的 handler 集合。 */
@@ -102,6 +107,7 @@ export function createEditorActions(deps: EditorActionsDeps): EditorActions {
     setElements, setSelectedId, setAdjustments, setFrameIndex, setPlaying,
     setSourceName, setFrameCount,
     frameSource, readFile, refreshCacheInfo, recordHistory,
+    getExportSignal, onExportSettled,
   } = deps
 
   /** 真实导出：同一帧源/音源编码为 MP4（H.264+AAC）或 WebM（VP9/AV1 + Opus）。 */
@@ -134,6 +140,7 @@ export function createEditorActions(deps: EditorActionsDeps): EditorActions {
         profile: buildExportProfile(session.profile, exportSettings), params: PRODUCTION_FRAME_PARAMS,
         frameSource,
         audioSource,
+        signal: getExportSignal?.(),
         onProgress: (done, total) => setExportState((previous) => ({ ...previous, done, total })),
       })
       setExportState({
@@ -143,10 +150,17 @@ export function createEditorActions(deps: EditorActionsDeps): EditorActions {
         url: URL.createObjectURL(result.blob), bytes: result.bytes,
       })
     } catch (error) {
-      setExportState({
-        status: 'error', done: 0, total: frameCount,
-        message: error instanceof Error ? error.message : String(error), url: null, bytes: 0,
-      })
+      if (isExportAborted(error)) {
+        // 用户取消：回到 idle，不显示错误态。
+        setExportState({ status: 'idle', done: 0, total: 0, message: '', url: null, bytes: 0 })
+      } else {
+        setExportState({
+          status: 'error', done: 0, total: frameCount,
+          message: error instanceof Error ? error.message : String(error), url: null, bytes: 0,
+        })
+      }
+    } finally {
+      onExportSettled?.()
     }
   }
 

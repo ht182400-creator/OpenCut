@@ -102,6 +102,10 @@ export function TopBar(props: {
   actions: ToolbarAction[]
   onExport: () => void
   exportDisabled?: boolean
+  /** P4 批 5：取消导出（running 时显示）。 */
+  onCancelExport?: () => void
+  /** P4 批 5：重试导出（error 时显示）。 */
+  onRetryExport?: () => void
   /** 批 1：亮/暗主题切换（对应经典版 ThemeToggle）。 */
   dark: boolean
   onToggleTheme: () => void
@@ -133,7 +137,13 @@ export function TopBar(props: {
         <button type="button" className="classic-button" data-variant="primary"
           onClick={props.onExport} disabled={props.exportDisabled}>导出</button>
       {props.exportState.status === 'running' && (
-        <span style={{ color: TEXT_MUTED, fontSize: 13 }}>编码中 {props.exportState.done}/{props.exportState.total}</span>
+        <>
+          <span style={{ color: TEXT_MUTED, fontSize: 13 }}>编码中 {props.exportState.done}/{props.exportState.total}</span>
+          {props.onCancelExport && (
+            <button type="button" className="classic-button" data-testid="export-cancel"
+              onClick={props.onCancelExport}>取消</button>
+          )}
+        </>
       )}
       {props.exportState.status === 'done' && props.exportState.url && (
         <a href={props.exportState.url} download={props.exportState.filename ?? 'opencut-export.mp4'} style={{ color: 'var(--primary)', fontSize: 'var(--text-xs)' }}>
@@ -141,7 +151,13 @@ export function TopBar(props: {
         </a>
       )}
       {props.exportState.status === 'error' && (
-        <span style={{ color: 'var(--destructive)', fontSize: 'var(--text-xs)' }}>{props.exportState.message}</span>
+        <>
+          <span style={{ color: 'var(--destructive)', fontSize: 'var(--text-xs)' }}>{props.exportState.message}</span>
+          {props.onRetryExport && (
+            <button type="button" className="classic-button" data-testid="export-retry"
+              onClick={props.onRetryExport}>重试</button>
+          )}
+        </>
       )}
       {props.otioUrl && (
         <a href={props.otioUrl} download="opencut-timeline.otio" style={{ color: 'var(--primary)', fontSize: 'var(--text-xs)' }}>下载 OTIO</a>

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AV1_VIDEO_CODEC,
   DEFAULT_EXPORT_BITRATE,
+  EXPORT_ABORTED_MESSAGE,
   EXPORT_CODEC,
   KEY_FRAME_INTERVAL,
   WEBM_AUDIO_BITRATE,
@@ -11,6 +12,7 @@ import {
   exportProjectToAv1WebM,
   exportProjectToMp4,
   exportProjectToWebM,
+  isExportAborted,
   profileBitrate,
   isExportSupported,
   isOpusEncodingSupported,
@@ -57,6 +59,13 @@ describe('export 纯函数', () => {
 
   it('AV1 容器 codec 常量固定', () => {
     expect(AV1_VIDEO_CODEC).toBe('av01.0.04M.08');
+  });
+
+  it('isExportAborted 仅识别取消消息（P4 批 5）', () => {
+    expect(isExportAborted(new Error(EXPORT_ABORTED_MESSAGE))).toBe(true);
+    expect(isExportAborted(new Error('视频导出失败：xxx'))).toBe(false);
+    expect(isExportAborted(EXPORT_ABORTED_MESSAGE)).toBe(false); // 非 Error 实例
+    expect(isExportAborted(null)).toBe(false);
   });
 
   it('导出设置的码率可覆盖且非法值回退', () => {

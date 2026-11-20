@@ -311,6 +311,35 @@ export function readRectMask(element: CoreElement | null): RectMask {
   }
 }
 
+/** 遮罩拖拽时两侧边界最小间距（归一化），避免矩形翻折为负宽高。 */
+export const MASK_MIN_SPAN = 0.01
+
+/**
+ * 按拖拽的归一化位移调整矩形遮罩某一边，夹逼到 0..1 且保持最小间距。
+ * 纯函数（无 DOM），供预览手柄与单测共用。
+ * @param orig 原始遮罩
+ * @param edge 被拖的边（left/top/right/bottom）
+ * @param dxNorm x 方向归一化位移
+ * @param dyNorm y 方向归一化位移
+ * @returns {RectMask} 新遮罩（不改入参）
+ */
+export function resizeMask(
+  orig: RectMask,
+  edge: 'left' | 'top' | 'right' | 'bottom',
+  dxNorm: number,
+  dyNorm: number,
+): RectMask {
+  const safeDx = Number.isFinite(dxNorm) ? dxNorm : 0
+  const safeDy = Number.isFinite(dyNorm) ? dyNorm : 0
+  const clamp01 = (v: number) => Math.min(MASK_RANGE_MAX, Math.max(MASK_RANGE_MIN, v))
+  const next = { ...orig }
+  if (edge === 'left') next.left = clamp01(Math.min(orig.right - MASK_MIN_SPAN, orig.left + safeDx))
+  else if (edge === 'right') next.right = clamp01(Math.max(orig.left + MASK_MIN_SPAN, orig.right + safeDx))
+  else if (edge === 'top') next.top = clamp01(Math.min(orig.bottom - MASK_MIN_SPAN, orig.top + safeDy))
+  else if (edge === 'bottom') next.bottom = clamp01(Math.max(orig.top + MASK_MIN_SPAN, orig.bottom + safeDy))
+  return next
+}
+
 /**
  * 从元素参数读取调色效果（键名 effects.*）。
  * @param element 元素
