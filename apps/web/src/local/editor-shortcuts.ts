@@ -1,93 +1,46 @@
 /**
- * 经典版 UI 同步第三批：编辑器快捷键的纯匹配层。
+ * 编辑器快捷键匹配层（纯函数，不碰 DOM/React）。
  *
- * 只做「事件 → 动作名」的映射，不碰 DOM / React，便于单测覆盖。
- * W-09 第三批已在 clip-history.ts 绑定 Ctrl/Cmd+Z 与 Shift+Z，
- * 这里显式跳过所有 Ctrl/Meta/Alt 组合，避免重复触发。
+ * P3 长尾批 2：动作映射真相源下沉到 shortcut-bindings.ts，本模块保留既有 API：
+ * `matchShortcut(event, bindings?)` —— 不传 bindings 时用默认绑定（向后兼容），
+ * 传入由 `resolveBindings()` 生成的绑定表则支持用户重绑定。
+ *
+ * Ctrl+Z / Ctrl+Shift+Z 仍归 clip-history（默认绑定表不含 undo/redo，天然不接管）。
  */
 
-export type ShortcutAction =
-  | 'togglePlay'
-  | 'prevFrame'
-  | 'nextFrame'
-  | 'firstFrame'
-  | 'lastFrame'
-  | 'deleteSelected'
-  | 'splitAtPlayhead'
-  | 'trimIn'
-  | 'trimOut'
-  | 'copySelected'
-  | 'pasteAtPlayhead'
-  | 'duplicateSelected'
-  | 'selectAll';
+import {
+  EFFECTIVE_DEFAULT_BINDINGS,
+  matchEventToAction,
+  type Keybindings,
+  type ShortcutAction,
+  type ShortcutEvent,
+} from './shortcut-bindings'
 
-/** 键盘事件的最小结构（真实 KeyboardEvent 与其测试桩都满足）。 */
-export interface ShortcutEvent {
-  key: string;
-  ctrlKey?: boolean;
-  metaKey?: boolean;
-  altKey?: boolean;
-  target?: { tagName?: string; isContentEditable?: boolean } | null;
-}
-
-/** 输入框获得焦点时不劫持键盘（否则数字输入、快捷键互相打架）。 */
-function isTypingTarget(event: ShortcutEvent): boolean {
-  const target = event.target;
-  if (!target) return false;
-  if (target.isContentEditable) return true;
-  return ['INPUT', 'TEXTAREA', 'SELECT'].includes((target.tagName ?? '').toUpperCase());
-}
+export type { ShortcutAction, ShortcutEvent, Keybindings } from './shortcut-bindings'
+export {
+  KEYBINDINGS_STORAGE_KEY,
+  EFFECTIVE_DEFAULT_BINDINGS,
+  ID_TO_SHORTCUT_ACTION,
+  SHORTCUT_ACTION_TO_ID,
+  loadBindings,
+  resolveBindings,
+  saveBinding,
+  clearBindings,
+  comboFromEvent,
+  findComboConflict,
+} from './shortcut-bindings'
 
 /**
  * 把键盘事件映射为编辑器动作；不匹配的返回 null。
  * @param event 键盘事件（或测试桩）
+ * @param bindings 用户绑定表；省略则用默认绑定
  * @returns {ShortcutAction | null} 动作名
  */
-export function matchShortcut(event: ShortcutEvent): ShortcutAction | null {
-  if (!event.key || isTypingTarget(event)) return null;
-
-  // P1：Ctrl/Meta 组合键（剪贴板与全选）。Alt 组合一律跳过；
-  // Ctrl+Z / Ctrl+Shift+Z 归 clip-history，这里显式不接管，避免撤销重复触发。
-  const modifier = event.ctrlKey || event.metaKey;
-  if (modifier && !event.altKey) {
-    switch (event.key.toLowerCase()) {
-      case 'c': return 'copySelected';
-      case 'v': return 'pasteAtPlayhead';
-      case 'd': return 'duplicateSelected';
-      case 'a': return 'selectAll';
-      default: return null;
-    }
-  }
-  // 其余 Ctrl/Meta/Alt 组合跳过。
-  if (event.ctrlKey || event.metaKey || event.altKey) return null;
-  switch (event.key) {
-    case ' ':
-    case 'Spacebar':
-      return 'togglePlay';
-    case 'ArrowLeft':
-      return 'prevFrame';
-    case 'ArrowRight':
-      return 'nextFrame';
-    case 'Home':
-      return 'firstFrame';
-    case 'End':
-      return 'lastFrame';
-    case 'Delete':
-    case 'Backspace':
-      return 'deleteSelected';
-    default:
-      break;
-  }
-  switch (event.key.toLowerCase()) {
-    case 's':
-      return 'splitAtPlayhead';
-    case 'i':
-      return 'trimIn';
-    case 'o':
-      return 'trimOut';
-    default:
-      return null;
-  }
+export function matchShortcut(
+  event: ShortcutEvent,
+  bindings: Keybindings = EFFECTIVE_DEFAULT_BINDINGS as Keybindings,
+): ShortcutAction | null {
+  return matchEventToAction(event, bindings)
 }
 
 /** 快捷键帮助文本，供 UI 展示。 */
@@ -101,4 +54,4 @@ export const SHORTCUT_HELP = [
   'Ctrl/Cmd+C/V/D 复制/粘贴/副本',
   'Ctrl/Cmd+A 全选',
   'Ctrl/Cmd+Z 撤销 · Shift+Z 重做',
-].join(' · ');
+].join(' · ')

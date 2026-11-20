@@ -104,6 +104,9 @@ export const ACTION_DEFINITIONS: readonly ActionDefinition[] = [
   { id: 'toggle-snapping', description: 'Toggle snapping', category: 'editing', shortcuts: ['n'] },
   { id: 'toggle-ripple-editing', description: 'Toggle ripple editing', category: 'editing', shortcuts: [] },
   { id: 'toggle-source-audio', description: 'Extract or recover source audio', category: 'editing', shortcuts: [] },
+  // P3 批 2：本工程已实现的入/出点动作（i/o），经典版定义表缺此项，补齐以便对话框展示与重绑定。
+  { id: 'trim-in', description: 'Set in point at playhead', category: 'editing', shortcuts: ['i'] },
+  { id: 'trim-out', description: 'Set out point at playhead', category: 'editing', shortcuts: ['o'] },
   { id: 'select-all', description: 'Select all elements', category: 'selection', shortcuts: ['ctrl+a'] },
   { id: 'deselect-all', description: 'Deselect all elements', category: 'selection', shortcuts: [] },
   { id: 'duplicate-selected', description: 'Duplicate selected element', category: 'selection', shortcuts: ['ctrl+d'] },

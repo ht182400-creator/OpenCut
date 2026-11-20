@@ -27,7 +27,6 @@ import {
   DIALOG_OVERLAY_BG,
   DIALOG_PADDING_PX,
   DIALOG_Z_INDEX,
-  KEYBINDINGS_STORAGE_KEY,
   SHORTCUT_BADGE_GAP_PX,
   SHORTCUT_BADGE_HEIGHT_PX,
   SHORTCUT_BADGE_PADDING_X_PX,
@@ -40,12 +39,18 @@ import {
   formatShortcut,
   type ActionDefinition,
 } from './commands-tokens';
+import {
+  ID_TO_SHORTCUT_ACTION,
+  clearBindings,
+  comboFromEvent,
+  findComboConflict,
+  resolveBindings,
+  saveBinding,
+  type Keybindings,
+} from '../shortcut-bindings';
 
-/** 本工程已接入的快捷键动作 id（editor-shortcuts.ts 的 matchShortcut 覆盖）。 */
-const IMPLEMENTED_ACTION_IDS = new Set([
-  'toggle-play', 'frame-step-forward', 'frame-step-backward', 'goto-start', 'goto-end',
-  'delete-selected', 'split', 'seek-backward', 'seek-forward',
-])
+/** 已实现动作 = 统一映射涵盖的 kebab id（不再硬编码，消除与真实实现的错位）。 */
+const IMPLEMENTED_ACTION_IDS = new Set(Object.keys(ID_TO_SHORTCUT_ACTION))
 
 /** 通用 Dialog 外壳（1:1 遮罩/容器/Header/Body/Footer）。 */
 export function AppDialog({ open, onClose, title, children, footer, maxWidthPx = DIALOG_MAX_WIDTH_PX, maxHeightVh }: {
@@ -108,16 +113,6 @@ export function AppDialog({ open, onClose, title, children, footer, maxWidthPx =
   )
 }
 
-/** 从 localStorage 读取自定义快捷键（失败返回空对象）。 */
-function loadBindings(): Record<string, string[]> {
-  try {
-    const raw = localStorage.getItem(KEYBINDINGS_STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, string[]>) : {}
-  } catch {
-    return {}
-  }
-}
-
 /** 单个快捷键条目：描述 + badge（可点击录制或 disabled 占位）。 */
 function ShortcutItem({ action, bindings, recordingId, onStartRecord, isMac }: {
   action: ActionDefinition
@@ -127,7 +122,8 @@ function ShortcutItem({ action, bindings, recordingId, onStartRecord, isMac }: {
   isMac: boolean
 }) {
   const implemented = IMPLEMENTED_ACTION_IDS.has(action.id)
-  const keys = bindings[action.id] ?? [...action.shortcuts]
+  // 已实现动作显示真实生效绑定（resolved 表含默认+用户覆盖），未实现动作仅展示经典版默认。
+  const keys = implemented ? (bindings[action.id] ?? []) : [...action.shortcuts]
   const label = action.description
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, fontSize: 'var(--text-sm)', minHeight: 32 }}>
@@ -160,41 +156,62 @@ function ShortcutItem({ action, bindings, recordingId, onStartRecord, isMac }: {
  * @param props open/onClose
  * @returns {React.ReactElement} 快捷键帮助对话框
  */
-export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [bindings, setBindings] = useState<Record<string, string[]>>(() => loadBindings())
+export function ShortcutsDialog({ open, onClose, onBindingsChange }: {
+  open: boolean
+  onClose: () => void
+  /** 绑定变更后通知编辑器重新读取（P3 批 2 打通分发的关键）。 */
+  onBindingsChange?: (bindings: Keybindings) => void
+}) {
+  const [bindings, setBindings] = useState<Keybindings>(() => resolveBindings())
   const [recordingId, setRecordingId] = useState<string | null>(null)
+  const [conflictText, setConflictText] = useState<string | null>(null)
   const recordingRef = useRef<string | null>(null)
   recordingRef.current = recordingId
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
-  // 录制组合键：keydown 捕获并写 localStorage；Esc 取消。
+  // 每次打开都从存储刷新，保证与编辑器当前绑定一致。
+  useEffect(() => {
+    if (open) { setBindings(resolveBindings()); setConflictText(null); setRecordingId(null) }
+  }, [open])
+
+  // 录制组合键：keydown 捕获并写 localStorage；Esc 取消；冲突键给出提示不覆盖。
   useEffect(() => {
     if (!recordingId) return
     const onKey = (event: KeyboardEvent) => {
       event.preventDefault()
-      if (event.key === 'Escape') { setRecordingId(null); return }
+      if (event.key === 'Escape') { setRecordingId(null); setConflictText(null); return }
       const target = recordingRef.current
       if (!target) return
-      const parts: string[] = []
-      if (event.ctrlKey || event.metaKey) parts.push('ctrl')
-      if (event.altKey) parts.push('alt')
-      if (event.shiftKey) parts.push('shift')
-      parts.push(event.key.toLowerCase())
-      const combo = parts.join('+')
-      const next = { ...loadBindings(), [target]: [combo] }
-      try { localStorage.setItem(KEYBINDINGS_STORAGE_KEY, JSON.stringify(next)) } catch { /* 存储失败不影响主流程 */ }
+      const combo = comboFromEvent({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+      })
+      const conflict = findComboConflict(combo, bindings, target)
+      if (conflict) {
+        setConflictText(`“${formatShortcut(combo, isMac)}” 已被 ${conflict} 占用，请选择其它组合`)
+        setRecordingId(null)
+        return
+      }
+      saveBinding(target, [combo])
+      const next = resolveBindings()
       setBindings(next)
+      setConflictText(null)
       setRecordingId(null)
+      onBindingsChange?.(next)
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [recordingId])
+  }, [recordingId, bindings, isMac, onBindingsChange])
 
-  /** 重置为经典版默认快捷键并清除 localStorage。 */
+  /** 重置为用户默认（清除 localStorage）并通知编辑器。 */
   const resetDefaults = () => {
-    try { localStorage.removeItem(KEYBINDINGS_STORAGE_KEY) } catch { /* 忽略存储失败 */ }
+    clearBindings()
     setBindings({})
     setRecordingId(null)
+    setConflictText(null)
+    onBindingsChange?.(resolveBindings())
   }
 
   return (
@@ -205,6 +222,9 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
           style={{ color: 'var(--destructive)' }}>{SHORTCUTS_RESET_LABEL}</button>
       }>
       <div style={{ display: 'flex', flexDirection: 'column', gap: SHORTCUTS_GROUP_GAP_PX }}>
+        {conflictText && (
+          <div role="alert" style={{ color: 'var(--destructive)', fontSize: 'var(--text-sm)' }}>{conflictText}</div>
+        )}
         {ACTION_CATEGORIES.map((category) => {
           const group = ACTION_DEFINITIONS.filter((action) => action.category === category)
           if (group.length === 0) return null

@@ -71,7 +71,8 @@ import {
   DEFAULT_EXPORT_SETTINGS,
   type ExportSettings,
 } from '../local/export-settings'
-import { matchShortcut } from '../local/editor-shortcuts'
+import { matchShortcut, resolveBindings } from '../local/editor-shortcuts'
+import type { Keybindings } from '../local/editor-shortcuts'
 import { ClassicTimeline } from '../local/classic-ui/timeline'
 import type { ClassicTimelineTrack, TimelineAction } from '../local/classic-ui/timeline'
 import { AssetsPanel } from '../local/classic-ui/assets-panel'
@@ -573,6 +574,11 @@ export function Editor() {
     return () => window.clearInterval(timer)
   }, [playing, frameCount, session])
 
+  /** P3 批 2：用户重绑定后由对话框回调刷新，keydown 用最新绑定表分发。 */
+  const [keybindings, setKeybindings] = useState<Keybindings>(() => resolveBindings())
+  const keybindingsRef = useRef(keybindings)
+  keybindingsRef.current = keybindings
+
   /** UI 第三批：非修饰键快捷键；输入框聚焦与 Ctrl/Meta/Alt 组合由匹配层跳过。 */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -581,8 +587,9 @@ export function Editor() {
         ctrlKey: event.ctrlKey,
         metaKey: event.metaKey,
         altKey: event.altKey,
+        shiftKey: event.shiftKey,
         target: event.target as HTMLElement | null,
-      })
+      }, keybindingsRef.current)
       if (!action) return
       event.preventDefault()
       switch (action) {
@@ -892,7 +899,8 @@ export function Editor() {
       />
       <input ref={snapshotFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
         onChange={(event) => void handleLoadSnapshot(event.target.files?.[0])} />
-      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)}
+        onBindingsChange={setKeybindings} />
 
       {!session && !errorText && <div style={{ ...PANEL_STYLE, color: TEXT_MAIN }}>正在加载项目与 Rust core WASM…</div>}
       {errorText && <div style={{ ...PANEL_STYLE, color: '#fecaca' }}>{errorText}</div>}
