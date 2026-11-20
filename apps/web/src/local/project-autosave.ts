@@ -28,6 +28,19 @@ export interface AutosaveStorage {
 }
 
 /** 落盘的编辑状态。 */
+/** 轨道标志（P4 批 6）：trackId → 静音/隐藏，仅本地 autosave 持久化。 */
+export interface TrackFlagsState {
+  muted: string[]
+  hidden: string[]
+}
+
+/** 书签（P4 批 6）：本地 autosave 持久化，不写回经典版 JSON（core 无字段）。 */
+export interface BookmarkState {
+  id: string
+  ticks: number
+  name: string
+}
+
 export interface AutosaveState {
   elements: CoreElement[];
   frameIndex: number;
@@ -35,6 +48,10 @@ export interface AutosaveState {
   adjustments: RippleAdjustment[];
   resolution: ResolutionPreset;
   sourceName: string;
+  /** P4 批 6：轨道静音/隐藏（可选，旧 autosave 无此字段也能读）。 */
+  trackFlags?: TrackFlagsState
+  /** P4 批 6：书签（可选）。 */
+  bookmarks?: BookmarkState[]
 }
 
 /** 持久化信封：schema 版本 + 项目标识 + 状态。 */
@@ -88,6 +105,16 @@ export function readAutosave(
     if (!state || !Array.isArray(state.elements) || !state.elements.every(isValidElement)) return null;
     if (!Number.isFinite(state.frameIndex) || !state.resolution) return null;
     if (!Array.isArray(state.adjustments)) return null;
+    // P4 批 6：可选字段若存在必须结构合法，否则整体作废（防止损坏数据污染）。
+    if (state.trackFlags !== undefined) {
+      const flags = state.trackFlags as TrackFlagsState;
+      if (!flags || !Array.isArray(flags.muted) || !flags.muted.every((id) => typeof id === 'string')
+        || !Array.isArray(flags.hidden) || !flags.hidden.every((id) => typeof id === 'string')) return null;
+    }
+    if (state.bookmarks !== undefined) {
+      if (!Array.isArray(state.bookmarks) || !state.bookmarks.every((b) =>
+        b && typeof b.id === 'string' && Number.isFinite(b.ticks) && typeof b.name === 'string')) return null;
+    }
     return parsed;
   } catch {
     return null;

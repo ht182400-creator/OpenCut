@@ -52,6 +52,27 @@ describe('persistAutosave / readAutosave（往返）', () => {
     expect(restored?.savedAt).toBe('2026-01-01T00:00:00.000Z')
   })
 
+  it('P4 批 6：轨道标志与书签往返保留', () => {
+    const storage = memoryStorage()
+    const state: AutosaveState = {
+      ...makeState(),
+      trackFlags: { muted: ['main'], hidden: ['audio'] },
+      bookmarks: [{ id: 'bm-1', ticks: 120000, name: '书签 1' }],
+    }
+    expect(persistAutosave(state, 'proj-a', storage)).toBe(true)
+    const restored = readAutosave(storage, 'proj-a')
+    expect(restored?.state.trackFlags).toEqual({ muted: ['main'], hidden: ['audio'] })
+    expect(restored?.state.bookmarks).toEqual([{ id: 'bm-1', ticks: 120000, name: '书签 1' }])
+  })
+
+  it('P4 批 6：旧状态无新字段也能读回（additive 兼容）', () => {
+    const storage = memoryStorage()
+    persistAutosave(makeState(), 'proj-a', storage) // makeState 无 trackFlags/bookmarks
+    const restored = readAutosave(storage, 'proj-a')
+    expect(restored?.state.trackFlags).toBeUndefined()
+    expect(restored?.state.bookmarks).toBeUndefined()
+  })
+
   it('写入的信封版本与存储键正确', () => {
     const storage = memoryStorage()
     persistAutosave(makeState(), 'proj-a', storage)
@@ -81,6 +102,21 @@ describe('persistAutosave / readAutosave（往返）', () => {
     const raw = JSON.parse(storage.getItem(AUTOSAVE_STORAGE_KEY)!)
     delete raw.state.elements[0].duration
     storage.setItem(AUTOSAVE_STORAGE_KEY, JSON.stringify(raw))
+    expect(readAutosave(storage, 'proj-a')).toBeNull()
+  })
+
+  it('P4 批 6：trackFlags/bookmarks 结构损坏时作废', () => {
+    const storage = memoryStorage()
+    persistAutosave(makeState(), 'proj-a', storage)
+    const raw = JSON.parse(storage.getItem(AUTOSAVE_STORAGE_KEY)!)
+    raw.state.trackFlags = { muted: 'not-array', hidden: [] }
+    storage.setItem(AUTOSAVE_STORAGE_KEY, JSON.stringify(raw))
+    expect(readAutosave(storage, 'proj-a')).toBeNull()
+
+    const raw2 = JSON.parse(storage.getItem(AUTOSAVE_STORAGE_KEY)!)
+    delete raw2.state.trackFlags
+    raw2.state.bookmarks = [{ id: 'bm', ticks: 'bad', name: 'x' }]
+    storage.setItem(AUTOSAVE_STORAGE_KEY, JSON.stringify(raw2))
     expect(readAutosave(storage, 'proj-a')).toBeNull()
   })
 

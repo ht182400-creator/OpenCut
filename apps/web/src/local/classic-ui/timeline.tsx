@@ -206,13 +206,25 @@ export function ClassicTimeline(props: {
   waveforms?: ReadonlyMap<string, Uint8Array>
   /** 批 7.4：元素 id → 真实帧缩略图 data URL；缺省时视频片段保留纯色占位。 */
   videoThumbnails?: ReadonlyMap<string, string>
+  /** P4 批 6：外部持久化的轨道标志（静音/隐藏轨道 id）。 */
+  mutedTrackIds?: readonly string[]
+  hiddenTrackIds?: readonly string[]
+  /** P4 批 6：轨道标志变更回调（autosave 持久化）。 */
+  onToggleTrackFlag?: (trackId: string, flag: 'muted' | 'hidden') => void
+  /** P4 批 6：外部持久化的书签。 */
+  bookmarks?: ReadonlyArray<{ id: string; ticks: number; name: string }>
+  /** P4 批 6：书签增删改回调。 */
+  onBookmarksChange?: (bookmarks: Array<{ id: string; ticks: number; name: string }>) => void
 }) {
   const [zoomLevel, setZoomLevel] = useState(1)
   const [snapping, setSnapping] = useState(true)
   const [preview, setPreview] = useState<ClipPreview | null>(null)
   const [snapLine, setSnapLine] = useState<number | null>(null)
-  const [mutedTracks, setMutedTracks] = useState<ReadonlySet<string>>(() => new Set())
-  const [hiddenTracks, setHiddenTracks] = useState<ReadonlySet<string>>(() => new Set())
+  /** P4 批 6：轨道标志由外部 autosave 状态派生（无回调时退回本地 state）。 */
+  const [localMutedTracks, setLocalMutedTracks] = useState<ReadonlySet<string>>(() => new Set())
+  const [localHiddenTracks, setLocalHiddenTracks] = useState<ReadonlySet<string>>(() => new Set())
+  const mutedTracks = useMemo(() => new Set(props.mutedTrackIds ?? localMutedTracks), [props.mutedTrackIds, localMutedTracks])
+  const hiddenTracks = useMemo(() => new Set(props.hiddenTrackIds ?? localHiddenTracks), [props.hiddenTrackIds, localHiddenTracks])
   /** P2：框选橡皮筋的当前矩形（内容坐标 px），null 表示未框选。 */
   const [marquee, setMarquee] = useState<TimelineRect | null>(null)
 
@@ -549,9 +561,17 @@ export function ClassicTimeline(props: {
     }
   }
 
-  /** 切换轨道静音/隐藏（本地视觉状态；core 未暴露字段，见台账差异）。 */
+  /**
+   * 切换轨道静音/隐藏：有外部回调则上送 autosave 持久化，否则退回本地 state。
+   * 注意：写回经典版 JSON 需扩 core 契约（写回见台账差异）。
+   */
   const toggleTrackFlag = (trackId: string, kind: 'mute' | 'hide') => {
-    const setter = kind === 'mute' ? setMutedTracks : setHiddenTracks
+    const flag = kind === 'mute' ? 'muted' : 'hidden'
+    if (props.onToggleTrackFlag) {
+      props.onToggleTrackFlag(trackId, flag)
+      return
+    }
+    const setter = kind === 'mute' ? setLocalMutedTracks : setLocalHiddenTracks
     setter((previous) => {
       const next = new Set(previous)
       if (next.has(trackId)) next.delete(trackId)
@@ -571,7 +591,16 @@ export function ClassicTimeline(props: {
             </button>
           ))}
           <span className="classic-timeline-divider" />
-          <button type="button" className="classic-timeline-tool-button" title="添加书签（占位）">
+          <button type="button" className="classic-timeline-tool-button" title="在播放头添加书签"
+            data-testid="timeline-bookmark-add" disabled={!props.onBookmarksChange}
+            onClick={() => {
+              const ticks = props.frameIndex * props.ticksPerFrame
+              const next = [...(props.bookmarks ?? []), {
+                id: `bm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                ticks, name: `书签 ${(props.bookmarks?.length ?? 0) + 1}`,
+              }]
+              props.onBookmarksChange?.(next)
+            }}>
             <TimelineIcon name="bookmark" />
           </button>
         </div>
@@ -650,7 +679,28 @@ export function ClassicTimeline(props: {
                 )
               })}
             </div>
-            <div className="classic-timeline-bookmarks" style={{ height: 16 }} title="书签（core 未暴露数据，占位）" />
+            <div className="classic-timeline-bookmarks" data-testid="timeline-bookmarks"
+              style={{ height: TIMELINE_BOOKMARK_ROW_HEIGHT_PX, position: 'relative' }}>
+              {(props.bookmarks ?? []).map((bookmark) => {
+                const left = timelineTimeToPixels(bookmark.ticks, safeZoom, props.ticksPerSecond)
+                return (
+                  <span key={bookmark.id} data-testid={`bookmark-${bookmark.id}`}
+                    title={`${bookmark.name}（点击跳转 · 右键删除）`}
+                    onClick={() => props.onSeek(Math.max(0, Math.round(bookmark.ticks / props.ticksPerFrame)))}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      props.onBookmarksChange?.((props.bookmarks ?? []).filter((item) => item.id !== bookmark.id))
+                    }}
+                    style={{
+                      position: 'absolute', left, top: 1, cursor: 'pointer',
+                      fontSize: 10, color: 'var(--primary)', userSelect: 'none',
+                      maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                    ◆ {bookmark.name}
+                  </span>
+                )
+              })}
+            </div>
             <div className="classic-timeline-tracks" style={{ height: tracksHeight + 2 }}
               onDragOver={(event) => { if (props.onDropAsset && event.dataTransfer.types.includes(TIMELINE_DRAG_MIME)) event.preventDefault() }}
               onDrop={handleAssetDrop}>

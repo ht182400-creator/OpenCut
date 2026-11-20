@@ -249,6 +249,10 @@ export function Editor() {
   })
   /** P4 批 5：导出取消控制器（每次开始导出重建，取消时 abort）。 */
   const exportAbortRef = useRef<AbortController | null>(null)
+  /** P4 批 6：轨道静音/隐藏（autosave 持久化；写回 JSON 需扩 core，记为半闭环）。 */
+  const [trackFlags, setTrackFlags] = useState<{ muted: string[]; hidden: string[] }>({ muted: [], hidden: [] })
+  /** P4 批 6：书签（autosave 持久化）。 */
+  const [bookmarks, setBookmarks] = useState<Array<{ id: string; ticks: number; name: string }>>([])
   const [sourceName, setSourceName] = useState('内置示例项目')
   const [exportSettings, setExportSettings] = useState<ExportSettings>(DEFAULT_EXPORT_SETTINGS)
   /** 批 7.2：当前帧分辨率，贯穿解码/合成/预览/导出；默认 320×180 保持回归。 */
@@ -339,6 +343,8 @@ export function Editor() {
       setFrameCount(Math.max(restoredPlan.frameCount, 1))
       setSourceName(name)
       setResolution(saved?.state.resolution ?? resolution)
+      setTrackFlags(saved?.state.trackFlags ?? { muted: [], hidden: [] })
+      setBookmarks(saved?.state.bookmarks ?? [])
     } catch (error) {
       setErrorText(formatCoreError(error))
       setSession(null)
@@ -375,8 +381,8 @@ export function Editor() {
    * P0 自动保存：编辑现场变化后防抖落盘。仅在会话就绪时写入，
    * 用 ref 保存最新状态以避免 effect 依赖状态导致每次按键都重设定时器开销。
    */
-  const autosaveStateRef = useRef({ elements, frameIndex, selectedId, adjustments, resolution, sourceName })
-  autosaveStateRef.current = { elements, frameIndex, selectedId, adjustments, resolution, sourceName }
+  const autosaveStateRef = useRef({ elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks })
+  autosaveStateRef.current = { elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks }
   useEffect(() => {
     if (!session) return
     const timer = window.setTimeout(() => {
@@ -388,7 +394,7 @@ export function Editor() {
       }
     }, AUTOSAVE_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
-  }, [session, elements, frameIndex, selectedId, adjustments, resolution, sourceName])
+  }, [session, elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks])
 
   /** 删除选中片段，由 core 计算并应用 ripple。 */
   const deleteSelected = () => {
@@ -1000,6 +1006,16 @@ export function Editor() {
             sceneName={session.project.scenes.find((item) => item.id === session.project.currentSceneId)?.name ?? '主场景'}
             waveforms={waveforms}
             videoThumbnails={videoThumbnails}
+            mutedTrackIds={trackFlags.muted}
+            hiddenTrackIds={trackFlags.hidden}
+            onToggleTrackFlag={(trackId, flag) => setTrackFlags((previous) => {
+              const next = new Set(previous[flag])
+              if (next.has(trackId)) next.delete(trackId)
+              else next.add(trackId)
+              return { ...previous, [flag]: [...next] }
+            })}
+            bookmarks={bookmarks}
+            onBookmarksChange={setBookmarks}
             selectedId={selectedId}
             selectedIds={selection.selectedIds}
             onSelect={selection.handleSelectClip}
