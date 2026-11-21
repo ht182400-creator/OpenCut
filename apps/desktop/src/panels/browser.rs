@@ -32,8 +32,21 @@ impl Render for Browser {
             .text_color(colors.sidebar_foreground)
             .child(
                 div()
-                    .text_sm()
-                    .child(format!("Browser · {}", snapshot.view.name)),
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .text_sm()
+                            .child(format!("Browser · {}", snapshot.view.name)),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .child(format!("来源：{}", snapshot.source_label)),
+                    )
+                    .children(snapshot.load_error.iter().map(|error| {
+                        div().text_xs().child(format!("⚠ {error}"))
+                    })),
             )
             .children(snapshot.view.scenes.iter().flat_map(|scene| &scene.tracks).map(|track| {
                 div()

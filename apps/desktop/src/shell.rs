@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::time::Duration;
 
 use gpui::{App, Context, Entity, FocusHandle, KeyDownEvent, Window, div, prelude::*};
@@ -28,14 +29,26 @@ pub(crate) struct Shell {
 
 impl Shell {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
-        // 内嵌 fixture 由 project.rs 单测锁定，解析失败属于编译期资产损坏。
-        let project = cx.new(|_| {
-            let mut state = ProjectState::load_demo().expect("内嵌演示项目应可解析");
-            if std::env::var_os(AUTOPLAY_ENV_VAR).is_some() {
-                state.toggle_play();
-            }
-            state
-        });
+        // 优先打开 `--project` / `OPENCUT_PROJECT` 指定的项目；失败回退内嵌演示项目并把错误展示给用户。
+        // 内嵌 fixture 由 project.rs 单测锁定，解析失败属于编译期资产损坏，才会 panic。
+        let (mut initial, load_error) = match ProjectState::resolve_project_path() {
+            Some(path) => match ProjectState::load_from_path(Path::new(&path)) {
+                Ok(state) => (state, None),
+                Err(error) => {
+                    let fallback = ProjectState::load_demo().expect("内嵌演示项目应可解析");
+                    (fallback, Some(format!("打开 {path} 失败：{error}（已加载演示项目）")))
+                }
+            },
+            None => (
+                ProjectState::load_demo().expect("内嵌演示项目应可解析"),
+                None,
+            ),
+        };
+        initial.load_error = load_error;
+        if std::env::var_os(AUTOPLAY_ENV_VAR).is_some() {
+            initial.toggle_play();
+        }
+        let project = cx.new(|_| initial);
         let focus_handle = cx.focus_handle();
 
         // 周期播放任务：GPUI 官方模式——timer 等待后更新实体并 `cx.notify()` 触发重绘。

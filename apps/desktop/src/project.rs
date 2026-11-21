@@ -5,6 +5,7 @@
 //! 本地像素合成（Web 正式模式所用管线）属于后续独立工作。
 
 use std::fmt;
+use std::path::Path;
 
 use ocx_domain::{ElementView, ProjectView, read_classic_project};
 use ocx_render::{
@@ -30,10 +31,16 @@ const DEMO_AUDIO_SAMPLE_RATE_HZ: u32 = 48_000;
 const DEMO_AUDIO_CHANNELS: u16 = 2;
 /// 主轨 id（经典版固定为 `main`；`track_type` 取 JSON 的 type，可能是 `video`）。
 const MAIN_TRACK_ID: &str = "main";
+/// 项目路径环境变量（命令行 `--project` 的备选入口）。
+const PROJECT_ENV_VAR: &str = "OPENCUT_PROJECT";
+/// 命令行项目路径参数名。
+const PROJECT_ARG: &str = "--project";
 
 /// 项目加载错误：统一给 UI 中文提示，不 panic。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProjectError {
+    /// 项目文件读取失败（不存在/权限/编码）。
+    ReadFile(String),
     /// core 兼容层拒绝该 JSON。
     Parse(String),
     /// 项目没有场景。
@@ -45,6 +52,7 @@ pub(crate) enum ProjectError {
 impl fmt::Display for ProjectError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ProjectError::ReadFile(detail) => write!(formatter, "项目文件读取失败：{detail}"),
             ProjectError::Parse(detail) => write!(formatter, "项目解析失败：{detail}"),
             ProjectError::EmptyScene => write!(formatter, "项目缺少场景，无法预览"),
             ProjectError::InvalidDuration(value) => {
@@ -66,6 +74,10 @@ pub(crate) struct ProjectState {
     pub(crate) playing: bool,
     /// 最近一次键盘快捷键（用于 UI 反馈）。
     pub(crate) last_shortcut: String,
+    /// 当前项目来源标签（文件名或「内嵌演示项目」），用于 UI 展示。
+    pub(crate) source_label: String,
+    /// 打开项目失败时的友好提示（回退演示项目后仍展示）。
+    pub(crate) load_error: Option<String>,
 }
 
 impl ProjectState {
@@ -89,12 +101,69 @@ impl ProjectState {
             selected_element_id: None,
             playing: false,
             last_shortcut: String::new(),
+            source_label: "内嵌演示项目".to_owned(),
+            load_error: None,
         })
     }
 
-    /// 加载默认演示项目（`load_demo` 的别名，便于 shell 一行调用）。
+    /// 加载默认演示项目。
     pub(crate) fn load_demo() -> Result<Self, ProjectError> {
         Self::load(DEMO_PROJECT_JSON)
+    }
+
+    /**
+     * 从文件路径加载项目：读取文本后走与内嵌 fixture 相同的 core 兼容层。
+     *
+     * @param path 项目 JSON 路径
+     * @returns {Result<ProjectState, ProjectError>} 状态；文件不存在/解析失败给友好错误
+     */
+    pub(crate) fn load_from_path(path: &Path) -> Result<Self, ProjectError> {
+        let json = std::fs::read_to_string(path)
+            .map_err(|error| ProjectError::ReadFile(format!("{}：{error}", path.display())))?;
+        let mut state = Self::load(&json)?;
+        state.source_label = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        Ok(state)
+    }
+
+    /**
+     * 按「命令行 `--project` → 环境变量 `OPENCUT_PROJECT`」顺序解析项目路径。
+     *
+     * @returns {Option<String>} 路径（存在且非空时）
+     */
+    pub(crate) fn resolve_project_path() -> Option<String> {
+        let args: Vec<String> = std::env::args().collect();
+        if let Some(path) = Self::project_path_from_args(&args) {
+            return Some(path);
+        }
+        std::env::var(PROJECT_ENV_VAR)
+            .ok()
+            .filter(|path| !path.trim().is_empty())
+    }
+
+    /**
+     * 从参数列表解析 `--project <path>` 或 `--project=<path>`（纯函数便于单测）。
+     *
+     * @param args 程序参数（含 argv[0]）
+     * @returns {Option<String>} 路径；缺值/空值返回 None
+     */
+    pub(crate) fn project_path_from_args(args: &[String]) -> Option<String> {
+        for (index, argument) in args.iter().enumerate() {
+            if argument == PROJECT_ARG {
+                return args
+                    .get(index + 1)
+                    .cloned()
+                    .filter(|path| !path.trim().is_empty());
+            }
+            if let Some(path) = argument.strip_prefix(&format!("{PROJECT_ARG}=")) {
+                if !path.trim().is_empty() {
+                    return Some(path.to_owned());
+                }
+            }
+        }
+        None
     }
 
     /// 导出配置：画布尺寸与帧率取自项目 settings，其余用过渡演示常量。
@@ -375,5 +444,45 @@ mod tests {
         assert_eq!(advanced, 90);
         assert_eq!(state.playhead_ticks, 360_000);
         assert!(!state.advance_playback());
+    }
+
+    /// 正常值：命令行 `--project` 两种写法均可解析，且优先于无参数情况。
+    #[test]
+    fn project_path_from_args_accepts_both_forms() {
+        let args = |values: &[&str]| values.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            ProjectState::project_path_from_args(&args(&["ocx-desktop", "--project", "a.json"])),
+            Some("a.json".to_owned())
+        );
+        assert_eq!(
+            ProjectState::project_path_from_args(&args(&["ocx-desktop", "--project=b.json"])),
+            Some("b.json".to_owned())
+        );
+        assert_eq!(ProjectState::project_path_from_args(&args(&["ocx-desktop"])), None);
+        assert_eq!(
+            ProjectState::project_path_from_args(&args(&["ocx-desktop", "--project"])),
+            None
+        );
+        assert_eq!(
+            ProjectState::project_path_from_args(&args(&["ocx-desktop", "--project="])),
+            None
+        );
+    }
+
+    /// 正常值 + 异常值：按路径加载 Web fixture 成功并带来源标签；不存在的文件返回 ReadFile。
+    #[test]
+    fn load_from_path_handles_success_and_missing_file() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../web/public/fixtures/classic-project-v31.json");
+        let state = ProjectState::load_from_path(&fixture).expect("fixture 应可加载");
+        assert_eq!(state.source_label, "classic-project-v31.json");
+        assert_eq!(state.view.duration_ticks, 360_000);
+        assert!(state.load_error.is_none());
+
+        let missing = fixture.with_file_name("does-not-exist-v31.json");
+        assert!(matches!(
+            ProjectState::load_from_path(&missing),
+            Err(ProjectError::ReadFile(_))
+        ));
     }
 }
