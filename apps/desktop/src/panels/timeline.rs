@@ -23,7 +23,10 @@ impl Render for Timeline {
         let project_entity = self.project.clone();
         let back_entity = self.project.clone();
         let forward_entity = self.project.clone();
+        let play_entity = self.project.clone();
         let ticks = snapshot.playhead_ticks;
+        let playing = snapshot.playing;
+        let last_key = snapshot.last_shortcut.clone();
         let visible = snapshot.visible_element_at(ticks).map(|element| element.id.clone());
 
         div()
@@ -39,33 +42,37 @@ impl Render for Timeline {
                     .flex()
                     .text_sm()
                     .child(format!(
-                        "Timeline · {:.2}s / {:.2}s · 帧 {} · 可见 {}",
+                        "Timeline · {:.2}s / {:.2}s · 帧 {} · {} · 可见 {} · 按键 {} · 空格播放/暂停",
                         ticks as f64 / TICKS_PER_SECOND as f64,
                         snapshot.view.duration_ticks as f64 / TICKS_PER_SECOND as f64,
                         snapshot.frame_index(),
-                        visible.as_deref().unwrap_or("-")
+                        if playing { "播放中" } else { "已暂停" },
+                        visible.as_deref().unwrap_or("-"),
+                        if last_key.is_empty() { "-" } else { &last_key }
                     ))
                     .child(
                         div()
                             .id("timeline-back")
                             .on_click(move |_, _, app: &mut gpui::App| {
-                                back_entity.update(app, |state, _| {
-                                    let step = state.ticks_per_frame();
-                                    state.seek(state.playhead_ticks - step);
-                                });
+                                back_entity.update(app, |state, _| state.step_frame(-1));
                             })
                             .child(" ◀ "),
                     )
                     .child(
                         div()
+                            .id("timeline-play")
+                            .on_click(move |_, _, app: &mut gpui::App| {
+                                play_entity.update(app, |state, _| state.toggle_play());
+                            })
+                            .child(if playing { " ⏸ " } else { " ▶ " }),
+                    )
+                    .child(
+                        div()
                             .id("timeline-forward")
                             .on_click(move |_, _, app: &mut gpui::App| {
-                                forward_entity.update(app, |state, _| {
-                                    let step = state.ticks_per_frame();
-                                    state.seek(state.playhead_ticks + step);
-                                });
+                                forward_entity.update(app, |state, _| state.step_frame(1));
                             })
-                            .child(" ▶ "),
+                            .child(" ▶| "),
                     ),
             )
             .children(snapshot.view.scenes.iter().flat_map(|scene| &scene.tracks).flat_map(|track| &track.elements).map(|element| {

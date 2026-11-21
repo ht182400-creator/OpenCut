@@ -62,6 +62,10 @@ pub(crate) struct ProjectState {
     pub(crate) playhead_ticks: i64,
     /// 当前选中元素 id（仅引用，不拷贝元素本身）。
     pub(crate) selected_element_id: Option<String>,
+    /// 播放状态（由播放定时器与快捷键共同驱动）。
+    pub(crate) playing: bool,
+    /// 最近一次键盘快捷键（用于 UI 反馈）。
+    pub(crate) last_shortcut: String,
 }
 
 impl ProjectState {
@@ -83,6 +87,8 @@ impl ProjectState {
             view,
             playhead_ticks: 0,
             selected_element_id: None,
+            playing: false,
+            last_shortcut: String::new(),
         })
     }
 
@@ -129,6 +135,58 @@ impl ProjectState {
     /// 拖动播放头，夹逼到 `[0, duration_ticks]`。
     pub(crate) fn seek(&mut self, ticks: i64) {
         self.playhead_ticks = clamp_ticks(ticks, self.view.duration_ticks);
+    }
+
+    /// 切换播放/暂停（空格键与播放按钮共用）。
+    pub(crate) fn toggle_play(&mut self) {
+        self.playing = !self.playing;
+    }
+
+    /// 按帧步进：正数前进、负数后退，同时暂停播放。
+    pub(crate) fn step_frame(&mut self, delta: i64) {
+        self.playing = false;
+        let step = self.ticks_per_frame().saturating_mul(delta);
+        self.seek(self.playhead_ticks.saturating_add(step));
+    }
+
+    /// 跳到开头并暂停。
+    pub(crate) fn seek_start(&mut self) {
+        self.playing = false;
+        self.seek(0);
+    }
+
+    /// 跳到结尾并暂停。
+    pub(crate) fn seek_end(&mut self) {
+        self.playing = false;
+        self.seek(self.view.duration_ticks);
+    }
+
+    /// 应用键盘快捷键并更新最近按键反馈；返回该键是否被识别。
+    pub(crate) fn apply_shortcut(&mut self, key: &str) -> bool {
+        self.last_shortcut = key.to_owned();
+        match key {
+            "space" => self.toggle_play(),
+            "left" => self.step_frame(-1),
+            "right" => self.step_frame(1),
+            "home" => self.seek_start(),
+            "end" => self.seek_end(),
+            _ => return false,
+        }
+        true
+    }
+
+    /// 播放定时器推进一帧；到达结尾时自动停止，返回本帧是否真正推进。
+    pub(crate) fn advance_playback(&mut self) -> bool {
+        if !self.playing || self.playhead_ticks >= self.view.duration_ticks {
+            self.playing = false;
+            return false;
+        }
+        let step = self.ticks_per_frame();
+        self.seek(self.playhead_ticks.saturating_add(step));
+        if self.playhead_ticks >= self.view.duration_ticks {
+            self.playing = false;
+        }
+        true
     }
 
     /// 选中元素；id 不存在时清空选择（不保留幽灵 id）。
@@ -256,5 +314,66 @@ mod tests {
     fn clamp_ticks_handles_negative_duration() {
         assert_eq!(clamp_ticks(5, -1), 0);
         assert_eq!(clamp_ticks(5, 10), 5);
+    }
+
+    /// 正常值：播放开关与逐帧步进（前后退、自动暂停、边界夹逼）。
+    #[test]
+    fn playback_controls_step_and_pause() {
+        let mut state = ProjectState::load_demo().expect("演示项目应可加载");
+        assert!(!state.playing);
+        state.toggle_play();
+        assert!(state.playing);
+        state.step_frame(1);
+        assert!(!state.playing);
+        assert_eq!(state.playhead_ticks, state.ticks_per_frame());
+        state.step_frame(-1);
+        assert_eq!(state.playhead_ticks, 0);
+        state.step_frame(-10);
+        assert_eq!(state.playhead_ticks, 0);
+        state.seek_end();
+        assert_eq!(state.playhead_ticks, 360_000);
+        state.seek_start();
+        assert_eq!(state.playhead_ticks, 0);
+    }
+
+    /// 正常值 + 异常值：快捷键全分支分发（播放/逐帧/首尾/未知键）。
+    #[test]
+    fn apply_shortcut_covers_all_branches() {
+        let mut state = ProjectState::load_demo().expect("演示项目应可加载");
+        assert!(state.apply_shortcut("space"));
+        assert!(state.playing);
+        assert_eq!(state.last_shortcut, "space");
+
+        assert!(state.apply_shortcut("right"));
+        assert!(!state.playing);
+        assert_eq!(state.playhead_ticks, state.ticks_per_frame());
+        assert!(state.apply_shortcut("left"));
+        assert_eq!(state.playhead_ticks, 0);
+
+        assert!(state.apply_shortcut("end"));
+        assert_eq!(state.playhead_ticks, 360_000);
+        assert!(state.apply_shortcut("home"));
+        assert_eq!(state.playhead_ticks, 0);
+
+        assert!(!state.apply_shortcut("unknown"));
+        assert_eq!(state.last_shortcut, "unknown");
+        assert_eq!(state.playhead_ticks, 0);
+    }
+
+    /// 边界值：播放推进到结尾自动停止，暂停后不再推进。
+    #[test]
+    fn advance_playback_stops_at_end() {
+        let mut state = ProjectState::load_demo().expect("演示项目应可加载");
+        assert!(!state.advance_playback());
+        state.toggle_play();
+        let mut advanced = 0;
+        while state.playing {
+            assert!(state.advance_playback());
+            advanced += 1;
+            assert!(advanced <= 100, "3 秒 30fps 应在 90 帧内结束");
+        }
+        assert_eq!(advanced, 90);
+        assert_eq!(state.playhead_ticks, 360_000);
+        assert!(!state.advance_playback());
     }
 }

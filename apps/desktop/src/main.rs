@@ -45,14 +45,16 @@ fn main() {
                 ..Default::default()
             },
             |window, cx| {
-                cx.new(|cx| {
+                let shell = cx.new(|cx| {
                     cx.observe_window_appearance(window, |_, window, _| {
                         window.refresh();
                     })
                     .detach();
 
                     Shell::new(cx)
-                })
+                });
+                window.focus(&shell.read(cx).focus_handle());
+                shell
             },
         )
         .expect("failed to open the main window");

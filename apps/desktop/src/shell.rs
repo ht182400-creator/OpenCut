@@ -1,14 +1,25 @@
-use gpui::{App, Context, Entity, Window, div, prelude::*};
+use std::time::Duration;
+
+use gpui::{App, Context, Entity, FocusHandle, KeyDownEvent, Window, div, prelude::*};
 
 use crate::panels::{Browser, Inspector, Preview, Timeline};
 use crate::project::ProjectState;
 use crate::theme::ActiveTheme;
 
+/// 播放帧推进间隔：每 100ms 前进一帧（10fps 过渡预览）。
+const PLAYBACK_INTERVAL: Duration = Duration::from_millis(100);
+/// 启动即播放的环境变量开关（演示/自动化验收用；未设置时保持暂停）。
+const AUTOPLAY_ENV_VAR: &str = "OPENCUT_AUTOPLAY";
+
 // Panels are entities created once in `new`, not via `cx.new` inline in
 // `render`, so each keeps its own state across renders instead of being
 // torn down and rebuilt on every frame.
-// 四个面板共用同一个 `Entity<ProjectState>`，播放头/选中状态一处更新、全面板可见。
+// 四个面板与 Shell 共用同一个 `Entity<ProjectState>`，播放/选中状态一处更新、全面板可见。
 pub(crate) struct Shell {
+    project: Entity<ProjectState>,
+    focus_handle: FocusHandle,
+    /// 是否已把焦点落到根元素（元素首次布局后才能生效，只做一次避免刷新循环）。
+    focus_set: bool,
     browser: Entity<Browser>,
     preview: Entity<Preview>,
     inspector: Entity<Inspector>,
@@ -16,23 +27,73 @@ pub(crate) struct Shell {
 }
 
 impl Shell {
-    pub(crate) fn new(cx: &mut App) -> Self {
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         // 内嵌 fixture 由 project.rs 单测锁定，解析失败属于编译期资产损坏。
-        let project = cx.new(|_| ProjectState::load_demo().expect("内嵌演示项目应可解析"));
+        let project = cx.new(|_| {
+            let mut state = ProjectState::load_demo().expect("内嵌演示项目应可解析");
+            if std::env::var_os(AUTOPLAY_ENV_VAR).is_some() {
+                state.toggle_play();
+            }
+            state
+        });
+        let focus_handle = cx.focus_handle();
+
+        // 周期播放任务：GPUI 官方模式——timer 等待后更新实体并 `cx.notify()` 触发重绘。
+        let timer_project = project.clone();
+        cx.spawn(async move |_this, cx| loop {
+            cx.background_executor().timer(PLAYBACK_INTERVAL).await;
+            let _ = timer_project.update(cx, |state, cx| {
+                state.advance_playback();
+                cx.notify();
+            });
+        })
+        .detach();
+
+        let shared = project.clone();
         Self {
-            browser: cx.new(|_| Browser::new(project.clone())),
-            preview: cx.new(|_| Preview::new(project.clone())),
-            inspector: cx.new(|_| Inspector::new(project.clone())),
-            timeline: cx.new(|_| Timeline::new(project.clone())),
+            browser: cx.new(|_| Browser::new(shared.clone())),
+            preview: cx.new(|_| Preview::new(shared.clone())),
+            inspector: cx.new(|_| Inspector::new(shared.clone())),
+            timeline: cx.new(|_| Timeline::new(shared)),
+            project,
+            focus_handle,
+            focus_set: false,
         }
+    }
+
+    /// 供窗口创建时聚焦根元素，使键盘快捷键可接收。
+    pub(crate) fn focus_handle(&self) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+
+    /**
+     * 处理全局快捷键：空格播放/暂停、左右逐帧、Home/End 首尾。
+     *
+     * @param key `Keystroke.key` 的小写键名
+     * @param app GPUI 应用上下文，用于更新共享项目实体
+     */
+    fn handle_shortcut(&mut self, key: &str, app: &mut App) {
+        self.project
+            .update(app, |state, _| state.apply_shortcut(key));
     }
 }
 
 impl Render for Shell {
-    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = window.theme().colors;
+        // 窗口创建时元素尚未布局，首次 render 后补一次焦点（只做一次，避免刷新循环）。
+        if !self.focus_set {
+            window.focus(&self.focus_handle);
+            self.focus_set = true;
+        }
 
         div()
+            .track_focus(&self.focus_handle)
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                let key = event.keystroke.key.clone();
+                this.handle_shortcut(&key, cx);
+                cx.stop_propagation();
+            }))
             .flex()
             .flex_col()
             .size_full()
