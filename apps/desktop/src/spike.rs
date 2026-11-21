@@ -97,8 +97,8 @@ fn spike_profile() -> ExportProfile {
     }
 }
 
-/// 构造 spike 用的帧参数（固定值，保证跨端可复现）。
-fn spike_params() -> FrameParams {
+/// 构造演示合成帧参数（H01 spike 与桌面项目预览共用，保证跨端可复现）。
+pub(crate) fn demo_frame_params() -> FrameParams {
     FrameParams {
         background_rgba: SPIKE_BACKGROUND_RGBA,
         accent_rgba: SPIKE_ACCENT_RGBA,
@@ -118,7 +118,7 @@ fn spike_params() -> FrameParams {
  * @param frame `render_frame` 产出的 CPU 帧
  * @returns {Result<Arc<RenderImage>, SpikeError>} GPUI 纹理数据
  */
-fn frame_to_render_image(frame: &RenderFrame) -> Result<Arc<RenderImage>, SpikeError> {
+pub(crate) fn frame_to_render_image(frame: &RenderFrame) -> Result<Arc<RenderImage>, SpikeError> {
     let mut bgra = frame.pixels_rgba.clone();
     // 每像素交换 R 与 B：RGBA → BGRA，与 GPUI 内置解码路径保持一致。
     for pixel in bgra.chunks_exact_mut(4) {
@@ -137,7 +137,7 @@ fn frame_to_render_image(frame: &RenderFrame) -> Result<Arc<RenderImage>, SpikeE
  */
 pub(crate) fn generate_spike_frame() -> Result<SpikeResult, SpikeError> {
     let profile = spike_profile();
-    let params = spike_params();
+    let params = demo_frame_params();
     let started = Instant::now();
     let frame = render_frame(
         SPIKE_FRAME_INDEX,
@@ -207,7 +207,7 @@ mod tests {
     /// 异常分支：非法 profile 参数应返回错误而非 panic。
     #[test]
     fn invalid_frame_params_return_error() {
-        let mut params = spike_params();
+        let mut params = demo_frame_params();
         params.opacity = f64::NAN;
         let result = render_frame(
             SPIKE_FRAME_INDEX,

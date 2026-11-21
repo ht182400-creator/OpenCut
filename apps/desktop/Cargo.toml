@@ -15,3 +15,7 @@ gpui = { workspace = true }
 image = "0.25.1"
 # H01 spike：复用 core 的确定性 CPU 合成帧与 FNV checksum。
 ocx-render = { path = "../../local/crates/ocx-render" }
+# W-14 项目骨架：读取 v31 项目 JSON 的归一化视图。
+ocx-domain = { path = "../../local/crates/ocx-domain" }
+# W-14 项目骨架：帧号换算用 tick 常量。
+ocx-time = { path = "../../local/crates/ocx-time" }
