@@ -12,6 +12,7 @@ import type { CSSProperties } from 'react'
 import { SHORTCUT_HELP } from './editor-shortcuts'
 import type { DiscoverResult, EditorAdapter, ProjectView } from './editor-adapter'
 import type { ElementParams } from './element-model'
+import { exportProgressPercent } from './export'
 import { CONTAINER_LABELS } from './export-settings'
 import type { ExportContainerChoice, ExportSettings } from './export-settings'
 import { PROXY_HEIGHT, PROXY_WIDTH, RESOLUTION_PRESETS } from './resolution'
@@ -136,15 +137,30 @@ export function TopBar(props: {
           onClick={props.onToggleTheme}>{props.dark ? '亮色' : '暗色'}</button>
         <button type="button" className="classic-button" data-variant="primary"
           onClick={props.onExport} disabled={props.exportDisabled}>导出</button>
-      {props.exportState.status === 'running' && (
-        <>
-          <span style={{ color: TEXT_MUTED, fontSize: 13 }}>编码中 {props.exportState.done}/{props.exportState.total}</span>
-          {props.onCancelExport && (
-            <button type="button" className="classic-button" data-testid="export-cancel"
-              onClick={props.onCancelExport}>取消</button>
-          )}
-        </>
-      )}
+      {props.exportState.status === 'running' && (() => {
+        const percent = exportProgressPercent(props.exportState.done, props.exportState.total)
+        return (
+          <>
+            <span data-testid="export-progress-text" style={{ color: TEXT_MUTED, fontSize: 13 }}>
+              编码中 {props.exportState.done}/{props.exportState.total} ({percent}%)
+            </span>
+            <span
+              data-testid="export-progress-bar"
+              role="progressbar"
+              aria-valuenow={percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              style={{ display: 'inline-block', width: 96, height: 8, border: '1px solid var(--border)', background: 'var(--muted)', verticalAlign: 'middle' }}
+            >
+              <span style={{ display: 'block', width: `${percent}%`, height: '100%', background: 'var(--primary)' }} />
+            </span>
+            {props.onCancelExport && (
+              <button type="button" className="classic-button" data-testid="export-cancel"
+                onClick={props.onCancelExport}>取消</button>
+            )}
+          </>
+        )
+      })()}
       {props.exportState.status === 'done' && props.exportState.url && (
         <a href={props.exportState.url} download={props.exportState.filename ?? 'opencut-export.mp4'} style={{ color: 'var(--primary)', fontSize: 'var(--text-xs)' }}>
           下载 {props.exportState.filename?.includes('-av1') ? 'AV1 WebM' : props.exportState.filename?.endsWith('.webm') ? 'WebM' : 'MP4'}

@@ -12,6 +12,7 @@ import {
   exportProjectToAv1WebM,
   exportProjectToMp4,
   exportProjectToWebM,
+  exportProgressPercent,
   isExportAborted,
   profileBitrate,
   isExportSupported,
@@ -66,6 +67,17 @@ describe('export 纯函数', () => {
     expect(isExportAborted(new Error('视频导出失败：xxx'))).toBe(false);
     expect(isExportAborted(EXPORT_ABORTED_MESSAGE)).toBe(false); // 非 Error 实例
     expect(isExportAborted(null)).toBe(false);
+  });
+
+  it('exportProgressPercent 覆盖正常、边界与异常值（W-07 进度条）', () => {
+    expect(exportProgressPercent(0, 100)).toBe(0);
+    expect(exportProgressPercent(45, 90)).toBe(50);
+    expect(exportProgressPercent(90, 90)).toBe(100);
+    expect(exportProgressPercent(120, 100)).toBe(100); // 超出夹逼
+    expect(exportProgressPercent(-5, 100)).toBe(0); // 负数夹逼
+    expect(exportProgressPercent(5, 0)).toBe(0); // 零总数
+    expect(exportProgressPercent(Number.NaN, 100)).toBe(0);
+    expect(exportProgressPercent(5, Number.POSITIVE_INFINITY)).toBe(0);
   });
 
   it('导出设置的码率可覆盖且非法值回退', () => {

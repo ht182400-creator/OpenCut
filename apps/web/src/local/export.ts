@@ -55,6 +55,17 @@ export function isExportAborted(error: unknown): boolean {
   return error instanceof Error && error.message === EXPORT_ABORTED_MESSAGE;
 }
 
+/**
+ * 计算导出进度百分比（W-07 进度条 UI），结果夹逼到 0~100。
+ * @param done 已完成帧数
+ * @param total 总帧数
+ * @returns {number} 0~100 的整数百分比；total<=0 或非法输入返回 0
+ */
+export function exportProgressPercent(done: number, total: number): number {
+  if (!Number.isFinite(done) || !Number.isFinite(total) || total <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+}
+
 interface VideoFrameLike {
   close(): void;
 }
