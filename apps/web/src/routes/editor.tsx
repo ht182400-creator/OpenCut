@@ -15,6 +15,7 @@ import { isVerificationFrameMode, resolvePreviewPixels } from '../local/frame-so
 import { useClipHistory } from '../local/clip-history'
 import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
 import { createEditorActions } from '../local/editor-actions'
+import { createScriptExecutor } from '../local/classic-ui/script-console-dispatch'
 import { useSelection } from '../local/use-selection'
 import {
   DEFAULT_MEDIA_DURATION_SECONDS,
@@ -80,6 +81,7 @@ import { AssetsPanel } from '../local/classic-ui/assets-panel'
 import type { AssetDragPayload, AssetItem } from '../local/classic-ui/assets-panel'
 import { PropertiesPanel } from '../local/classic-ui/properties-panel'
 import { PreviewSection } from '../local/classic-ui/preview-section'
+import { ScriptConsole } from '../local/classic-ui/script-console'
 import { ShortcutsDialog } from '../local/classic-ui/shortcuts-dialog'
 import { MobileGate } from '../local/classic-ui/mobile-gate'
 import {
@@ -876,6 +878,12 @@ export function Editor() {
           { label: '清空缓存', onClick: () => void handleClearCache() },
           { label: '导出 OTIO', onClick: () => void handleOtioExport(), disabled: !session },
         ]}
+      />
+      <ScriptConsole
+        onExecute={session ? createScriptExecutor(session.adapter) : async () => {
+          throw new Error('会话未就绪，请先加载项目')
+        }}
+        disabled={!session}
       />
     </div>
   )
