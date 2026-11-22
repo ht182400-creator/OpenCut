@@ -80,6 +80,30 @@ pub(crate) enum KeyOutcome {
 }
 
 /**
+ * 另存为草稿的键盘处理：Enter 提交路径、Esc 取消、Backspace 退格、单字符追加。
+ *
+ * @param draft 当前路径草稿（None 表示不在另存为模式）
+ * @param key 按键字符串
+ * @returns {Option<(String, bool)>} Some((新草稿, 是否提交))；None 表示退出模式或忽略
+ */
+pub(crate) fn save_as_key(draft: Option<&str>, key: &str) -> Option<(String, bool)> {
+    let current = draft?;
+    match key {
+        "enter" => Some((current.to_owned(), true)),
+        "escape" => None,
+        "backspace" => {
+            let mut next = current.to_owned();
+            next.pop();
+            Some((next, false))
+        }
+        single if single.chars().count() == 1 => {
+            Some((format!("{current}{single}"), false))
+        }
+        _ => Some((current.to_owned(), false)),
+    }
+}
+
+/**
  * 数值字段允许的键入字符：数字、小数点、负号（文本字段允许任意单字符）。
  *
  * @param field 目标字段
@@ -154,6 +178,17 @@ mod tests {
         assert!(input_allowed(EditableField::Duration, "."));
         assert!(!input_allowed(EditableField::Duration, "x"));
         assert!(input_allowed(EditableField::Name, "中"));
+    }
+
+    /// 正常值 + 边界值：另存为草稿键盘处理（追加/退格/提交/取消/不在模式）。
+    #[test]
+    fn save_as_key_covers_all_branches() {
+        assert_eq!(save_as_key(None, "a"), None);
+        assert_eq!(save_as_key(Some("out"), "x"), Some(("outx".to_owned(), false)));
+        assert_eq!(save_as_key(Some("out"), "backspace"), Some(("ou".to_owned(), false)));
+        assert_eq!(save_as_key(Some("out/"), "enter"), Some(("out/".to_owned(), true)));
+        assert_eq!(save_as_key(Some("out"), "escape"), None);
+        assert_eq!(save_as_key(Some("out"), "f2"), Some(("out".to_owned(), false)));
     }
 
     /// 异常值：数值字段校验（负起点、零时长、trim 越界、文本字段跳过校验）。

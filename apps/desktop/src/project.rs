@@ -37,7 +37,7 @@ const PROJECT_ENV_VAR: &str = "OPENCUT_PROJECT";
 const PROJECT_ARG: &str = "--project";
 
 use crate::_project_edit::{
-    EditableField, KeyOutcome, input_allowed, parse_seconds_to_ticks, validate_edit,
+    EditableField, KeyOutcome, input_allowed, parse_seconds_to_ticks, save_as_key, validate_edit,
 };
 
 /// 项目加载错误：统一给 UI 中文提示，不 panic。
@@ -97,6 +97,8 @@ pub(crate) struct ProjectState {
     pub(crate) edit_error: Option<String>,
     /// 保存结果提示（成功/失败都展示给用户）。
     pub(crate) save_status: Option<String>,
+    /// 另存为草稿路径（Some 表示正在输入另存为路径）。
+    pub(crate) save_as_draft: Option<String>,
 }
 
 impl ProjectState {
@@ -128,6 +130,7 @@ impl ProjectState {
             draft: String::new(),
             edit_error: None,
             save_status: None,
+            save_as_draft: None,
         })
     }
 
@@ -466,8 +469,18 @@ impl ProjectState {
      */
     pub(crate) fn save_to_file(&self) -> Result<(), ProjectError> {
         let path = self.file_path.as_ref().ok_or_else(|| {
-            ProjectError::WriteFile("内嵌演示项目没有文件路径，请用 --project 打开真实项目".to_owned())
+            ProjectError::WriteFile("内嵌演示项目没有文件路径，请按 Ctrl+Shift+S 另存为".to_owned())
         })?;
+        self.write_to_path(path)
+    }
+
+    /**
+     * 把当前 view 写到指定路径（写回→往返校验→落盘），供另存为复用。
+     *
+     * @param path 目标文件路径
+     * @returns {Result<(), ProjectError>} 成功或友好错误
+     */
+    pub(crate) fn write_to_path(&self, path: &std::path::Path) -> Result<(), ProjectError> {
         let written = write_classic_project(&self.original_json, &self.view)
             .map_err(|error| ProjectError::WriteFile(format!("生成项目 JSON 失败：{error}")))?;
         // 写后往返自检：确保产物可被 core 再次解析，避免落盘坏文件。
@@ -475,6 +488,43 @@ impl ProjectState {
             .map_err(|error| ProjectError::WriteFile(format!("写后校验失败：{error}")))?;
         std::fs::write(path, written)
             .map_err(|error| ProjectError::WriteFile(format!("{}：{error}", path.display())))?;
+        Ok(())
+    }
+
+    /// 进入另存为模式：草稿初始化为空路径。
+    pub(crate) fn begin_save_as(&mut self) {
+        self.save_as_draft = Some(String::new());
+        self.edit_error = None;
+    }
+
+    /// 处理另存为草稿键；返回 Some(路径) 表示提交，None 表示未提交（取消/继续输入/不在模式）。
+    pub(crate) fn handle_save_as_key(&mut self, key: &str) -> Option<String> {
+        let draft = self.save_as_draft.clone();
+        match save_as_key(draft.as_deref(), key) {
+            Some((next, commit)) => {
+                self.save_as_draft = if commit { None } else { Some(next.clone()) };
+                if commit { Some(next) } else { None }
+            }
+            None => {
+                self.save_as_draft = None;
+                None
+            }
+        }
+    }
+
+    /**
+     * 另存为到指定路径并切换当前项目路径/来源标签。
+     *
+     * @param path 目标路径
+     * @returns {Result<(), ProjectError>} 成功或友好错误
+     */
+    pub(crate) fn save_as_to_path(&mut self, path: std::path::PathBuf) -> Result<(), ProjectError> {
+        self.write_to_path(&path)?;
+        self.source_label = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        self.file_path = Some(path);
         Ok(())
     }
 
@@ -581,6 +631,46 @@ mod tests {
             ProjectState::load(empty),
             Err(ProjectError::EmptyScene)
         ));
+    }
+
+    /// 正常值 + 异常值：另存为落盘到新路径并切换当前项目，内嵌项目也可另存。
+    #[test]
+    fn save_as_writes_new_path_and_switches_source() {
+        let temp_dir = std::env::temp_dir().join(format!("opencut-save-as-test-{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).expect("临时目录应可创建");
+
+        // 内嵌演示项目没有路径，原样保存失败，但另存为到新路径应成功。
+        let mut state = ProjectState::load_demo().expect("演示项目应可加载");
+        assert!(state.save_to_file().is_err());
+        state.begin_save_as();
+        assert_eq!(state.save_as_draft.as_deref(), Some(""));
+        assert_eq!(state.handle_save_as_key("x"), None);
+        assert_eq!(state.save_as_draft.as_deref(), Some("x"));
+        assert_eq!(state.handle_save_as_key("backspace"), None);
+        assert_eq!(state.save_as_draft.as_deref(), Some(""));
+
+        for ch in "saved-as-v31.json".chars() {
+            assert_eq!(state.handle_save_as_key(&ch.to_string()), None);
+        }
+        let committed = state.handle_save_as_key("enter").expect("Enter 应提交路径");
+        assert_eq!(committed, "saved-as-v31.json");
+        assert!(state.save_as_draft.is_none());
+        let write_path = temp_dir.join(committed);
+        state.save_as_to_path(write_path.clone()).expect("另存为应成功");
+        assert_eq!(state.source_label, "saved-as-v31.json");
+        let saved = std::fs::read_to_string(&write_path).expect("另存文件应可读");
+        assert!(saved.contains("\"version\": 31") || saved.contains("\"version\":31"));
+        assert!(saved.contains("timelineViewState"), "未知字段必须保留");
+
+        // 切换后 Ctrl+S 应写到新路径。
+        state.save_to_file().expect("切换后保存应成功");
+        assert_eq!(std::fs::read_to_string(&write_path).expect("文件应可读"), saved);
+
+        // Esc 取消另存为不留草稿。
+        state.begin_save_as();
+        assert_eq!(state.handle_save_as_key("escape"), None);
+        assert!(state.save_as_draft.is_none());
+        std::fs::remove_dir_all(&temp_dir).expect("临时目录应可清理");
     }
 
     /// 边界值：clamp_ticks 在负时长下不产生负 tick。

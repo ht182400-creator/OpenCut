@@ -81,21 +81,35 @@ impl Shell {
     }
 
     /**
-     * 处理键盘输入：编辑态进草稿/提交，普通态 F2 进入编辑、其余走播放快捷键；提交后自动保存。
+     * 处理键盘输入：另存为模式优先，编辑态进草稿/提交，普通态 F2~F6 进入字段编辑；提交后自动保存。
      *
      * @param key `Keystroke.key` 字符串
      * @param save_now 是否为 Ctrl+S 手动保存
+     * @param save_as 是否为 Ctrl+Shift+S 另存为
      * @param app GPUI 应用上下文，用于更新共享项目实体
      */
-    fn handle_key(&mut self, key: &str, save_now: bool, app: &mut App) {
+    fn handle_key(&mut self, key: &str, save_now: bool, save_as: bool, app: &mut App) {
+        // 另存为模式：所有键进路径草稿，Enter 提交后落盘到新路径。
+        let in_save_as = self.project.read(app).save_as_draft.is_some();
+        if save_as && !in_save_as {
+            self.project.update(app, |state, _| state.begin_save_as());
+            return;
+        }
+        if in_save_as {
+            let committed = self.project.update(app, |state, _| state.handle_save_as_key(key));
+            if let Some(path) = committed {
+                self.save_as_project(std::path::PathBuf::from(path), app);
+            }
+            return;
+        }
+
         let outcome = self.project.update(app, |state, _| {
             if save_now && state.editing_field.is_some() {
                 return KeyOutcome::Ignored;
             }
             state.handle_key(key)
         });
-        let should_save = save_now
-            || matches!(outcome, KeyOutcome::CommitChanged);
+        let should_save = save_now || matches!(outcome, KeyOutcome::CommitChanged);
         if should_save {
             self.save_project(app);
         }
@@ -106,6 +120,17 @@ impl Shell {
         let result = self.project.update(app, |state, _| state.save_to_file());
         let message = match result {
             Ok(()) => "项目已保存到原文件".to_owned(),
+            Err(error) => error.to_string(),
+        };
+        self.project
+            .update(app, |state, _| state.save_status = Some(message));
+    }
+
+    /// 另存为到新路径并把结果写入共享状态。
+    fn save_as_project(&mut self, path: std::path::PathBuf, app: &mut App) {
+        let result = self.project.update(app, |state, _| state.save_as_to_path(path));
+        let message = match result {
+            Ok(()) => "项目已另存为新文件并切换为当前项目".to_owned(),
             Err(error) => error.to_string(),
         };
         self.project
@@ -126,8 +151,13 @@ impl Render for Shell {
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
                 let key = event.keystroke.key.clone();
-                let save_now = event.keystroke.modifiers.control && key == "s";
-                this.handle_key(&key, save_now, cx);
+                let save_now = event.keystroke.modifiers.control
+                    && !event.keystroke.modifiers.shift
+                    && key == "s";
+                let save_as = event.keystroke.modifiers.control
+                    && event.keystroke.modifiers.shift
+                    && key == "s";
+                this.handle_key(&key, save_now, save_as, cx);
                 cx.stop_propagation();
             }))
             .flex()
