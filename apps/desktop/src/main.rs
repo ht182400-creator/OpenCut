@@ -3,6 +3,7 @@ use gpui::{
     WindowOptions,
 };
 
+mod _project_edit;
 mod components;
 mod panels;
 mod project;

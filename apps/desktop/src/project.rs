@@ -36,24 +36,9 @@ const PROJECT_ENV_VAR: &str = "OPENCUT_PROJECT";
 /// 命令行项目路径参数名。
 const PROJECT_ARG: &str = "--project";
 
-/// 键盘路由结果（供 UI 反馈与单测断言）。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum KeyOutcome {
-    /// 进入 name 编辑模式。
-    BeginEdit,
-    /// 草稿更新（键入/退格）。
-    Draft,
-    /// 提交草稿，值有变化。
-    CommitChanged,
-    /// 提交草稿但无变化。
-    CommitUnchanged,
-    /// 取消编辑。
-    Cancel,
-    /// 已识别的播放快捷键。
-    Shortcut,
-    /// 未处理的按键。
-    Ignored,
-}
+use crate::_project_edit::{
+    EditableField, KeyOutcome, input_allowed, parse_seconds_to_ticks, validate_edit,
+};
 
 /// 项目加载错误：统一给 UI 中文提示，不 panic。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,10 +89,12 @@ pub(crate) struct ProjectState {
     original_json: String,
     /// 项目文件路径（None 表示内嵌演示项目，不落盘）。
     file_path: Option<std::path::PathBuf>,
-    /// 编辑模式：true 时键入字符进入 name 草稿，Enter 提交到元素。
-    pub(crate) editing: bool,
-    /// 编辑中的 name 草稿。
-    pub(crate) draft_name: String,
+    /// 当前编辑的字段（None 表示不在编辑模式）。
+    pub(crate) editing_field: Option<EditableField>,
+    /// 编辑中的草稿（文本或数值字符串）。
+    pub(crate) draft: String,
+    /// 数值字段校验失败的友好提示。
+    pub(crate) edit_error: Option<String>,
     /// 保存结果提示（成功/失败都展示给用户）。
     pub(crate) save_status: Option<String>,
 }
@@ -137,8 +124,9 @@ impl ProjectState {
             load_error: None,
             original_json: json.to_owned(),
             file_path: None,
-            editing: false,
-            draft_name: String::new(),
+            editing_field: None,
+            draft: String::new(),
+            edit_error: None,
             save_status: None,
         })
     }
@@ -312,60 +300,70 @@ impl ProjectState {
     }
 
     /**
-     * 进入 name 编辑模式：草稿初始化为当前名称，未选中元素时不进入。
+     * 进入指定字段的编辑模式：草稿初始化为该字段当前值，未选中元素时不进入。
      *
+     * @param field 目标字段
      * @returns {bool} 是否成功进入编辑
      */
-    pub(crate) fn begin_name_edit(&mut self) -> bool {
-        match self.selected_element() {
-            Some(element) => {
-                self.draft_name = element.name.clone().unwrap_or_default();
-                self.editing = true;
+    pub(crate) fn begin_edit(&mut self, field: EditableField) -> bool {
+        let initial = self.selected_element().map(|element| match field {
+            EditableField::Name => element.name.clone().unwrap_or_default(),
+            EditableField::StartTime => format!("{}", element.start_time as f64 / TICKS_PER_SECOND as f64),
+            EditableField::Duration => format!("{}", element.duration as f64 / TICKS_PER_SECOND as f64),
+            EditableField::TrimStart => format!("{}", element.trim_start as f64 / TICKS_PER_SECOND as f64),
+            EditableField::TrimEnd => format!("{}", element.trim_end as f64 / TICKS_PER_SECOND as f64),
+        });
+        match initial {
+            Some(value) => {
+                self.draft = value;
+                self.editing_field = Some(field);
+                self.edit_error = None;
                 true
             }
             None => false,
         }
     }
 
-    /// 取消编辑，丢弃草稿。
-    pub(crate) fn cancel_name_edit(&mut self) {
-        self.editing = false;
-        self.draft_name.clear();
+    /// 取消编辑，丢弃草稿与错误提示。
+    pub(crate) fn cancel_edit(&mut self) {
+        self.editing_field = None;
+        self.draft.clear();
+        self.edit_error = None;
     }
 
     /**
-     * 统一键盘路由（纯函数，便于单测全分支）：编辑态键入进草稿，普通态 F2 进入编辑。
+     * 统一键盘路由（纯函数，便于单测全分支）：编辑态键入进草稿，普通态 F2~F6 进入字段编辑。
      *
-     * @param key `Keystroke.key` 字符串（字母小写、功能键为 `enter`/`escape`/`backspace`/`f2`）
+     * @param key `Keystroke.key` 字符串
      * @returns {KeyOutcome} 路由结果，UI 据此决定是否触发保存
      */
     pub(crate) fn handle_key(&mut self, key: &str) -> KeyOutcome {
-        if self.editing {
+        if let Some(field) = self.editing_field {
             return match key {
                 "enter" => {
-                    if self.commit_name_edit() {
+                    if self.commit_edit() {
                         KeyOutcome::CommitChanged
                     } else {
                         KeyOutcome::CommitUnchanged
                     }
                 }
                 "escape" => {
-                    self.cancel_name_edit();
+                    self.cancel_edit();
                     KeyOutcome::Cancel
                 }
                 "backspace" => {
-                    self.draft_name.pop();
+                    self.draft.pop();
                     KeyOutcome::Draft
                 }
-                single if single.chars().count() == 1 => {
-                    self.draft_name.push_str(single);
+                single if input_allowed(field, single) => {
+                    self.draft.push_str(single);
                     KeyOutcome::Draft
                 }
                 _ => KeyOutcome::Ignored,
             };
         }
-        if key == "f2" {
-            return if self.begin_name_edit() {
+        if let Some(field) = EditableField::from_key(key) {
+            return if self.begin_edit(field) {
                 KeyOutcome::BeginEdit
             } else {
                 KeyOutcome::Ignored
@@ -379,27 +377,85 @@ impl ProjectState {
     }
 
     /**
-     * 提交 name 草稿到选中元素（纯内存修改，不落盘）。
+     * 提交当前草稿到选中元素（纯内存修改，不落盘）；数值非法时保留草稿并给 edit_error。
      *
-     * @returns {bool} 是否有实际修改（空草稿或无可变元素时返回 false）
+     * @returns {bool} 是否有实际修改
      */
-    pub(crate) fn commit_name_edit(&mut self) -> bool {
-        if !self.editing || self.draft_name.is_empty() {
-            self.cancel_name_edit();
+    pub(crate) fn commit_edit(&mut self) -> bool {
+        let field = match self.editing_field {
+            Some(field) => field,
+            None => return false,
+        };
+        if self.draft.is_empty() {
+            self.cancel_edit();
             return false;
         }
-        let name = self.draft_name.clone();
-        let changed = match self.selected_element_id.as_deref() {
-            Some(id) => match self.view.scenes.iter_mut().flat_map(|scene| &mut scene.tracks).flat_map(|track| &mut track.elements).find(|element| element.id == id) {
-                Some(element) => {
-                    element.name = Some(name);
-                    true
+
+        // 提前确认元素存在，避免后续嵌套可变借用。
+        if self.selected_element().is_none() {
+            self.cancel_edit();
+            return false;
+        }
+
+        let new_value = if field.is_numeric() {
+            let ticks = match parse_seconds_to_ticks(&self.draft) {
+                Some(ticks) => ticks,
+                None => {
+                    self.edit_error = Some("请输入 0 ~ 36000 之间的秒数".to_owned());
+                    return false;
                 }
-                None => false,
-            },
+            };
+            // 交叉校验需要完整元素视图，这里用临时引用完成。
+            let error = self.selected_element().and_then(|element| validate_edit(field, ticks, element));
+            if let Some(message) = error {
+                self.edit_error = Some(message);
+                return false;
+            }
+            Some(ticks)
+        } else {
+            None
+        };
+
+        let id = match self.selected_element_id.as_deref() {
+            Some(id) => id.to_owned(),
+            None => {
+                self.cancel_edit();
+                return false;
+            }
+        };
+        let changed = match self.view.scenes.iter_mut().flat_map(|scene| &mut scene.tracks).flat_map(|track| &mut track.elements).find(|element| element.id == id) {
+            Some(element) => {
+                match field {
+                    EditableField::Name => {
+                        let name = self.draft.clone();
+                        if element.name.as_deref() == Some(name.as_str()) {
+                            false
+                        } else {
+                            element.name = Some(name);
+                            true
+                        }
+                    }
+                    EditableField::StartTime => {
+                        let ticks = new_value.unwrap();
+                        if element.start_time == ticks { false } else { element.start_time = ticks; true }
+                    }
+                    EditableField::Duration => {
+                        let ticks = new_value.unwrap();
+                        if element.duration == ticks { false } else { element.duration = ticks; true }
+                    }
+                    EditableField::TrimStart => {
+                        let ticks = new_value.unwrap();
+                        if element.trim_start == ticks { false } else { element.trim_start = ticks; true }
+                    }
+                    EditableField::TrimEnd => {
+                        let ticks = new_value.unwrap();
+                        if element.trim_end == ticks { false } else { element.trim_end = ticks; true }
+                    }
+                }
+            }
             None => false,
         };
-        self.cancel_name_edit();
+        self.cancel_edit();
         changed
     }
 
@@ -534,21 +590,21 @@ mod tests {
         assert_eq!(clamp_ticks(5, 10), 5);
     }
 
-    /// 正常值 + 边界值：编辑 name 的全键盘路由（F2 进入、键入/退格、Enter 提交、Esc 取消）。
+    /// 正常值 + 边界值：name 编辑全键盘路由（F2 进入、键入/退格、Enter 提交、Esc 取消）。
     #[test]
     fn name_edit_keyboard_route_covers_all_branches() {
         let mut state = ProjectState::load_demo().expect("演示项目应可加载");
         state.select(Some("clip-intro".to_owned()));
 
         assert_eq!(state.handle_key("f2"), KeyOutcome::BeginEdit);
-        assert!(state.editing);
-        assert_eq!(state.draft_name, "Intro");
+        assert_eq!(state.editing_field, Some(EditableField::Name));
+        assert_eq!(state.draft, "Intro");
         assert_eq!(state.handle_key("x"), KeyOutcome::Draft);
         assert_eq!(state.handle_key("y"), KeyOutcome::Draft);
         assert_eq!(state.handle_key("backspace"), KeyOutcome::Draft);
-        assert_eq!(state.draft_name, "Introx");
+        assert_eq!(state.draft, "Introx");
         assert_eq!(state.handle_key("enter"), KeyOutcome::CommitChanged);
-        assert!(!state.editing);
+        assert_eq!(state.editing_field, None);
         assert_eq!(state.selected_element().and_then(|e| e.name.clone()).as_deref(), Some("Introx"));
 
         // 未选中时 F2 无效；Esc 取消草稿；空草稿 Enter 判为未变更。
@@ -557,10 +613,58 @@ mod tests {
         empty.select(Some("clip-intro".to_owned()));
         assert_eq!(empty.handle_key("f2"), KeyOutcome::BeginEdit);
         assert_eq!(empty.handle_key("escape"), KeyOutcome::Cancel);
-        assert_eq!(empty.draft_name, "");
+        assert_eq!(empty.draft, "");
         assert_eq!(empty.handle_key("f2"), KeyOutcome::BeginEdit);
-        empty.draft_name.clear();
+        empty.draft.clear();
         assert_eq!(empty.handle_key("enter"), KeyOutcome::CommitUnchanged);
+    }
+
+    /// 正常值 + 异常值：数值字段编辑（起点/时长/修剪）的键盘路由、校验与提交。
+    #[test]
+    fn numeric_fields_edit_with_validation() {
+        let mut state = ProjectState::load_demo().expect("演示项目应可加载");
+        state.select(Some("clip-intro".to_owned()));
+
+        // F3 起点：草稿初始化为 0 秒，键入 0.5 后提交 → 60000 ticks。
+        assert_eq!(state.handle_key("f3"), KeyOutcome::BeginEdit);
+        assert_eq!(state.editing_field, Some(EditableField::StartTime));
+        assert_eq!(state.draft, "0");
+        state.draft = "0.5".to_owned();
+        assert_eq!(state.handle_key("enter"), KeyOutcome::CommitChanged);
+        assert_eq!(state.selected_element().map(|e| e.start_time), Some(60_000));
+
+        // F4 时长：1.5 秒 → 180000 ticks。
+        assert_eq!(state.handle_key("f4"), KeyOutcome::BeginEdit);
+        state.draft = "1.5".to_owned();
+        assert_eq!(state.handle_key("enter"), KeyOutcome::CommitChanged);
+        assert_eq!(state.selected_element().map(|e| e.duration), Some(180_000));
+
+        // F5/F6 修剪：各自 0.25 秒，合计 0.5s < 1.5s 时长。
+        assert_eq!(state.handle_key("f5"), KeyOutcome::BeginEdit);
+        state.draft = "0.25".to_owned();
+        assert_eq!(state.handle_key("enter"), KeyOutcome::CommitChanged);
+        assert_eq!(state.handle_key("f6"), KeyOutcome::BeginEdit);
+        state.draft = "0.25".to_owned();
+        assert_eq!(state.handle_key("enter"), KeyOutcome::CommitChanged);
+        assert_eq!(state.selected_element().map(|e| e.trim_start), Some(30_000));
+        assert_eq!(state.selected_element().map(|e| e.trim_end), Some(30_000));
+
+        // 数值字段拒绝非数字字符；非法/越界输入保留草稿并给中文错误。
+        assert_eq!(state.handle_key("f4"), KeyOutcome::BeginEdit);
+        assert_eq!(state.handle_key("x"), KeyOutcome::Ignored);
+        state.draft = "abc".to_owned();
+        assert_eq!(state.handle_key("enter"), KeyOutcome::CommitUnchanged);
+        assert_eq!(state.edit_error.as_deref(), Some("请输入 0 ~ 36000 之间的秒数"));
+        state.draft = "0".to_owned();
+        assert_eq!(state.handle_key("enter"), KeyOutcome::CommitUnchanged);
+        assert_eq!(state.edit_error.as_deref(), Some("时长必须大于 0"));
+        state.cancel_edit();
+
+        // 修剪总长超过时长时拒绝。
+        let element = state.selected_element().expect("元素应存在").clone();
+        assert!(validate_edit(EditableField::TrimStart, 180_000, &element).is_some());
+        assert!(validate_edit(EditableField::StartTime, -1, &element).is_some());
+        assert!(validate_edit(EditableField::Name, 0, &element).is_none());
     }
 
     /// 正常值 + 异常值：编辑后写回原 JSON，未知字段保留且产物可再次解析。
@@ -572,7 +676,7 @@ mod tests {
         let mut state = ProjectState::load(&original).expect("fixture 应可加载");
         state.select(Some("clip-intro".to_owned()));
         assert_eq!(state.handle_key("f2"), KeyOutcome::BeginEdit);
-        state.draft_name = "已改名片段".to_owned();
+        state.draft = "已改名片段".to_owned();
         assert_eq!(state.handle_key("enter"), KeyOutcome::CommitChanged);
 
         let written = write_classic_project(&original, &state.view).expect("写回应成功");
@@ -590,8 +694,8 @@ mod tests {
         std::fs::write(&temp_path, &original).expect("临时项目文件应可写");
         let mut file_state = ProjectState::load_from_path(&temp_path).expect("临时项目应可加载");
         file_state.select(Some("clip-intro".to_owned()));
-        file_state.begin_name_edit();
-        file_state.draft_name = "落盘验证".to_owned();
+        file_state.begin_edit(EditableField::Name);
+        file_state.draft = "落盘验证".to_owned();
         assert_eq!(file_state.handle_key("enter"), KeyOutcome::CommitChanged);
         file_state.save_to_file().expect("保存应成功");
         let saved = std::fs::read_to_string(&temp_path).expect("保存后文件应可读");

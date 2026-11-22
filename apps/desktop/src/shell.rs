@@ -4,7 +4,8 @@ use std::time::Duration;
 use gpui::{App, Context, Entity, FocusHandle, KeyDownEvent, Window, div, prelude::*};
 
 use crate::panels::{Browser, Inspector, Preview, Timeline};
-use crate::project::{KeyOutcome, ProjectState};
+use crate::_project_edit::KeyOutcome;
+use crate::project::ProjectState;
 use crate::theme::ActiveTheme;
 
 /// 播放帧推进间隔：每 100ms 前进一帧（10fps 过渡预览）。
@@ -88,7 +89,7 @@ impl Shell {
      */
     fn handle_key(&mut self, key: &str, save_now: bool, app: &mut App) {
         let outcome = self.project.update(app, |state, _| {
-            if save_now && !state.editing {
+            if save_now && state.editing_field.is_some() {
                 return KeyOutcome::Ignored;
             }
             state.handle_key(key)
