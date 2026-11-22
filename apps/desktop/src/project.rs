@@ -7,7 +7,7 @@
 use std::fmt;
 use std::path::Path;
 
-use ocx_domain::{ElementView, ProjectView, read_classic_project};
+use ocx_domain::{ElementView, ProjectView, read_classic_project, write_classic_project};
 use ocx_render::{
     Codec, Container, ExportProfile, FrameRateSpec, frame_index_at_time,
 };
@@ -36,11 +36,32 @@ const PROJECT_ENV_VAR: &str = "OPENCUT_PROJECT";
 /// 命令行项目路径参数名。
 const PROJECT_ARG: &str = "--project";
 
+/// 键盘路由结果（供 UI 反馈与单测断言）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum KeyOutcome {
+    /// 进入 name 编辑模式。
+    BeginEdit,
+    /// 草稿更新（键入/退格）。
+    Draft,
+    /// 提交草稿，值有变化。
+    CommitChanged,
+    /// 提交草稿但无变化。
+    CommitUnchanged,
+    /// 取消编辑。
+    Cancel,
+    /// 已识别的播放快捷键。
+    Shortcut,
+    /// 未处理的按键。
+    Ignored,
+}
+
 /// 项目加载错误：统一给 UI 中文提示，不 panic。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProjectError {
     /// 项目文件读取失败（不存在/权限/编码）。
     ReadFile(String),
+    /// 项目文件写回失败（权限/磁盘/写后往返校验失败）。
+    WriteFile(String),
     /// core 兼容层拒绝该 JSON。
     Parse(String),
     /// 项目没有场景。
@@ -53,6 +74,7 @@ impl fmt::Display for ProjectError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ProjectError::ReadFile(detail) => write!(formatter, "项目文件读取失败：{detail}"),
+            ProjectError::WriteFile(detail) => write!(formatter, "项目保存失败：{detail}"),
             ProjectError::Parse(detail) => write!(formatter, "项目解析失败：{detail}"),
             ProjectError::EmptyScene => write!(formatter, "项目缺少场景，无法预览"),
             ProjectError::InvalidDuration(value) => {
@@ -78,6 +100,16 @@ pub(crate) struct ProjectState {
     pub(crate) source_label: String,
     /// 打开项目失败时的友好提示（回退演示项目后仍展示）。
     pub(crate) load_error: Option<String>,
+    /// 原始 JSON 文本（写回时按 id 合并，保住 view 未覆盖的字段）。
+    original_json: String,
+    /// 项目文件路径（None 表示内嵌演示项目，不落盘）。
+    file_path: Option<std::path::PathBuf>,
+    /// 编辑模式：true 时键入字符进入 name 草稿，Enter 提交到元素。
+    pub(crate) editing: bool,
+    /// 编辑中的 name 草稿。
+    pub(crate) draft_name: String,
+    /// 保存结果提示（成功/失败都展示给用户）。
+    pub(crate) save_status: Option<String>,
 }
 
 impl ProjectState {
@@ -103,6 +135,11 @@ impl ProjectState {
             last_shortcut: String::new(),
             source_label: "内嵌演示项目".to_owned(),
             load_error: None,
+            original_json: json.to_owned(),
+            file_path: None,
+            editing: false,
+            draft_name: String::new(),
+            save_status: None,
         })
     }
 
@@ -125,6 +162,7 @@ impl ProjectState {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.display().to_string());
+        state.file_path = Some(path.to_path_buf());
         Ok(state)
     }
 
@@ -273,6 +311,117 @@ impl ProjectState {
         self.selected_element_id.as_deref().and_then(|id| self.find_element(id))
     }
 
+    /**
+     * 进入 name 编辑模式：草稿初始化为当前名称，未选中元素时不进入。
+     *
+     * @returns {bool} 是否成功进入编辑
+     */
+    pub(crate) fn begin_name_edit(&mut self) -> bool {
+        match self.selected_element() {
+            Some(element) => {
+                self.draft_name = element.name.clone().unwrap_or_default();
+                self.editing = true;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// 取消编辑，丢弃草稿。
+    pub(crate) fn cancel_name_edit(&mut self) {
+        self.editing = false;
+        self.draft_name.clear();
+    }
+
+    /**
+     * 统一键盘路由（纯函数，便于单测全分支）：编辑态键入进草稿，普通态 F2 进入编辑。
+     *
+     * @param key `Keystroke.key` 字符串（字母小写、功能键为 `enter`/`escape`/`backspace`/`f2`）
+     * @returns {KeyOutcome} 路由结果，UI 据此决定是否触发保存
+     */
+    pub(crate) fn handle_key(&mut self, key: &str) -> KeyOutcome {
+        if self.editing {
+            return match key {
+                "enter" => {
+                    if self.commit_name_edit() {
+                        KeyOutcome::CommitChanged
+                    } else {
+                        KeyOutcome::CommitUnchanged
+                    }
+                }
+                "escape" => {
+                    self.cancel_name_edit();
+                    KeyOutcome::Cancel
+                }
+                "backspace" => {
+                    self.draft_name.pop();
+                    KeyOutcome::Draft
+                }
+                single if single.chars().count() == 1 => {
+                    self.draft_name.push_str(single);
+                    KeyOutcome::Draft
+                }
+                _ => KeyOutcome::Ignored,
+            };
+        }
+        if key == "f2" {
+            return if self.begin_name_edit() {
+                KeyOutcome::BeginEdit
+            } else {
+                KeyOutcome::Ignored
+            };
+        }
+        if self.apply_shortcut(key) {
+            KeyOutcome::Shortcut
+        } else {
+            KeyOutcome::Ignored
+        }
+    }
+
+    /**
+     * 提交 name 草稿到选中元素（纯内存修改，不落盘）。
+     *
+     * @returns {bool} 是否有实际修改（空草稿或无可变元素时返回 false）
+     */
+    pub(crate) fn commit_name_edit(&mut self) -> bool {
+        if !self.editing || self.draft_name.is_empty() {
+            self.cancel_name_edit();
+            return false;
+        }
+        let name = self.draft_name.clone();
+        let changed = match self.selected_element_id.as_deref() {
+            Some(id) => match self.view.scenes.iter_mut().flat_map(|scene| &mut scene.tracks).flat_map(|track| &mut track.elements).find(|element| element.id == id) {
+                Some(element) => {
+                    element.name = Some(name);
+                    true
+                }
+                None => false,
+            },
+            None => false,
+        };
+        self.cancel_name_edit();
+        changed
+    }
+
+    /**
+     * 把当前 view 写回原 JSON 并落盘：复用 core 的原文合并，保住未覆盖字段；写后再读校验。
+     *
+     * @returns {Result<(), ProjectError>} 成功或友好错误（内嵌演示项目无文件路径，拒绝保存）
+     */
+    pub(crate) fn save_to_file(&self) -> Result<(), ProjectError> {
+        let path = self.file_path.as_ref().ok_or_else(|| {
+            ProjectError::WriteFile("内嵌演示项目没有文件路径，请用 --project 打开真实项目".to_owned())
+        })?;
+        let written = write_classic_project(&self.original_json, &self.view)
+            .map_err(|error| ProjectError::WriteFile(format!("生成项目 JSON 失败：{error}")))?;
+        // 写后往返自检：确保产物可被 core 再次解析，避免落盘坏文件。
+        read_classic_project(&written)
+            .map_err(|error| ProjectError::WriteFile(format!("写后校验失败：{error}")))?;
+        std::fs::write(path, written)
+            .map_err(|error| ProjectError::WriteFile(format!("{}：{error}", path.display())))?;
+        Ok(())
+    }
+
     /// 时刻 `ticks` 的可见元素：主轨优先，其次 overlay，其余轨忽略。
     pub(crate) fn visible_element_at(&self, ticks: i64) -> Option<&ElementView> {
         let mut fallback = None;
@@ -383,6 +532,76 @@ mod tests {
     fn clamp_ticks_handles_negative_duration() {
         assert_eq!(clamp_ticks(5, -1), 0);
         assert_eq!(clamp_ticks(5, 10), 5);
+    }
+
+    /// 正常值 + 边界值：编辑 name 的全键盘路由（F2 进入、键入/退格、Enter 提交、Esc 取消）。
+    #[test]
+    fn name_edit_keyboard_route_covers_all_branches() {
+        let mut state = ProjectState::load_demo().expect("演示项目应可加载");
+        state.select(Some("clip-intro".to_owned()));
+
+        assert_eq!(state.handle_key("f2"), KeyOutcome::BeginEdit);
+        assert!(state.editing);
+        assert_eq!(state.draft_name, "Intro");
+        assert_eq!(state.handle_key("x"), KeyOutcome::Draft);
+        assert_eq!(state.handle_key("y"), KeyOutcome::Draft);
+        assert_eq!(state.handle_key("backspace"), KeyOutcome::Draft);
+        assert_eq!(state.draft_name, "Introx");
+        assert_eq!(state.handle_key("enter"), KeyOutcome::CommitChanged);
+        assert!(!state.editing);
+        assert_eq!(state.selected_element().and_then(|e| e.name.clone()).as_deref(), Some("Introx"));
+
+        // 未选中时 F2 无效；Esc 取消草稿；空草稿 Enter 判为未变更。
+        let mut empty = ProjectState::load_demo().expect("演示项目应可加载");
+        assert_eq!(empty.handle_key("f2"), KeyOutcome::Ignored);
+        empty.select(Some("clip-intro".to_owned()));
+        assert_eq!(empty.handle_key("f2"), KeyOutcome::BeginEdit);
+        assert_eq!(empty.handle_key("escape"), KeyOutcome::Cancel);
+        assert_eq!(empty.draft_name, "");
+        assert_eq!(empty.handle_key("f2"), KeyOutcome::BeginEdit);
+        empty.draft_name.clear();
+        assert_eq!(empty.handle_key("enter"), KeyOutcome::CommitUnchanged);
+    }
+
+    /// 正常值 + 异常值：编辑后写回原 JSON，未知字段保留且产物可再次解析。
+    #[test]
+    fn save_writes_back_preserving_unknown_fields() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../web/public/fixtures/classic-project-v31.json");
+        let original = std::fs::read_to_string(&fixture).expect("fixture 应可读");
+        let mut state = ProjectState::load(&original).expect("fixture 应可加载");
+        state.select(Some("clip-intro".to_owned()));
+        assert_eq!(state.handle_key("f2"), KeyOutcome::BeginEdit);
+        state.draft_name = "已改名片段".to_owned();
+        assert_eq!(state.handle_key("enter"), KeyOutcome::CommitChanged);
+
+        let written = write_classic_project(&original, &state.view).expect("写回应成功");
+        assert!(written.contains("已改名片段"));
+        // 原始文档里的视图外字段必须原样保留。
+        assert!(written.contains("timelineViewState") && written.contains("canvasSizeMode"));
+        let reparsed = read_classic_project(&written).expect("写回产物应可再次解析");
+        assert_eq!(reparsed.duration_ticks, 360_000);
+        assert!(reparsed.scenes.iter().flat_map(|s| &s.tracks).flat_map(|t| &t.elements).any(|e| e.name.as_deref() == Some("已改名片段")));
+
+        // 真实落盘：写入临时文件 → 文件字节含新名称 → 清理临时文件。
+        let temp_dir = std::env::temp_dir().join(format!("opencut-save-test-{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).expect("临时目录应可创建");
+        let temp_path = temp_dir.join("project-v31.json");
+        std::fs::write(&temp_path, &original).expect("临时项目文件应可写");
+        let mut file_state = ProjectState::load_from_path(&temp_path).expect("临时项目应可加载");
+        file_state.select(Some("clip-intro".to_owned()));
+        file_state.begin_name_edit();
+        file_state.draft_name = "落盘验证".to_owned();
+        assert_eq!(file_state.handle_key("enter"), KeyOutcome::CommitChanged);
+        file_state.save_to_file().expect("保存应成功");
+        let saved = std::fs::read_to_string(&temp_path).expect("保存后文件应可读");
+        assert!(saved.contains("落盘验证"));
+        assert!(saved.contains("timelineViewState"), "未知字段必须保留");
+        std::fs::remove_dir_all(&temp_dir).expect("临时目录应可清理");
+
+        // 内嵌演示项目无文件路径，保存应返回友好错误而非 panic。
+        let demo = ProjectState::load_demo().expect("演示项目应可加载");
+        assert!(matches!(demo.save_to_file(), Err(ProjectError::WriteFile(_))));
     }
 
     /// 正常值：播放开关与逐帧步进（前后退、自动暂停、边界夹逼）。

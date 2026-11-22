@@ -4,7 +4,7 @@ use std::time::Duration;
 use gpui::{App, Context, Entity, FocusHandle, KeyDownEvent, Window, div, prelude::*};
 
 use crate::panels::{Browser, Inspector, Preview, Timeline};
-use crate::project::ProjectState;
+use crate::project::{KeyOutcome, ProjectState};
 use crate::theme::ActiveTheme;
 
 /// 播放帧推进间隔：每 100ms 前进一帧（10fps 过渡预览）。
@@ -80,14 +80,35 @@ impl Shell {
     }
 
     /**
-     * 处理全局快捷键：空格播放/暂停、左右逐帧、Home/End 首尾。
+     * 处理键盘输入：编辑态进草稿/提交，普通态 F2 进入编辑、其余走播放快捷键；提交后自动保存。
      *
-     * @param key `Keystroke.key` 的小写键名
+     * @param key `Keystroke.key` 字符串
+     * @param save_now 是否为 Ctrl+S 手动保存
      * @param app GPUI 应用上下文，用于更新共享项目实体
      */
-    fn handle_shortcut(&mut self, key: &str, app: &mut App) {
+    fn handle_key(&mut self, key: &str, save_now: bool, app: &mut App) {
+        let outcome = self.project.update(app, |state, _| {
+            if save_now && !state.editing {
+                return KeyOutcome::Ignored;
+            }
+            state.handle_key(key)
+        });
+        let should_save = save_now
+            || matches!(outcome, KeyOutcome::CommitChanged);
+        if should_save {
+            self.save_project(app);
+        }
+    }
+
+    /// 保存项目并把结果（成功/友好错误）写入共享状态供 UI 展示。
+    fn save_project(&mut self, app: &mut App) {
+        let result = self.project.update(app, |state, _| state.save_to_file());
+        let message = match result {
+            Ok(()) => "项目已保存到原文件".to_owned(),
+            Err(error) => error.to_string(),
+        };
         self.project
-            .update(app, |state, _| state.apply_shortcut(key));
+            .update(app, |state, _| state.save_status = Some(message));
     }
 }
 
@@ -104,7 +125,8 @@ impl Render for Shell {
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
                 let key = event.keystroke.key.clone();
-                this.handle_shortcut(&key, cx);
+                let save_now = event.keystroke.modifiers.control && key == "s";
+                this.handle_key(&key, save_now, cx);
                 cx.stop_propagation();
             }))
             .flex()

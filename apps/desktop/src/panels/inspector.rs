@@ -3,7 +3,7 @@ use gpui::{Context, Entity, Window, div, prelude::*};
 use crate::project::ProjectState;
 use crate::theme::ActiveTheme;
 
-/// 属性检查器：展示共享状态里当前选中元素的字段（只读过渡态）。
+/// 属性检查器：展示选中元素字段，F2 编辑 name（Enter 提交并保存，Esc 取消）。
 pub(crate) struct Inspector {
     project: Entity<ProjectState>,
 }
@@ -21,27 +21,35 @@ impl Render for Inspector {
         let snapshot = self.project.read(cx);
 
         let content = match snapshot.selected_element() {
-            Some(element) => div()
-                .flex()
-                .flex_col()
-                .text_xs()
-                .child(div().text_sm().child("Inspector · 选中元素"))
-                .child(format!("id: {}", element.id))
-                .child(format!(
-                    "name: {}",
-                    element.name.as_deref().unwrap_or("-")
-                ))
-                .child(format!("type: {}", element.element_type))
-                .child(format!("start: {} ticks", element.start_time))
-                .child(format!("duration: {} ticks", element.duration))
-                .child(format!(
-                    "trim: {} ~ {}",
-                    element.trim_start, element.trim_end
-                ))
-                .child(format!(
-                    "media: {}",
-                    element.media_id.as_deref().unwrap_or("-")
-                )),
+            Some(element) => {
+                let name_line = if snapshot.editing {
+                    format!("name: [{}_", snapshot.draft_name)
+                } else {
+                    format!("name: {}", element.name.as_deref().unwrap_or("-"))
+                };
+                div()
+                    .flex()
+                    .flex_col()
+                    .text_xs()
+                    .child(div().text_sm().child("Inspector · 选中元素"))
+                    .child(format!("id: {}", element.id))
+                    .child(name_line)
+                    .child(format!("type: {}", element.element_type))
+                    .child(format!("start: {} ticks", element.start_time))
+                    .child(format!("duration: {} ticks", element.duration))
+                    .child(format!(
+                        "trim: {} ~ {}",
+                        element.trim_start, element.trim_end
+                    ))
+                    .child(format!(
+                        "media: {}",
+                        element.media_id.as_deref().unwrap_or("-")
+                    ))
+                    .child(
+                        div()
+                            .child("F2 改名 · Enter 提交并保存 · Esc 取消 · Ctrl+S 保存"),
+                    )
+            }
             None => div()
                 .text_sm()
                 .child("Inspector · 未选中元素（点击左侧片段）"),
@@ -56,5 +64,8 @@ impl Render for Inspector {
             .bg(colors.card)
             .text_color(colors.card_foreground)
             .child(content)
+            .children(snapshot.save_status.iter().map(|status| {
+                div().text_xs().child(format!("💾 {status}"))
+            }))
     }
 }
