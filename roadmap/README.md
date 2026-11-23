@@ -26,6 +26,7 @@
 | [`dashboard.test.cjs`](dashboard.test.cjs) | 看板回归测试（`node dashboard.test.cjs`，零依赖 DOM 桩，含正常/边界/异常用例） | 每次看板改动后 |
 | [`H03-toolchain-bootstrap.md`](H03-toolchain-bootstrap.md) | **H03 完全关闭**：proto/moon 官方包的 API 通道下载与 SHA-256 校验、二进制交叉校验、无旁路验证记录与复现命令 | 工具链变更时 |
 | [`../apps/web/src/local/editor-api.contract.json`](../apps/web/src/local/editor-api.contract.json) | Rust Editor API ↔ Web 的机器可读契约；校验脚本 `editor-api.contract.test.mjs` | 接口变更时 |
+| [`../apps/web/src/routes/core-lab.tsx`](../apps/web/src/routes/core-lab.tsx) | **Core 验证台（`/core-lab`）**：专做 Rust core → WASM → EditorAdapter 链路验证（脚本控制台 / 插件协商注册 / evaluate 五种 kind 自检）；`/editor` 与 `/` 回归经典版产品页，不再承载 core 验证面板 | 验证能力增减时 |
 | [`../readmCN.md`](../readmCN.md) | 重写版现状中文说明（项目导览） | 现状变化时 |
 | [`../.codebuddy/memory/2026-11-08.md`](../.codebuddy/memory/2026-11-08.md) | 当日开发记录与关键结论 | 每次工作收尾 |
 
