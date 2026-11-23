@@ -53,7 +53,7 @@
 
 | 功能 | 经典版 | 本版本 | 状态 | 判定依据 |
 | --- | --- | --- | --- | --- |
-| 三轨结构（overlay/main/audio） | 真实（可动态建 text/graphic/effect 子轨） | 三轨展示，无动态子轨 | 🟡 | 视觉与选中真实，结构固定 |
+| 三轨结构（overlay/main/audio） | 真实（可动态建 text/graphic/effect 子轨） | 三轨展示，graphic 元素可经 Text tab 素材卡加入；无动态子轨 | 🟡 | 视觉与选中真实，结构固定；第二档项2 graphic 卡片（rectangle/ellipse/triangle/line）走 `buildGraphicElement` 加入时间轴 |
 | 轨道头静音/隐藏 | 真实 | 点击真实生效并 autosave 持久化（刷新恢复），但不写回经典版 JSON（core 无轨道字段） | 🟡 | P4 批 6：`project-autosave.ts` trackFlags + `timeline.tsx` 外部状态，浏览器刷新后静音按钮保持；JSON 级持久化需扩 core，见台账 |
 | 片段选中/点击联动属性 | 真实 | 真实 | ✅ | 批 4 浏览器验收 |
 | 片段移动/resize/trim（main 轨） | 真实 | 真实（core 契约） | ✅ | `moveClipClamped`/`resizeClipEdge` |
@@ -90,7 +90,7 @@
 | --- | --- | --- | --- | --- |
 | 空状态/选中状态文案 | 真实 | 真实（含经典版字面 `.0`） | ✅ | 批 4 |
 | Transform / Blending / Audio / Text 参数 | 真实可编辑并驱动画面 | 受控可编辑并驱动预览（opacity/position/scale/rotate/文字/颜色等；P2 修复点分 key 映射，transform 编辑真正驱动画面） | ✅ | P0+P2：`properties-panel.tsx` + `element-composite.ts`，浏览器验收 opacity/transform |
-| Speed / Masks / Effects / Graphic tab | 真实可编辑 | Masks/Effects 基础参数可编辑并驱动像素；Speed 倍速取帧已接通；Graphic 仍骨架 | 🟡 | P2：`MASK_ELEMENT_PARAMS`/`EFFECT_ELEMENT_PARAMS` + `applyVisualEffects`；第二档项2：`SPEED_ELEMENT_PARAMS` + `speed-model.ts` 倍速映射（speed=2 项目 1s→素材 2s 帧，8 项单测），浏览器改 clip-intro speed=2 刷新后值保持、`oc-p3-speed-param.png`；Graphic 需新增素材入口+几何栅格化，未做 |
+| Speed / Masks / Effects / Graphic tab | 真实可编辑 | Masks/Effects/Speed/Graphic 全部可编辑并驱动画面 | ✅ | P2 遮罩/效果；第二档项2：`speed-model.ts` 倍速映射（8 项单测）+ `graphic-model.ts`（形状参数/内外判定/Canvas 栅格化，9 项单测），Assets Text tab 四形状卡 → `buildGraphicElement` → 时间轴 → 属性面板 Graphic tab（Shape/Fill/Stroke/StrokeWidth/CornerRadius）→ frameSource alpha 叠加；浏览器添加 Rectangle 片段、播放到该片段画布全白（白色矩形）、`oc-p3-graphic-element.png` |
 | 关键帧开关 + 曲线编辑器 | 真实 | 真实动画轨道 + 可视化曲线编辑器（P3 批 3） | ✅ | P2 模型 + P3 批 3：`curve-editor.tsx` 图形化编辑，属性面板「Animation Curves」入口；见 §3 同名行 |
 | Timing（Start/Duration/Trim In/Out） | 经典版在时间轴完成 | 真实编辑 + 写回 JSON | ✅ | 批 7.5 验收 |
 
