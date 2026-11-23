@@ -4,14 +4,17 @@
  * - 协议：MCP over stdio（JSON-RPC 2.0，newline-delimited），**手写实现，零第三方依赖**；
  * - core 能力：经真实 WASM 产物（`apps/web/src/local/wasm`）调用，与浏览器同一份 core；
  * - 工具集 `ocx.*`：能力发现、经典版项目读写、OTIO 导入导出、单帧渲染、批量渲染任务
- *   （异步推进，`ocx.render.status` 查进度——W-13 DoD「长任务可查进度」）。
+ *   （异步推进，`ocx.render.status` 查进度——W-13 DoD「长任务可查进度」）、
+ *   PNG / WAV 导出（经 `ocx-cli` 同一份手写编码器落盘后回读 base64）。
  *
  * 启动：`node apps/local-mcp/server.mjs`
  * 测试：`node apps/local-mcp/server.test.mjs`（协议 + 工具 + stdio 端到端）。
  */
 
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -31,6 +34,16 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = path.resolve(HERE, '../web/public/wasm/ocx_bindings_wasm_bg.wasm');
 const SERVER_INFO = { name: 'opencut-local-mcp', version: '0.1.0' };
 const PROTOCOL_VERSION = '2024-11-05';
+/** 默认 ocx-cli 可执行文件路径（仓库 target/debug）。 */
+const DEFAULT_CLI_BIN = path.resolve(
+  HERE, '../../target/debug/ocx-cli' + (process.platform === 'win32' ? '.exe' : ''),
+);
+/** 每次调用读取 env，便于测试注入自定义 CLI 路径。 */
+function cliBin() {
+  return process.env.OCX_CLI_BIN || DEFAULT_CLI_BIN;
+}
+/** 单次导出的输入 JSON 最大长度（防超长注入）。 */
+const MAX_EXPORT_JSON_LEN = 2 * 1024 * 1024;
 
 let coreReady = null;
 
@@ -135,6 +148,38 @@ export const TOOLS = [
       required: ['jobId'],
     },
   },
+  {
+    name: 'ocx.render.frame-png',
+    description: '合成一帧并导出 RGBA8 PNG（经 ocx-cli 手写编码器），返回 base64 与 SHA-256。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        frameIndex: { type: 'integer' },
+        timeTicks: { type: 'integer' },
+        durationTicks: { type: 'integer' },
+        profile: { type: 'object' },
+        params: { type: 'object' },
+      },
+      required: ['frameIndex', 'timeTicks', 'durationTicks', 'profile', 'params'],
+    },
+  },
+  {
+    name: 'ocx.audio.export-wav',
+    description: 'planar f32 PCM → 16-bit PCM WAV（经 ocx-cli 手写编码器），返回 base64。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sampleRateHz: { type: 'integer', minimum: 1 },
+        channels: {
+          type: 'array',
+          items: { type: 'array', items: { type: 'number' } },
+          minItems: 1,
+          description: '每个声道一个 f32 采样数组，采样范围 [-1,1]',
+        },
+      },
+      required: ['sampleRateHz', 'channels'],
+    },
+  },
 ];
 
 /** 帧像素的稳定指纹。 */
@@ -197,6 +242,58 @@ function startBatch(state, args) {
   return { jobId, total, status: job.status };
 }
 
+/**
+ * 调用 ocx-cli 完成一次文件导出，并把产物读回为 base64（PNG/WAV 共用）。
+ * 多个输入 JSON 写临时文件、产物落临时目录，finally 清理，避免污染工作区。
+ * @param {string} subcommand ocx-cli 子命令（frame-png / audio-export）
+ * @param {Array<{flag: string, data: object, name: string}>} inputs 输入文件定义
+ * @param {string[]} extraArgs 其余固定参数（如 --frame-index N）
+ * @param {string} outputName 产物文件名或目录名
+ * @param {boolean} outputIsDirectory out 参数是否为目录（frame-png 是目录，audio-export 是文件）
+ * @returns {{base64: string, size: number, sha256: string, summary: object}} 导出结果
+ */
+function runCliExport(subcommand, inputs, extraArgs, outputName, outputIsDirectory = false) {
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'ocx-mcp-export-'));
+  try {
+    const inputArgs = [];
+    for (const input of inputs) {
+      const text = JSON.stringify(input.data);
+      if (text.length > MAX_EXPORT_JSON_LEN) {
+        throw new Error(`导出输入超过 ${MAX_EXPORT_JSON_LEN} 字节上限`);
+      }
+      const inputPath = path.join(temp, input.name);
+      writeFileSync(inputPath, text);
+      inputArgs.push(input.flag, inputPath);
+    }
+    const outputPath = path.join(temp, outputName);
+    const result = spawnSync(cliBin(), [subcommand, ...inputArgs, ...extraArgs, '--out', outputPath], {
+      encoding: 'utf8',
+      timeout: 60000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    if (result.error) throw new Error(`启动 ocx-cli 失败：${result.error.message}`);
+    if (result.status !== 0) {
+      throw new Error(`ocx-cli 导出失败：${(result.stderr || '').trim() || `退出码 ${result.status}`}`);
+    }
+    // frame-png 以目录为 out，产物是目录内唯一的 .png；audio-export 直接是文件。
+    const artifactPath = outputIsDirectory
+      ? path.join(outputPath, readdirSync(outputPath).find((name) => name.endsWith('.png')) || '')
+      : outputPath;
+    if (outputIsDirectory && !artifactPath.endsWith('.png')) {
+      throw new Error('ocx-cli 未产出 PNG 文件');
+    }
+    const bytes = readFileSync(artifactPath);
+    return {
+      base64: bytes.toString('base64'),
+      size: bytes.length,
+      sha256: checksum(bytes),
+      summary: JSON.parse(result.stdout.trim()),
+    };
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
 /** 执行一个工具调用；错误转成中文消息由上层包进 isError。 */
 export async function runTool(state, name, args) {
   switch (name) {
@@ -224,6 +321,39 @@ export async function runTool(state, name, args) {
       const job = state.jobs.get(String(args.jobId));
       if (!job) throw new Error(`未知的任务 id：${String(args.jobId)}`);
       return job;
+    }
+    case 'ocx.render.frame-png': {
+      const exported = runCliExport(
+        'frame-png',
+        [
+          { flag: '--profile', data: args.profile, name: 'profile.json' },
+          { flag: '--params', data: args.params, name: 'params.json' },
+        ],
+        [
+          '--frame-index', String(args.frameIndex),
+          '--time-ticks', String(args.timeTicks),
+          '--duration-ticks', String(args.durationTicks),
+        ],
+        'frames',
+        true,
+      );
+      return { size: exported.size, sha256: exported.sha256, pngBase64: exported.base64, summary: exported.summary };
+    }
+    case 'ocx.audio.export-wav': {
+      const sampleRateHz = Number(args.sampleRateHz);
+      if (!Number.isInteger(sampleRateHz) || sampleRateHz < 1) {
+        throw new Error('sampleRateHz 必须是正整数');
+      }
+      if (!Array.isArray(args.channels) || args.channels.length < 1) {
+        throw new Error('channels 必须是非空数组');
+      }
+      const exported = runCliExport(
+        'audio-export',
+        [{ flag: '--pcm', data: { sampleRateHz, channels: args.channels }, name: 'pcm.json' }],
+        [],
+        'audio.wav',
+      );
+      return { size: exported.size, sha256: exported.sha256, wavBase64: exported.base64, summary: exported.summary };
     }
     default:
       throw new Error(`未知工具：${name}`);

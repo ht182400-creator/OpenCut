@@ -97,10 +97,12 @@ const state = createState();
 }
 {
   const response = await call(state, 'tools/list');
-  check('tools/list 暴露 8 个 ocx.* 工具', () => {
-    assert.equal(response.result.tools.length, 8);
+  check('tools/list 暴露 10 个 ocx.* 工具', () => {
+    assert.equal(response.result.tools.length, 10);
     assert.ok(response.result.tools.some((tool) => tool.name === 'ocx.otio.export'));
     assert.ok(response.result.tools.some((tool) => tool.name === 'ocx.render.status'));
+    assert.ok(response.result.tools.some((tool) => tool.name === 'ocx.render.frame-png'));
+    assert.ok(response.result.tools.some((tool) => tool.name === 'ocx.audio.export-wav'));
   });
 }
 {
@@ -224,6 +226,54 @@ const state = createState();
     assert.equal(summary.checksum, first.fnvChecksum);
   });
 }
+// --- 工具：PNG / WAV 导出（W-13 剩余项，经 ocx-cli 同一份手写编码器） ---
+{
+  const repo = path.resolve(HERE, '../..');
+  const build = spawnSync('cargo', ['build', '-p', 'ocx-cli'], {
+    encoding: 'utf8', cwd: repo, timeout: 180000,
+  });
+  check('ocx-cli 二进制可用（PNG/WAV 导出前置）', () => {
+    assert.equal(build.status, 0, build.stderr);
+  });
+  const cliBin = path.join(repo, 'target/debug/ocx-cli' + (process.platform === 'win32' ? '.exe' : ''));
+  process.env.OCX_CLI_BIN = cliBin;
+
+  const png = payload(await call(state, 'tools/call', {
+    name: 'ocx.render.frame-png',
+    arguments: { frameIndex: 0, timeTicks: 0, durationTicks: 4000, profile: PROFILE, params: PARAMS },
+  }));
+  check('ocx.render.frame-png 经 CLI 产出真实 PNG（base64 + 魔数）', () => {
+    assert.equal(png.summary.frameIndex, 0);
+    assert.ok(png.size > 0);
+    const bytes = Buffer.from(png.pngBase64, 'base64');
+    assert.equal(bytes.length, png.size);
+    assert.deepEqual([...bytes.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+  });
+
+  const wav = payload(await call(state, 'tools/call', {
+    name: 'ocx.audio.export-wav',
+    arguments: { sampleRateHz: 48000, channels: [[0, 0.5, -0.5, 1, -1], [0.25, -0.25, 0, 0.75, -0.75]] },
+  }));
+  check('ocx.audio.export-wav 经 CLI 产出真实 WAV（base64 + RIFF/WAVE 魔数）', () => {
+    assert.equal(wav.summary.frames, 5);
+    assert.equal(wav.summary.channels, 2);
+    assert.equal(wav.summary.sampleRateHz, 48000);
+    const bytes = Buffer.from(wav.wavBase64, 'base64');
+    assert.equal(bytes.toString('ascii', 0, 4), 'RIFF');
+    assert.equal(bytes.toString('ascii', 8, 12), 'WAVE');
+    assert.equal(bytes.length, wav.size);
+  });
+
+  const badWav = await call(state, 'tools/call', {
+    name: 'ocx.audio.export-wav',
+    arguments: { sampleRateHz: 0, channels: [] },
+  });
+  check('非法 WAV 参数返回 isError 中文提示', () => {
+    assert.equal(badWav.result.isError, true);
+    assert.match(badWav.result.content[0].text, /sampleRateHz 必须是正整数/);
+  });
+}
+
 {
   const response = await call(state, 'tools/call', { name: 'ocx.render.status', arguments: { jobId: 'job-404' } });
   check('未知任务返回 isError 结果', () => {
