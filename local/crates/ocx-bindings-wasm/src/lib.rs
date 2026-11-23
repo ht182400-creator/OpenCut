@@ -21,6 +21,7 @@ use ocx_editor_api::{
     negotiate,
 };
 use ocx_io::{EditTimeline, export_otio, import_otio};
+use ocx_plugin_host::{SCOPE_CAPABILITY_MEDIA_READ, scope_allows, validate_scope};
 use ocx_render::{
     ExportProfile, FrameParams, WaveformParams, build_frame_plan, composite_frame, render_frame,
     thumbnail_rgba as thumbnail_rgba_core, validate_export_profile, waveform_peaks,
@@ -184,6 +185,44 @@ pub fn plugin_register(manifest_json: &str, granted_json: &str) -> Result<String
         .map_err(|error| js_error("解析 host 能力清单", error))?;
     let refs: Vec<&str> = granted.iter().map(String::as_str).collect();
     to_json(&ocx_plugin_host::check_manifest(&refs, manifest_json))
+}
+
+/// 请求字段：资源 scope 校验（W-12 WASM glue）。
+#[derive(serde::Deserialize)]
+struct ScopeCheckRequest {
+    /// 能力名；目前仅 `media-read` 有资源 scope 概念。
+    capability: String,
+    /// 请求访问的资源（`ns:name`）。
+    resource: String,
+    /// host 授予的 scope 列表。
+    scopes: Vec<String>,
+}
+
+/**
+ * W-12 WASM glue：用 core 同一份 scope 逻辑校验资源访问（deny-by-default）。
+ * 请求 JSON：`{capability,resource,scopes:[...]}`；
+ * 返回 `{ok:true,allowed:bool}` 或 `{ok:false,error:"INVALID_SCOPE",scope:"..."}`。
+ * @param request_json 校验请求
+ * @returns {Result<String, JsValue>} JSON 结果，解析失败抛中文错误
+ */
+#[wasm_bindgen]
+pub fn plugin_scope_check(request_json: &str) -> Result<String, JsValue> {
+    let request: ScopeCheckRequest = serde_json::from_str(request_json)
+        .map_err(|error| js_error("解析资源 scope 校验请求", error))?;
+    // 逐个校验 scope 合法性：任一非法即返回稳定错误码与具体 scope。
+    for scope in &request.scopes {
+        if let Err(error) = validate_scope(scope) {
+            return to_json(&json!({
+                "ok": false,
+                "error": error.code(),
+                "scope": scope,
+            }));
+        }
+    }
+    // 非资源型能力不支持 scope：按 deny-by-default 拒绝（allowed=false），非错误。
+    let allowed = request.capability == SCOPE_CAPABILITY_MEDIA_READ
+        && scope_allows(&request.scopes, &request.resource);
+    to_json(&json!({ "ok": true, "allowed": allowed }))
 }
 
 /// 导入 OTIO JSON 为内部 `EditTimeline`（W-10）。

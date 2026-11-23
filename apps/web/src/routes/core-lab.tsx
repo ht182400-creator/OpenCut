@@ -111,6 +111,7 @@ export function CoreLabPage(): JSX.Element {
             if (!plugin) throw new Error(PLUGIN_NOT_REGISTERED)
             return plugin.runCommand('ping', { value: 7 })
           }}
+          onScopeCheck={(request) => requireAdapter().pluginScopeCheck(request)}
         />
         <EvaluateSettingsPanel
           disabled={!adapter}

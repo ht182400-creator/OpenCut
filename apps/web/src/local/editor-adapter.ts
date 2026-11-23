@@ -72,6 +72,21 @@ export interface PluginRegisterResult {
   denied: string[];
 }
 
+/** W-12 WASM glue：资源 scope 校验请求（业务侧只传普通对象，由适配层序列化）。 */
+export interface PluginScopeCheckRequest {
+  capability: string;
+  resource: string;
+  scopes: string[];
+}
+
+/** W-12 WASM glue：资源 scope 校验结果。 */
+export interface PluginScopeCheckResult {
+  ok: boolean;
+  allowed?: boolean;
+  error?: string;
+  scope?: string;
+}
+
 /** 校验能力协商请求是普通对象，避免把空值送进 WASM。 */
 export function validateCapabilitiesRequest(
   request: unknown,
@@ -361,6 +376,8 @@ export interface EditorAdapter {
   negotiate(request: CapabilitiesRequest): NegotiationResult;
   /** W-12：校验并注册插件 manifest（越权由 core 拒绝）。 */
   pluginRegister(manifestJson: string, grantedCapabilities: string[]): PluginRegisterResult;
+  /** W-12 WASM glue：用 core 同一份 scope 逻辑校验资源访问（deny-by-default）。 */
+  pluginScopeCheck(request: PluginScopeCheckRequest): PluginScopeCheckResult;
 }
 
 let adapterPromise: Promise<EditorAdapter> | null = null;
@@ -432,6 +449,15 @@ export async function createEditorAdapter(): Promise<EditorAdapter> {
           validateOtioText(manifestJson, '插件清单 JSON');
           if (!Array.isArray(grantedCapabilities)) throw new Error('host 能力清单必须是数组；请检查后重试。');
           return JSON.parse(glue.plugin_register(manifestJson, JSON.stringify(grantedCapabilities))) as PluginRegisterResult;
+        },
+        pluginScopeCheck: (request: PluginScopeCheckRequest): PluginScopeCheckResult => {
+          if (!request || typeof request !== 'object') throw new Error('scope 校验请求必须是对象；请检查后重试。');
+          if (typeof request.capability !== 'string' || !request.capability) throw new Error('能力名必须是非空字符串；请检查后重试。');
+          if (typeof request.resource !== 'string' || !request.resource) throw new Error('资源名必须是非空字符串；请检查后重试。');
+          if (!Array.isArray(request.scopes) || request.scopes.some((scope) => typeof scope !== 'string')) {
+            throw new Error('scope 列表必须是字符串数组；请检查后重试。');
+          }
+          return JSON.parse(glue.plugin_scope_check(JSON.stringify(request))) as PluginScopeCheckResult;
         },
       };
     } catch (error) {

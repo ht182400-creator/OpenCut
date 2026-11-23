@@ -271,6 +271,38 @@ export function plugin_register(manifest_json, granted_json) {
 }
 
 /**
+ *
+ * * W-12 WASM glue：用 core 同一份 scope 逻辑校验资源访问（deny-by-default）。
+ * * 请求 JSON：`{capability,resource,scopes:[...]}`；
+ * * 返回 `{ok:true,allowed:bool}` 或 `{ok:false,error:"INVALID_SCOPE",scope:"..."}`。
+ * * @param request_json 校验请求
+ * * @returns {Result<String, JsValue>} JSON 结果，解析失败抛中文错误
+ *
+ * @param {string} request_json
+ * @returns {string}
+ */
+export function plugin_scope_check(request_json) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(request_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.plugin_scope_check(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
  * 读取经典版项目 JSON（原始文本），返回只读归一化视图或稳定错误码。
  *
  * 不修改输入、不写回；高于 v31 明确拒绝。字段缺失时补默认值并附 `warnings`。

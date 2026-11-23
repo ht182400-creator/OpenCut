@@ -14,6 +14,7 @@ import init, {
   api_negotiate,
   api_version,
   plugin_register,
+  plugin_scope_check,
   channel_kind,
   composite_frame_rgba,
   discover,
@@ -608,6 +609,42 @@ try {
       }), granted)).ok,
       true,
     ));
+
+  // W-12 WASM glue：资源 scope 校验复用 core 同一份逻辑（deny-by-default）
+  const scopeReq = (capability, resource, scopes) => JSON.stringify({ capability, resource, scopes });
+  check("scope 精确匹配授予资源", () =>
+    assert.equal(
+      JSON.parse(plugin_scope_check(scopeReq("media-read", "clip:intro", ["clip:intro"]))).allowed,
+      true,
+    ));
+  check("scope 通配匹配命名空间", () =>
+    assert.equal(
+      JSON.parse(plugin_scope_check(scopeReq("media-read", "asset:bg.mp4", ["asset:*"]))).allowed,
+      true,
+    ));
+  check("scope 未命中拒绝（deny-by-default）", () =>
+    assert.equal(
+      JSON.parse(plugin_scope_check(scopeReq("media-read", "secret:key", ["clip:*"]))).allowed,
+      false,
+    ));
+  check("scope 空列表拒绝", () =>
+    assert.equal(
+      JSON.parse(plugin_scope_check(scopeReq("media-read", "clip:intro", []))).allowed,
+      false,
+    ));
+  check("非资源型能力始终拒绝", () =>
+    assert.equal(
+      JSON.parse(plugin_scope_check(scopeReq("export", "clip:intro", ["clip:intro"]))).allowed,
+      false,
+    ));
+  check("非法 scope 返回稳定错误码与具体 scope", () => {
+    const bad = JSON.parse(plugin_scope_check(scopeReq("media-read", "clip:intro", ["no-separator"])));
+    assert.equal(bad.ok, false);
+    assert.equal(bad.error, "INVALID_SCOPE");
+    assert.equal(bad.scope, "no-separator");
+  });
+  check("scope 校验请求非法 JSON 抛中文错误", () =>
+    assert.throws(() => plugin_scope_check("{ 非法"), /解析资源 scope 校验请求/));
 
   // W-11：能力协商走真实 WASM 产物
   const negotiated = JSON.parse(api_negotiate(JSON.stringify({

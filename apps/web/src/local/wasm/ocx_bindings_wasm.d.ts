@@ -63,6 +63,17 @@ export function param_kind(value_json: string): string;
 export function plugin_register(manifest_json: string, granted_json: string): string;
 
 /**
+ *
+ * * W-12 WASM glue：用 core 同一份 scope 逻辑校验资源访问（deny-by-default）。
+ * * 请求 JSON：`{capability,resource,scopes:[...]}`；
+ * * 返回 `{ok:true,allowed:bool}` 或 `{ok:false,error:"INVALID_SCOPE",scope:"..."}`。
+ * * @param request_json 校验请求
+ * * @returns {Result<String, JsValue>} JSON 结果，解析失败抛中文错误
+ *
+ */
+export function plugin_scope_check(request_json: string): string;
+
+/**
  * 读取经典版项目 JSON（原始文本），返回只读归一化视图或稳定错误码。
  *
  * 不修改输入、不写回；高于 v31 明确拒绝。字段缺失时补默认值并附 `warnings`。
@@ -117,6 +128,7 @@ export interface InitOutput {
     readonly otio_import: (a: number, b: number) => [number, number, number, number];
     readonly param_kind: (a: number, b: number) => [number, number, number, number];
     readonly plugin_register: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly plugin_scope_check: (a: number, b: number) => [number, number, number, number];
     readonly read_classic_project: (a: number, b: number) => [number, number, number, number];
     readonly render_frame_rgba: (a: number, b: number) => [number, number, number, number];
     readonly schema_version: () => [number, number];
