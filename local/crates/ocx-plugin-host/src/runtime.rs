@@ -35,8 +35,12 @@ const COMMAND_PREFIX: &str = "command_";
 const CAPABILITY_MODULE: &str = "ocx";
 /// 受控能力函数名：查询授予资源字节数（`resource key(ptr,len) -> i64 size`）。
 const CAPABILITY_RESOURCE_LEN: &str = "resource_len";
+/// 受控能力函数名：读取授予资源内容（W-12 core 扩展，media-read 从「可查长度」升级为「可读内容」）。
+const CAPABILITY_RESOURCE_READ: &str = "resource_read";
 /// scope 拒绝 trap 的稳定前缀（供错误映射识别）。
 const SCOPE_DENIED_MARKER: &str = "scope_denied:";
+/// 资源读取目标缓冲过大的稳定 trap 前缀。
+const RESOURCE_BUFFER_MARKER: &str = "resource_buffer_too_small:";
 
 /// 宿主注入的状态：授予的 scope + 可见资源表（声明式权限）。
 #[derive(Debug, Default, Clone)]
@@ -216,6 +220,70 @@ fn register_capabilities(linker: &mut Linker<HostState>) -> Result<(), PluginErr
                     .get(&key)
                     .map(|bytes| bytes.len() as i64)
                     .unwrap_or(-1))
+            },
+        )
+        .map_err(|_| PluginError::InvalidWasm)?;
+    // W-12 core 扩展：受控能力 `ocx.resource_read`，把授予资源的内容写入插件缓冲。
+    linker
+        .func_wrap(
+            CAPABILITY_MODULE,
+            CAPABILITY_RESOURCE_READ,
+            |mut caller: Caller<'_, HostState>,
+             key_ptr: i32,
+             key_len: i32,
+             out_ptr: i32,
+             out_cap: i32|
+             -> Result<i64, wasmi::Error> {
+                if key_ptr <= 0 || key_len <= 0 || key_len as usize > MAX_SCOPE_LEN {
+                    return Err(wasmi::Error::new("invalid resource key length"));
+                }
+                if out_ptr <= 0 || out_cap <= 0 {
+                    return Err(wasmi::Error::new("invalid output buffer"));
+                }
+                let memory = caller
+                    .get_export("memory")
+                    .and_then(|external| external.into_memory())
+                    .ok_or_else(|| wasmi::Error::new("missing memory"))?;
+                let mut key_buffer = vec![0u8; key_len as usize];
+                memory
+                    .read(&caller, key_ptr as usize, &mut key_buffer)
+                    .map_err(|error| wasmi::Error::new(format!("memory read failed: {error}")))?;
+                let key = String::from_utf8(key_buffer)
+                    .map_err(|_| wasmi::Error::new("invalid utf8 resource key"))?;
+                // deny-by-default：未命中授予 scope 直接拒绝，与 resource_len 共用稳定标记。
+                if !granted_allows(
+                    &caller.data().granted_scopes,
+                    SCOPE_CAPABILITY_MEDIA_READ,
+                    &key,
+                ) {
+                    return Err(wasmi::Error::new(format!("{SCOPE_DENIED_MARKER}{key}")));
+                }
+                let size = caller.data().resources.get(&key).map(|bytes| bytes.len());
+                match size {
+                    // 资源不存在返回 -1（区分「无权」与「无此资源」）。
+                    None => Ok(-1),
+                    // 先查大小再克隆，避免超大资源触发 OOM。
+                    Some(len) if len > MAX_OUTPUT_BYTES => {
+                        Err(wasmi::Error::new("resource exceeds max output bytes"))
+                    }
+                    Some(len) if len > out_cap as usize => Err(wasmi::Error::new(format!(
+                        "{RESOURCE_BUFFER_MARKER}{len}"
+                    ))),
+                    Some(len) => {
+                        let bytes = caller
+                            .data()
+                            .resources
+                            .get(&key)
+                            .cloned()
+                            .unwrap_or_default();
+                        memory
+                            .write(&mut caller, out_ptr as usize, &bytes)
+                            .map_err(|error| {
+                                wasmi::Error::new(format!("memory write failed: {error}"))
+                            })?;
+                        Ok(len as i64)
+                    }
+                }
             },
         )
         .map_err(|_| PluginError::InvalidWasm)?;

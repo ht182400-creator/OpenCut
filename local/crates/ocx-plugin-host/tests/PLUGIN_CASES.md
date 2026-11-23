@@ -80,6 +80,24 @@
 | R06 | WAT 模块含 `host.log` 导入 | `DISALLOWED_IMPORT` |
 | R07 | 输入 JSON > 1 MiB | `INPUT_TOO_LARGE` |
 
+## W-12 core 扩展：`ocx.resource_read` 受控资源读取
+
+执行：`cargo test -p ocx-plugin-host --test resource_read`（3 项，测试期用 `wat` 生成最小 core wasm 插件）。
+
+### 能力 ABI
+
+- `ocx.resource_len(key_ptr, key_len) -> i64`：查授予资源字节数（既有），不存在返回 -1。
+- `ocx.resource_read(key_ptr, key_len, out_ptr, out_cap) -> i64`：**新增**，按 `media-read` scope 校验后把资源内容写入插件线性内存，返回写入字节数；不存在返回 -1；目标缓冲不足/超大资源返回稳定 trap。
+- 两者共用 `SCOPE_DENIED_MARKER` → `PluginError::ScopeDenied(resource)`（deny-by-default，未授予 scope 的 key 直接拒绝）。
+
+### 运行用例
+
+| 用例 | 输入 | 预期 |
+| --- | --- | --- |
+| RR01 | 授予 `clip:intro` + 资源表含该 key（内容为 JSON） | `resource_read` 成功，插件输出即资源内容 JSON |
+| RR02 | 仅授予 `asset:*`，请求 `clip:intro` | `SCOPE_DENIED`，错误文本含 `clip:intro` |
+| RR03 | 授予 `clip:intro` 但资源表为空 | 返回 -1 → 输出长度 0 → `INVALID_OUTPUT`（区分「无权」与「无此资源」） |
+
 ## 诚实边界
 
 第一批只做契约与处理器绑定（不加载 wasm）；第三批补上 wasmi 真实运行时与细粒度权限，前后两批的错误码与校验顺序保持不变。**WIT 组件模型下一批**：当前 ABI 仍为手写 `(ptr,len)→i64`（与浏览器侧一致），未引入 WIT/component-model；WASM glue 与 TS 侧尚未暴露 wasmi 运行时入口（本批只交付 Rust core 能力，避免重复重编 wasm）。
