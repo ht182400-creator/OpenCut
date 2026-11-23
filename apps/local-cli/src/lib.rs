@@ -12,10 +12,14 @@ use ocx_render::{ExportProfile, FrameParams, RenderFrame, render_frame};
 use serde::Serialize;
 use serde_json::{Value, json};
 
+mod _plugin_io;
 mod _png;
 mod _wav;
 
 use _png::rgba_to_png;
+pub use _plugin_io::{
+    FileRootBinding, PluginIoSummary, granted_from_manifest, parse_file_roots, run_plugin_io,
+};
 pub use _wav::pcm_to_wav;
 
 /// 单帧产物摘要（stdout JSON 的元素）。

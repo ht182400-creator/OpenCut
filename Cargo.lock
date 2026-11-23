@@ -3569,9 +3569,11 @@ name = "ocx-cli"
 version = "0.1.0"
 dependencies = [
  "ocx-domain",
+ "ocx-plugin-host",
  "ocx-render",
  "serde",
  "serde_json",
+ "wat",
 ]
 
 [[package]]

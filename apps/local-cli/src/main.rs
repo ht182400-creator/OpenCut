@@ -1,4 +1,4 @@
-//! Headless CLI 入口：子命令 `frame` / `batch` / `frame-png` / `batch-png` / `audio-export` / `project-info`。
+//! Headless CLI 入口：子命令 `frame` / `batch` / `frame-png` / `batch-png` / `audio-export` / `project-info` / `plugin-io`。
 //!
 //! 用法：
 //! - `ocx-cli frame --profile <json文件> --params <json文件> --frame-index N --time-ticks T --duration-ticks D --out <目录> [--name 前缀]`
@@ -6,14 +6,16 @@
 //! - `ocx-cli frame-png / batch-png`：参数同 frame / batch，输出 RGBA8 PNG
 //! - `ocx-cli audio-export --pcm <json文件> --out <wav文件>`：planar f32 PCM → 16-bit WAV
 //! - `ocx-cli project-info --project <经典版项目JSON文件>`
+//! - `ocx-cli plugin-io --wasm <文件> --manifest <json> --payload <json> [--file-root ns=路径 ...] [--network] [--effect 名称]`
 //!
 //! 结果一律以一行 JSON 打印到 stdout；失败打印中文错误并以非零码退出。
 
 use std::process::ExitCode;
 
 use ocx_cli::{
-    parse_json, parse_params, parse_pcm_json, parse_profile, project_info, render_batch_to_png,
-    render_batch_to_ppm, render_one_to_png, render_one_to_ppm, write_audio_wav,
+    parse_file_roots, parse_json, parse_params, parse_pcm_json, parse_profile, project_info,
+    render_batch_to_png, render_batch_to_ppm, render_one_to_png, render_one_to_ppm, run_plugin_io,
+    write_audio_wav,
 };
 
 const HELP: &str = "ocx-cli 子命令：
@@ -22,7 +24,8 @@ const HELP: &str = "ocx-cli 子命令：
   frame-png    渲染单帧为 PNG（参数同 frame，RGBA8）
   batch-png    批量渲染多帧为 PNG（参数同 batch，RGBA8）
   audio-export planar f32 PCM → 16-bit WAV（--pcm <json> --out <wav>）
-  project-info 输出经典版项目结构摘要（--project）";
+  project-info 输出经典版项目结构摘要（--project）
+  plugin-io    受控插件 I/O：加载 wasm 插件并调用 effect（--wasm --manifest --payload [--file-root ns=路径 ...] [--network] [--effect]）";
 
 /** 读取 `--key value` 形式的参数。 */
 fn flag(args: &[String], key: &str) -> Option<String> {
@@ -30,6 +33,15 @@ fn flag(args: &[String], key: &str) -> Option<String> {
         .position(|item| item == key)
         .and_then(|index| args.get(index + 1))
         .cloned()
+}
+
+/** 收集同一 key 的全部取值（如可重复的 `--file-root`）。 */
+fn flags(args: &[String], key: &str) -> Vec<String> {
+    args.iter()
+        .enumerate()
+        .filter(|(_, item)| *item == key)
+        .filter_map(|(index, _)| args.get(index + 1).cloned())
+        .collect()
 }
 
 /** 读取 JSON 文件。 */
@@ -54,7 +66,7 @@ fn main() -> ExitCode {
 fn run(args: &[String]) -> Result<String, String> {
     let Some(command) = args.first() else {
         return Err(format!(
-            "用法：ocx-cli <frame|batch|frame-png|batch-png|audio-export|project-info> ...\n{HELP}"
+            "用法：ocx-cli <frame|batch|frame-png|batch-png|audio-export|project-info|plugin-io> ...\n{HELP}"
         ));
     };
     match command.as_str() {
@@ -64,9 +76,10 @@ fn run(args: &[String]) -> Result<String, String> {
         "batch-png" => run_batch_png(&args[1..]),
         "audio-export" => run_audio_export(&args[1..]),
         "project-info" => run_project_info(&args[1..]),
+        "plugin-io" => run_plugin_io_cmd(&args[1..]),
         "help" | "--help" | "-h" => Ok(HELP.to_owned()),
         other => Err(format!(
-            "未知子命令：{other}；可用：frame / batch / frame-png / batch-png / audio-export / project-info"
+            "未知子命令：{other}；可用：frame / batch / frame-png / batch-png / audio-export / project-info / plugin-io"
         )),
     }
 }
@@ -208,4 +221,33 @@ fn run_project_info(args: &[String]) -> Result<String, String> {
     parse_json(&project_text)?;
     let info = project_info(&project_text)?;
     serde_json::to_string(&info).map_err(|error| format!("序列化结果失败：{error}"))
+}
+
+/** 受控插件 I/O：加载真实 wasm 插件并在宿主白名单下调用 effect。 */
+fn run_plugin_io_cmd(args: &[String]) -> Result<String, String> {
+    let wasm_path = flag(args, "--wasm").ok_or("缺少 --wasm（插件 wasm 文件）")?;
+    let wasm_bytes = std::fs::read(&wasm_path)
+        .map_err(|error| format!("读取插件 wasm 失败：{error}"))?;
+    let manifest_text = read_json_file(
+        &flag(args, "--manifest").ok_or("缺少 --manifest（插件清单 JSON）")?,
+        "插件清单",
+    )?;
+    let payload_text = read_json_file(
+        &flag(args, "--payload").ok_or("缺少 --payload（输入 JSON）")?,
+        "插件输入",
+    )?;
+    let payload = parse_json(&payload_text)?;
+    let file_roots = parse_file_roots(&flags(args, "--file-root"))?;
+    let network = args.iter().any(|item| item == "--network");
+    let effect = flag(args, "--effect").unwrap_or_else(|| "effect_brightness".to_owned());
+    // 授予权限来自 manifest.capabilities（宿主可通过不注入对应能力收紧，见 ocx-plugin-host）。
+    let summary = run_plugin_io(
+        &wasm_bytes,
+        &manifest_text,
+        &file_roots,
+        network,
+        &effect,
+        &payload,
+    )?;
+    serde_json::to_string(&summary).map_err(|error| format!("序列化结果失败：{error}"))
 }
