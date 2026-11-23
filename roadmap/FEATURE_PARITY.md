@@ -78,7 +78,7 @@
 | 播放 / 暂停 | 真实 | 真实 | ✅ | 时间码推进已验收 |
 | 时间码 HH:MM:SS:FF | 可编辑并驱动 seek | 可编辑（回车/失焦提交，越界 clamp 到末帧） | ✅ | 批 4：`preview-tokens.ts` `parseFrameTimecode`/`formatFrameTimecode`（9 项单测），浏览器输入 `00:00:01:15` 精确 seek |
 | 缩放预设 + Fit + 全屏 | 真实 | 真实 | ✅ | 批 5 验收 |
-| 选框/手柄/对齐参考线 | 真实（改 transform） | 视觉叠加 + 本地拖拽，不改 core 画面 | 🔴 | §7 批 5 |
+| 选框/手柄/对齐参考线 | 真实（改 transform） | 选框由 core transform 派生，drag 松手写回 position/scale/rotate 并驱动画面（对齐参考线仍为视觉反馈） | 🟡 | 第二档：`preview-transform-model.ts` 双向映射 + `preview-section.tsx` 写回，浏览器拖 left 手柄写回 `positionX=-33.13/scaleX=0.456` 且重新选中后选框同步；旋转纯函数 11 项覆盖，但旋转手柄被顶栏遮挡未端到端验证，`oc-p4-transform-writeback.png` |
 | 遮罩手柄 | 真实 | 真实（预览叠加遮罩矩形 + 4 边拖拽手柄，驱动 mask.* 参数并像素裁剪生效） | ✅ | P4 批 5：`resizeMask` 纯函数 + `preview-section.tsx` 手柄，浏览器拖动 left 写回 `mask.left=0.052`，`oc-p4-mask-handle.png` |
 | 双击文字就地编辑 | 真实 | 无 | ⚪ | 依赖文字元素可编辑 |
 | 画面合成 | 真实（canvas renderer） | 真实（core `composite_frame` + 真实素材帧） | ✅ | 批 7 + 正式模式去演示色块 |
@@ -139,8 +139,8 @@
 | 状态 | 数量 | 分布（§） | 主要条目 |
 | --- | --- | --- | --- |
 | ✅ 已实现 | 38 | §1:5 §2:4 §3:11 §4:6 §5:4 §6:4 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、MP4/WebM 导出、质量档位 |
-| 🟡 部分闭环 | 8 | §1:0 §2:1 §3:3 §4:0 §5:1 §6:3 §7:0 | 网格卡片/无排序、三轨结构固定、遮罩手柄（参数化无拖拽）、Masks/Effects 基础参数（无 GPU 效果）、撤销重做、自动保存（localStorage）、拖拽排序、导出进度无取消 |
-| 🔴 占位 | 6 | §2:4 §3:1 §4:1 | Sounds/Stickers/Effects/Settings 数据源、静音隐藏、overlay/audio 编辑、书签、时间码编辑、选框/手柄/对齐参考线、右键菜单 |
+| 🟡 部分闭环 | 9 | §1:0 §2:1 §3:3 §4:0 §5:2 §6:3 §7:0 | 网格卡片/无排序、三轨结构固定、遮罩手柄（参数化无拖拽）、Masks/Effects 基础参数（无 GPU 效果）、撤销重做、自动保存（localStorage）、拖拽排序、导出进度无取消、选框/手柄写回 transform（参考线仍视觉、旋转手柄被顶栏遮挡未端到端） |
+| 🔴 占位 | 5 | §2:4 §3:1 §4:1 | Sounds/Stickers/Effects/Settings 数据源、静音隐藏、overlay/audio 编辑、书签、时间码编辑、右键菜单 |
 | ⚪ 未覆盖 | 15 | §1:5 §2:5 §3:2 §4:1 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、双击文字就地编辑、素材右键 Export clips、剪贴板直接贴媒体 |
 
 > 合计 67 项（38+8+6+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算，与表格严格一致。
