@@ -11,7 +11,7 @@ pub(crate) struct Inspector {
 }
 
 /// 编辑器操作提示（常量集中，避免硬编码散落）。
-const EDIT_HINT: &str = "F2 名称 · F3 起点 · F4 时长 · F5 修剪入 · F6 修剪出 · Enter 保存 · Esc 取消 · Ctrl+S 保存 · Ctrl+Shift+S 另存为";
+const EDIT_HINT: &str = "F2 名称 · F3 起点 · F4 时长 · F5 修剪入 · F6 修剪出 · Enter 保存 · Esc 取消 · Ctrl+S 保存 · Ctrl+Shift+S 另存为 · Ctrl+Z 撤销 · Ctrl+Shift+Z 重做";
 
 impl Inspector {
     /// 绑定到共享项目状态。
@@ -103,6 +103,7 @@ impl Render for Inspector {
             .bg(colors.card)
             .text_color(colors.card_foreground)
             .child(content)
+            .child(div().text_xs().child(snapshot.history_label()))
             .children(save_as_line.into_iter().map(|line| div().text_xs().child(line)))
             .children(snapshot.edit_error.iter().map(|error| {
                 div().text_xs().child(format!("⚠ {error}"))

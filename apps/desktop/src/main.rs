@@ -4,6 +4,7 @@ use gpui::{
 };
 
 mod _project_edit;
+mod _project_history;
 mod components;
 mod panels;
 mod project;

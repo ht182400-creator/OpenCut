@@ -39,6 +39,7 @@ const PROJECT_ARG: &str = "--project";
 use crate::_project_edit::{
     EditableField, KeyOutcome, input_allowed, parse_seconds_to_ticks, save_as_key, validate_edit,
 };
+use crate::_project_history::ProjectHistory;
 
 /// 项目加载错误：统一给 UI 中文提示，不 panic。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,6 +100,8 @@ pub(crate) struct ProjectState {
     pub(crate) save_status: Option<String>,
     /// 另存为草稿路径（Some 表示正在输入另存为路径）。
     pub(crate) save_as_draft: Option<String>,
+    /// 编辑历史快照栈（撤销/重做）。
+    pub(crate) history: ProjectHistory,
 }
 
 impl ProjectState {
@@ -116,6 +119,7 @@ impl ProjectState {
         if view.duration_ticks <= 0 {
             return Err(ProjectError::InvalidDuration(view.duration_ticks));
         }
+        let history = ProjectHistory::new(&view, 0, None);
         Ok(Self {
             view,
             playhead_ticks: 0,
@@ -131,6 +135,7 @@ impl ProjectState {
             edit_error: None,
             save_status: None,
             save_as_draft: None,
+            history,
         })
     }
 
@@ -389,6 +394,7 @@ impl ProjectState {
             Some(field) => field,
             None => return false,
         };
+        let edit_label = format!("编辑 {}", field.label());
         if self.draft.is_empty() {
             self.cancel_edit();
             return false;
@@ -459,7 +465,60 @@ impl ProjectState {
             None => false,
         };
         self.cancel_edit();
+        if changed {
+            self.history.push(
+                &self.view,
+                self.playhead_ticks,
+                self.selected_element_id.as_deref(),
+                &edit_label,
+            );
+        }
         changed
+    }
+
+    /**
+     * 撤销一步：把历史前一快照恢复为当前项目状态。
+     *
+     * @returns {bool} 是否实际发生恢复
+     */
+    pub(crate) fn undo(&mut self) -> bool {
+        let Some(snapshot) = self.history.travel(-1) else {
+            return false;
+        };
+        self.apply_snapshot(snapshot);
+        true
+    }
+
+    /**
+     * 重做一步：把历史后一快照恢复为当前项目状态。
+     *
+     * @returns {bool} 是否实际发生恢复
+     */
+    pub(crate) fn redo(&mut self) -> bool {
+        let Some(snapshot) = self.history.travel(1) else {
+            return false;
+        };
+        self.apply_snapshot(snapshot);
+        true
+    }
+
+    /**
+     * 恢复快照到当前状态（项目视图 + 播放头 + 选中元素），并退出编辑态。
+     *
+     * @param snapshot 目标快照
+     */
+    fn apply_snapshot(&mut self, snapshot: crate::_project_history::HistorySnapshot) {
+        self.view = snapshot.view;
+        self.playhead_ticks = snapshot.playhead_ticks;
+        self.selected_element_id = snapshot.selected_element_id;
+        self.editing_field = None;
+        self.draft.clear();
+        self.edit_error = None;
+    }
+
+    /// 历史摘要（供 UI 显示）。
+    pub(crate) fn history_label(&self) -> String {
+        self.history.label()
     }
 
     /**
@@ -897,5 +956,29 @@ mod tests {
             ProjectState::load_from_path(&missing),
             Err(ProjectError::ReadFile(_))
         ));
+    }
+
+    /// 撤销/重做：提交编辑后可恢复原始视图，边界处返回 false。
+    #[test]
+    fn undo_redo_restores_view() {
+        let mut state = ProjectState::load_demo().expect("演示项目应可加载");
+        assert!(!state.undo());
+        let original = state.view.clone();
+        let first_id = state.view.scenes.iter()
+            .flat_map(|scene| &scene.tracks)
+            .flat_map(|track| &track.elements)
+            .next()
+            .map(|element| element.id.clone())
+            .expect("应有片段");
+        state.selected_element_id = Some(first_id);
+        state.editing_field = Some(EditableField::Name);
+        state.draft = "改名".to_owned();
+        assert!(state.commit_edit());
+        assert_ne!(state.view, original);
+        assert!(state.undo());
+        assert_eq!(state.view, original);
+        assert!(state.redo());
+        assert_ne!(state.view, original);
+        assert!(!state.redo());
     }
 }

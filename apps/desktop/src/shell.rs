@@ -86,9 +86,11 @@ impl Shell {
      * @param key `Keystroke.key` 字符串
      * @param save_now 是否为 Ctrl+S 手动保存
      * @param save_as 是否为 Ctrl+Shift+S 另存为
+     * @param undo 是否为 Ctrl+Z 撤销
+     * @param redo 是否为 Ctrl+Shift+Z 重做
      * @param app GPUI 应用上下文，用于更新共享项目实体
      */
-    fn handle_key(&mut self, key: &str, save_now: bool, save_as: bool, app: &mut App) {
+    fn handle_key(&mut self, key: &str, save_now: bool, save_as: bool, undo: bool, redo: bool, app: &mut App) {
         // 另存为模式：所有键进路径草稿，Enter 提交后落盘到新路径。
         let in_save_as = self.project.read(app).save_as_draft.is_some();
         if save_as && !in_save_as {
@@ -99,6 +101,20 @@ impl Shell {
             let committed = self.project.update(app, |state, _| state.handle_save_as_key(key));
             if let Some(path) = committed {
                 self.save_as_project(std::path::PathBuf::from(path), app);
+            }
+            return;
+        }
+
+        // 撤销/重做只在普通态响应；恢复成功后与编辑提交一致自动写回。
+        if undo || redo {
+            let changed = self.project.update(app, |state, _| {
+                if state.editing_field.is_some() {
+                    return false;
+                }
+                if undo { state.undo() } else { state.redo() }
+            });
+            if changed {
+                self.save_project(app);
             }
             return;
         }
@@ -157,7 +173,13 @@ impl Render for Shell {
                 let save_as = event.keystroke.modifiers.control
                     && event.keystroke.modifiers.shift
                     && key == "s";
-                this.handle_key(&key, save_now, save_as, cx);
+                let undo = event.keystroke.modifiers.control
+                    && !event.keystroke.modifiers.shift
+                    && key == "z";
+                let redo = event.keystroke.modifiers.control
+                    && event.keystroke.modifiers.shift
+                    && key == "z";
+                this.handle_key(&key, save_now, save_as, undo, redo, cx);
                 cx.stop_propagation();
             }))
             .flex()
