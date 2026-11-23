@@ -29,6 +29,10 @@ impl Render for Timeline {
         let back_entity = self.project.clone();
         let forward_entity = self.project.clone();
         let clip_entity = self.project.clone();
+        let delete_entity = self.project.clone();
+        let split_entity = self.project.clone();
+        let trim_in_entity = self.project.clone();
+        let trim_out_entity = self.project.clone();
         let ticks = snapshot.playhead_ticks;
         let total = snapshot.view.duration_ticks.max(1);
         let play_ratio = (ticks as f32 / total as f32).clamp(0.0, 1.0);
@@ -89,6 +93,47 @@ impl Render for Timeline {
                                 });
                             })
                             .child(" ▶| "),
+                    )
+                    // 时间轴编辑按钮：与 Delete / S / I / O 快捷键共用同一纯逻辑入口。
+                    .child(
+                        div()
+                            .id("timeline-delete")
+                            .on_click(move |_, _, app: &mut gpui::App| {
+                                delete_entity.update(app, |state, _| {
+                                    crate::_timeline_edit::apply_to_state(state, crate::_timeline_edit::TimelineEdit::Delete);
+                                });
+                            })
+                            .child(" 删 "),
+                    )
+                    .child(
+                        div()
+                            .id("timeline-split")
+                            .on_click(move |_, _, app: &mut gpui::App| {
+                                split_entity.update(app, |state, _| {
+                                    crate::_timeline_edit::apply_to_state(state, crate::_timeline_edit::TimelineEdit::Split);
+                                });
+                            })
+                            .child(" 分 "),
+                    )
+                    .child(
+                        div()
+                            .id("timeline-trim-in")
+                            .on_click(move |_, _, app: &mut gpui::App| {
+                                trim_in_entity.update(app, |state, _| {
+                                    crate::_timeline_edit::apply_to_state(state, crate::_timeline_edit::TimelineEdit::TrimIn);
+                                });
+                            })
+                            .child(" 入 "),
+                    )
+                    .child(
+                        div()
+                            .id("timeline-trim-out")
+                            .on_click(move |_, _, app: &mut gpui::App| {
+                                trim_out_entity.update(app, |state, _| {
+                                    crate::_timeline_edit::apply_to_state(state, crate::_timeline_edit::TimelineEdit::TrimOut);
+                                });
+                            })
+                            .child(" 出 "),
                     ),
             )
             // 秒刻度：按整秒等分，末段可能不足 1 秒但仍占一格

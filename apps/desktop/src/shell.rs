@@ -179,7 +179,25 @@ impl Render for Shell {
                 let redo = event.keystroke.modifiers.control
                     && event.keystroke.modifiers.shift
                     && key == "z";
-                this.handle_key(&key, save_now, save_as, undo, redo, cx);
+                // 时间轴编辑快捷键：无修饰键时 Delete/S/I/O 走统一编辑入口。
+                let edit = if event.keystroke.modifiers.control {
+                    None
+                } else {
+                    match key.as_str() {
+                        "delete" => Some(crate::_timeline_edit::TimelineEdit::Delete),
+                        "s" => Some(crate::_timeline_edit::TimelineEdit::Split),
+                        "i" => Some(crate::_timeline_edit::TimelineEdit::TrimIn),
+                        "o" => Some(crate::_timeline_edit::TimelineEdit::TrimOut),
+                        _ => None,
+                    }
+                };
+                if let Some(edit) = edit {
+                    this.project.update(cx, |state, _| {
+                        crate::_timeline_edit::apply_to_state(state, edit);
+                    });
+                } else {
+                    this.handle_key(&key, save_now, save_as, undo, redo, cx);
+                }
                 cx.stop_propagation();
             }))
             .flex()
