@@ -92,6 +92,11 @@ export const AUDIO_ELEMENT_PARAMS: readonly ParamDefinition[] = [
   { key: 'muted', label: 'Muted', control: 'boolean', defaultValue: false, keyframable: false },
 ] as const;
 
+/** 第二档项 2：播放速度（speed），video/audio 类型生效，取帧按倍率推进。 */
+export const SPEED_ELEMENT_PARAMS: readonly ParamDefinition[] = [
+  { key: 'speed', label: 'Speed', control: 'number', defaultValue: 1, min: 0.25, max: 4, step: 0.25, keyframable: false },
+] as const;
+
 /** 文本 17 项参数（textElementParams），背景 6 项依赖 background.enabled。 */
 export const TEXT_ELEMENT_PARAMS: readonly ParamDefinition[] = [
   { key: 'content', label: 'Content', control: 'text', defaultValue: 'Default text', keyframable: false },

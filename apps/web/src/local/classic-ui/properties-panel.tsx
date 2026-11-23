@@ -53,6 +53,7 @@ import {
   PROPERTIES_TAB_SIZE_PX,
   PROPERTIES_TABS_BY_TYPE,
   PROPERTIES_DEFAULT_TAB_BY_TYPE,
+  SPEED_ELEMENT_PARAMS,
   TEXT_ELEMENT_PARAMS,
   VISUAL_ELEMENT_PARAMS,
   type ParamDefinition,
@@ -451,8 +452,8 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
   }
   values.volume = typeof normalized.volume === 'number' ? normalized.volume : 0
   values.muted = typeof normalized.muted === 'boolean' ? normalized.muted : false
-  // P2：遮罩/效果默认值（元素未显式设置时也要显示合理默认，避免输入框空值）。
-  for (const param of [...MASK_ELEMENT_PARAMS, ...EFFECT_ELEMENT_PARAMS]) {
+  // 默认值（元素未显式设置时显示合理默认，避免输入框空值）。
+  for (const param of [...MASK_ELEMENT_PARAMS, ...EFFECT_ELEMENT_PARAMS, ...SPEED_ELEMENT_PARAMS]) {
     if (values[param.key] === undefined) values[param.key] = param.defaultValue
   }
 
@@ -476,6 +477,7 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
     ...(paramsForType.includes('text') ? TEXT_ELEMENT_PARAMS : []),
     ...(paramsForType.includes('visual') ? VISUAL_ELEMENT_PARAMS : []),
     ...(paramsForType.includes('audio') ? AUDIO_ELEMENT_PARAMS : []),
+    ...(typeTabs.includes('speed') ? SPEED_ELEMENT_PARAMS : []),
     ...(typeTabs.includes('masks') ? MASK_ELEMENT_PARAMS : []),
     ...(typeTabs.includes('effects') ? EFFECT_ELEMENT_PARAMS : []),
   ]
@@ -491,6 +493,8 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
     content = <ParamsSection params={params} keys={['opacity', 'blendMode']} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else if (activeTab === 'audio') {
     content = <ParamsSection params={params} keys={['volume', 'muted']} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
+  } else if (activeTab === 'speed') {
+    content = <ParamsSection params={params} keys={SPEED_ELEMENT_PARAMS.map((p) => p.key)} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else if (activeTab === 'text') {
     content = <ParamsSection params={params} keys={TEXT_ELEMENT_PARAMS.map((p) => p.key)} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else if (activeTab === 'masks') {

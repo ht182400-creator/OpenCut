@@ -103,10 +103,10 @@ import {
   mediaFrameAt,
   type DecodedMedia,
 } from '../local/media'
+import { mapProjectFrameWithSpeed } from '../local/speed-model'
 import {
   TICKS_PER_SECOND,
   clipAtTime,
-  mapProjectFrame,
   moveClipBy,
   moveClipClamped,
   plannedFrameCount,
@@ -516,7 +516,8 @@ export function Editor() {
     const active = clipAtTime(elements, timeTicks) as CoreElement | null
 
     if (media) {
-      const mapping = mapProjectFrame(elements, timeTicks, session.fps, media.frames.length)
+      // 第二档项 2：按命中片段的 speed 参数倍速取帧（speed=1 时与原映射一致）。
+      const mapping = mapProjectFrameWithSpeed(elements, timeTicks, session.fps, media.frames.length)
       basePixels = mapping.sourceFrameIndex === null
         ? blankFrame(resolution.width, resolution.height)
         : mediaFrameAt(media, mapping.sourceFrameIndex)
