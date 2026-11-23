@@ -39,6 +39,7 @@ import {
   readRectMask,
   resolveTextLayout,
   transformFromElement,
+  type ElementTransform,
   type RectMask,
 } from '../local/element-composite'
 import {
@@ -849,6 +850,19 @@ export function Editor() {
     })
   }
 
+  /** 第二档：预览选框变换写回元素 position/scale/rotate（驱动预览与导出）。 */
+  const handleTransformChange = (transform: ElementTransform) => {
+    applyPropertyPatch({
+      params: {
+        positionX: transform.positionX,
+        positionY: transform.positionY,
+        scaleX: transform.scaleX,
+        scaleY: transform.scaleY,
+        rotate: transform.rotate,
+      } as ClipPatch['params'],
+    })
+  }
+
   const diagnosticsItems = session ? [
     { label: '代理帧缓存', value: cacheInfo },
     { label: '剪辑历史', value: clipHistory.label },
@@ -986,6 +1000,8 @@ export function Editor() {
                     timecode={`片段 ${activeClip}`}
                     mask={selectedElement ? readRectMask(selectedElement) : undefined}
                     onMaskChange={handleMaskChange}
+                    transform={selectedElement ? transformFromElement(selectedElement) : undefined}
+                    onTransformChange={handleTransformChange}
                   />
                 </ResizablePanel>
                 <ResizableHandle withHandle />

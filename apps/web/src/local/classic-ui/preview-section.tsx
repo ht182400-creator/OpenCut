@@ -6,9 +6,9 @@
  * - 选框 SVG（白色描边 0.75 / 1px）+ 8 手柄（4 角 10px + 3 边 6×14 + 旋转 20px）+ 对齐参考线（1px 白 70%）
  * - 三栏控制条：左时间码 HH:MM:SS:FF / 中播放暂停 28px / 右缩放（Fit + 6 预设）+ 全屏
  *
- * 边界：core 无元素 transform 存储（属批 7），故选框/手柄/参考线为视觉叠加 +
- * 本地交互状态，不改变合成结果；时间码由 frameIndex/fps 计算。批 7.2 起画布
- * 分辨率可配置（由 frameWidth/frameHeight 传入，默认 320×180），16:9 预设不变。
+ * 边界：第二档起选框/手柄由 core transform 派生，拖拽松手写回 position/scale/rotate
+ * （经 onTransformChange → patchElementParams），真正驱动合成；对齐参考线仍为视觉反馈。
+ * 时间码由 frameIndex/fps 计算；画布分辨率可配置（frameWidth/frameHeight，默认 320×180）。
  * 尺寸/文案来自 preview-tokens.ts；图标为本地绘制 SVG。
  */
 
@@ -58,7 +58,13 @@ import {
   CONTEXT_MENU_PADDING_PX,
   CONTEXT_MENU_PREVIEW_ITEMS,
 } from './commands-tokens';
-import { resizeMask, type RectMask } from '../element-composite';
+import { resizeMask, type ElementTransform, type RectMask } from '../element-composite';
+import {
+  boxFromTransform,
+  pointerAngleDeg,
+  rotateByPointer,
+  transformFromBox,
+} from './preview-transform-model';
 
 export interface PreviewSectionProps {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -71,7 +77,7 @@ export interface PreviewSectionProps {
   onSeek: (frameIndex: number) => void
   /** 兼容旧调用的补充时间码文本（显示在时间码旁，经典版无此字段）。 */
   timecode?: string
-  /** 是否选中元素：选中时画布上叠加选框与手柄（视觉占位，见边界说明）。 */
+  /** 是否选中元素：选中时画布上叠加选框与手柄（第二档起可拖拽写回 transform）。 */
   selected?: boolean
   /** 批 7.2：画布内部分辨率（RGBA 像素缓冲尺寸），默认 320×180。 */
   frameWidth?: number
@@ -80,6 +86,10 @@ export interface PreviewSectionProps {
   mask?: RectMask
   /** 批 5（P4）：遮罩拖拽变更回调（写回元素 mask.* 参数）。 */
   onMaskChange?: (mask: RectMask) => void
+  /** 第二档：选中元素的 core 变换参数（选框初始位置/尺寸/旋转来源）。 */
+  transform?: ElementTransform
+  /** 第二档：变换拖拽提交回调（松手一次性写回 position/scale/rotate）。 */
+  onTransformChange?: (transform: ElementTransform) => void
 }
 
 /** 本地选框矩形（百分比坐标，0~100；旋转恒 0，见边界）。 */
@@ -111,13 +121,16 @@ function RotateIcon(): ReactNode {
 }
 
 /**
- * 预览画布 + 选框/手柄/参考线 + 三栏控制条（1:1 视觉结构，变换交互为本地占位）。
+ * 预览画布 + 选框/手柄/参考线 + 三栏控制条（1:1 视觉结构，变换拖拽写回 core）。
  * @param props 画布 ref、播放状态、帧信息与回调
  * @returns {React.ReactElement} 预览面板
  */
 export function PreviewSection(props: PreviewSectionProps) {
   const [zoom, setZoom] = useState(1)
-  const [box, setBox] = useState<LocalBox>(INITIAL_BOX)
+  /** 第二档：选框由元素 core transform 派生（无 transform 时用满幅占位）。 */
+  const [box, setBox] = useState<LocalBox>(() => props.transform
+    ? boxFromTransform(props.transform, props.frameWidth ?? 320, props.frameHeight ?? 180)
+    : INITIAL_BOX)
   const [snapLines, setSnapLines] = useState<{ vertical: boolean; horizontal: boolean }>({ vertical: false, horizontal: false })
   /** 批 4：可编辑时间码的输入草稿（回车/失焦提交）。 */
   const [timecodeDraft, setTimecodeDraft] = useState<string | null>(null)
@@ -125,15 +138,25 @@ export function PreviewSection(props: PreviewSectionProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   /** 批 5：遮罩手柄拖拽起点（像素 + 原始遮罩）。 */
   const maskDragRef = useRef<{ edge: string; startX: number; startY: number; width: number; height: number; orig: RectMask } | null>(null)
-  const dragRef = useRef<{ mode: string; startX: number; startY: number; orig: LocalBox } | null>(null)
+  const dragRef = useRef<{
+    mode: string; startX: number; startY: number; orig: LocalBox
+    /** 旋转拖拽起点：指针角度与元素角度（仅 mode=rotate 用）。 */
+    startAngle?: number; startRotation?: number
+  } | null>(null)
+  /** 第二档：写回回调用 ref 保持最新，避免空依赖 effect 的 stale closure。 */
+  const transformChangeRef = useRef(props.onTransformChange)
+  transformChangeRef.current = props.onTransformChange
   const viewportRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
 
-  // 帧切换时重置本地选框（元素变换不随 core 存储，见边界）
+  // 第二档：选中元素变化或外部 core transform 更新时，同步选框（拖拽中不重置）。
   useEffect(() => {
-    setBox(INITIAL_BOX)
+    if (dragRef.current) return
+    setBox(props.transform
+      ? boxFromTransform(props.transform, props.frameWidth ?? 320, props.frameHeight ?? 180)
+      : INITIAL_BOX)
     setSnapLines({ vertical: false, horizontal: false })
-  }, [props.selected])
+  }, [props.selected, props.transform, props.frameWidth, props.frameHeight])
 
   // 帧号外部变化（播放/seek）时清空时间码草稿，避免显示与真实帧不一致。
   useEffect(() => { setTimecodeDraft(null) }, [props.frameIndex])
@@ -159,11 +182,26 @@ export function PreviewSection(props: PreviewSectionProps) {
     }
   }
 
-  /** 手柄拖拽起点（本地视觉状态，不写 core）。 */
+  /**
+   * 手柄拖拽起点：旋转模式额外记录指针角度与元素角度，供最短角差计算。
+   * @param event 鼠标事件
+   * @param mode 拖拽模式（move / 角 / 边 / rotate）
+   */
   const startDrag = (event: ReactMouseEvent, mode: string) => {
     event.preventDefault()
     event.stopPropagation()
-    dragRef.current = { mode, startX: event.clientX, startY: event.clientY, orig: { ...box } }
+    const rect = stageRef.current?.getBoundingClientRect()
+    const rotateMode = mode === 'rotate' && rect
+      ? {
+          startAngle: pointerAngleDeg(
+            rect.left + (box.left + box.width / 2) / 100 * rect.width,
+            rect.top + (box.top + box.height / 2) / 100 * rect.height,
+            event.clientX, event.clientY,
+          ),
+          startRotation: box.rotation,
+        }
+      : {}
+    dragRef.current = { mode, startX: event.clientX, startY: event.clientY, orig: { ...box }, ...rotateMode }
   }
 
   // 全局 mousemove/up：按视口尺寸换算百分比，中心/边缘吸附阈值 8px
@@ -189,6 +227,11 @@ export function PreviewSection(props: PreviewSectionProps) {
         next.height = orig.height + orig.top - next.top
       } else if (drag.mode.includes('bottom')) {
         next.height = Math.max(5, Math.min(100 - orig.top, orig.height + dy))
+      } else if (drag.mode === 'rotate' && rect && drag.startAngle !== undefined) {
+        const centerX = rect.left + (orig.left + orig.width / 2) / 100 * rect.width
+        const centerY = rect.top + (orig.top + orig.height / 2) / 100 * rect.height
+        const currentAngle = pointerAngleDeg(centerX, centerY, event.clientX, event.clientY)
+        next.rotation = rotateByPointer(drag.startAngle, currentAngle, drag.startRotation ?? 0)
       }
       // 中心吸附（屏幕 8px 阈值换算为百分比阈值）
       const threshold = (SNAP_THRESHOLD_SCREEN_PIXELS / rect.width) * 100
@@ -202,9 +245,22 @@ export function PreviewSection(props: PreviewSectionProps) {
       setBox(next)
     }
     const onUp = () => {
-      if (!dragRef.current) return
+      const drag = dragRef.current
+      if (!drag) return
       dragRef.current = null
       setSnapLines({ vertical: false, horizontal: false })
+      // 第二档：松手一次性写回 core，避免拖拽每帧触发快照灌满撤销栈。
+      if (!transformChangeRef.current) return
+      try {
+        setBox((current) => {
+          // 用最新 box 计算变换并写回；box 与 drag.orig 相同（未拖动）时也提交，
+          // 由 patchElementParams 的引用比较去重，不会产生额外快照。
+          transformChangeRef.current?.(transformFromBox(current, props.frameWidth ?? 320, props.frameHeight ?? 180))
+          return current
+        })
+      } catch (error) {
+        console.error('[preview] 变换写回异常', error)
+      }
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -413,7 +469,7 @@ export function PreviewSection(props: PreviewSectionProps) {
               {TRANSFORM_CORNERS.map((corner) => renderHandle(corner, cornerPos(corner)))}
               {TRANSFORM_EDGES.map((edge) => renderHandle(edge, edgePos(edge)))}
               {/* 旋转手柄：顶边中点外移 24px，直径 20px */}
-              <div data-handle="rotate" title="Rotate"
+              <div data-handle="rotate" title="Rotate" onMouseDown={(event) => startDrag(event, 'rotate')}
                 style={{
                   position: 'absolute', left: `${box.left + box.width / 2}%`, top: `${box.top}%`,
                   transform: 'translate(-50%, calc(-50% - ' + ROTATION_HANDLE_OFFSET + 'px))',
