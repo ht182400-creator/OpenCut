@@ -22,7 +22,7 @@
 | 正式入口 `/` | `/editor/{id}` + 项目列表 | `/` 渲染编辑器，`/editor` 兼容 | ✅ | `routes/index.tsx` 复用 Editor |
 | 主题切换（亮/暗） | 真实 | 真实 | ✅ | `classic-ui/theme.css` + 顶栏按钮 |
 | 顶栏导出按钮 | 真实 Popover | 真实（settings + 顶栏一键导出） | ✅ | `handleExport` 真导出 MP4 下载 |
-| 快捷键帮助对话框 | 真实（8 分类/31 动作） | 对话框可开、可录制、可 Reset、冲突提示 | ✅ | P3 批 2：录制经 `shortcut-bindings.ts` 打通分发，冲突键拒绝覆盖，未实现动作诚实标注 disabled（如 seek j/l）；`oc-p3-keybinding.png` |
+| 快捷键帮助对话框 | 真实（8 分类/31 动作） | 对话框可开、可录制、可 Reset、冲突提示 | ✅ | P3 批 2：录制经 `shortcut-bindings.ts` 打通分发，冲突键拒绝覆盖，未实现动作诚实标注 disabled（如 toggle-ripple-editing/source-audio 等需真实能力项）；第二档项3 补齐 9 项后 j/l/q/w 等已生效；`oc-p3-keybinding.png` |
 | 项目名就地重命名 | 真实 | 无 | ⚪ | — |
 | 项目列表（新建/打开/搜索/排序/批量删除） | 真实 | 无 | ⚪ | — |
 | 反馈 / Onboarding / Changelog / Discord 外链 | 真实 | 无 | ⚪ | — |
@@ -100,7 +100,7 @@
 | --- | --- | --- | --- | --- |
 | 撤销 / 重做 | 真实（命令管理器，覆盖全操作） | 仅 clip 编辑历史 | 🟡 | `useClipHistory` |
 | 自动保存 | 真实（800ms debounce + IndexedDB/OPFS） | 真实（800ms debounce + localStorage，刷新恢复；介质为 localStorage 非 OPFS） | 🟡 | P0：`project-autosave.ts`，浏览器验收刷新恢复「Hello P0」；介质差异 + 无多端同步故记 🟡 |
-| 快捷键分发 | 真实（可重绑定驱动动作） | 13 项动作 + Ctrl/Cmd+C/V/D/A，用户重绑定真实驱动 | ✅ | P1 分发 + P3 批 2：`matchShortcut(event, bindings)` 读用户绑定，`ShortcutsDialog` 录制/Reset 经回调刷新；浏览器验收 k→播放、space 旧键失效、Reset 恢复 |
+| 快捷键分发 | 真实（可重绑定驱动动作） | 22 项动作（第二档项3 +9：stop/seek±1s/jump±5s/split-left/right/deselect-all/toggle-bookmark）+ Ctrl/Cmd+C/V/D/A 与 undo/redo，用户重绑定真实驱动 | ✅ | P1 分发 + P3 批 2 + 第二档项3：`shortcut-bindings.ts` 扩 9 动作与默认键（j/l/Shift+方向/q/w），`shortcut-actions-model.ts` 纯函数处理 seek 边界/split 删侧/书签切换（8 项单测），无默认键动作录制后生效；浏览器验收 l→+1s、Shift+→→末帧、j→-1s、q→clip-body 2.00s→1.93s，`oc-p3-shortcut-actions.png` |
 | 多选/框选/全选 | 真实 | Cmd/Ctrl 加选 + Shift 区间 + Ctrl+A + 空白拖框选 | ✅ | P1 + P2 长尾批：见 §3 同名行 |
 | 拖拽排序 | 真实（片段跨轨 + 效果列表） | 仅 main 轨片段拖动 | 🟡 | — |
 | 剪贴板直接贴媒体 | 真实 | 无（P1 仅内部元素剪贴板，非系统剪贴板贴文件） | ⚪ | — |
