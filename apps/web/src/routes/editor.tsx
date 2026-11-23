@@ -67,6 +67,7 @@ import {
   type RippleResponse,
   type Session,
 } from '../local/editor-ui'
+import { bookmarksFromProject, trackFlagsFromProject } from '../local/project-write'
 import { DEFAULT_RESOLUTION, resolutionLabel } from '../local/resolution'
 import type { ResolutionPreset } from '../local/resolution'
 import {
@@ -345,8 +346,9 @@ export function Editor() {
       setFrameCount(Math.max(restoredPlan.frameCount, 1))
       setSourceName(name)
       setResolution(saved?.state.resolution ?? resolution)
-      setTrackFlags(saved?.state.trackFlags ?? { muted: [], hidden: [] })
-      setBookmarks(saved?.state.bookmarks ?? [])
+      // 第一档：autosave 优先；无 autosave 时从项目 JSON 的 muted/hidden/bookmarks 初始化。
+      setTrackFlags(saved?.state.trackFlags ?? trackFlagsFromProject(project))
+      setBookmarks(saved?.state.bookmarks ?? bookmarksFromProject(project))
     } catch (error) {
       setErrorText(formatCoreError(error))
       setSession(null)
@@ -721,6 +723,7 @@ export function Editor() {
     handleSaveSnapshot, handleSaveProject, handleLoadSnapshot,
   } = createEditorActions({
     session, elements, media, frameCount, resolution, exportSettings, exportState,
+    trackFlags, bookmarks,
     proxyUrl, otioUrl, sourceName,
     setExportState, setErrorText, setMediaStatus, setProxyUrl, setOtioUrl, setBenchmarkInfo,
     setElements, setSelectedId, setAdjustments, setFrameIndex, setPlaying,

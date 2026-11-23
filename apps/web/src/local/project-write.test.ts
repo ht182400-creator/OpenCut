@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { EditorAdapter, ProjectView } from './editor-adapter';
 import type { CoreElement } from './editor-ui';
-import { buildWriteView, saveProjectJson } from './project-write';
+import {
+  bookmarksFromProject,
+  buildWriteView,
+  saveProjectJson,
+  trackFlagsFromProject,
+} from './project-write';
 
 /** 构造最小项目视图，含一个 main 轨元素。 */
 function makeProject(): ProjectView {
@@ -38,6 +43,52 @@ function makeElement(patch: Partial<CoreElement> = {}): CoreElement {
 }
 
 /** 批 7.5 项目写回接线：view 合并纯函数与下载异常分支。 */
+/** 第一档：轨道标志与书签读写闭环（additive-only）。 */
+describe('trackFlags / bookmarks 项目视图读写', () => {
+  it('从视图读取 muted/hidden 轨道与合法书签', () => {
+    const project = makeProject();
+    const track = project.scenes[0].tracks[0];
+    track.muted = true;
+    track.hidden = false;
+    project.scenes[0].bookmarks = [
+      { id: 'bm-1', ticks: 120000, name: 'Intro' },
+      { id: 'bm-bad', ticks: NaN, name: '无效' },
+    ];
+    expect(trackFlagsFromProject(project)).toEqual({ muted: ['main'], hidden: [] });
+    expect(bookmarksFromProject(project)).toEqual([{ id: 'bm-1', ticks: 120000, name: 'Intro' }]);
+  });
+
+  it('缺失字段返回空值，不伪造 false', () => {
+    const project = makeProject();
+    expect(trackFlagsFromProject(project)).toEqual({ muted: [], hidden: [] });
+    expect(bookmarksFromProject(project)).toEqual([]);
+    const view = buildWriteView(
+      project, [], undefined,
+      { muted: ['main'], hidden: ['main'] },
+      [{ id: 'bm-1', ticks: 0, name: 'A' }],
+    );
+    // 视图原本无 muted/hidden → additive-only 不新增字段。
+    expect(view.scenes[0].tracks[0].muted).toBeUndefined();
+    expect(view.scenes[0].tracks[0].hidden).toBeUndefined();
+    expect(view.scenes[0].bookmarks).toEqual([{ id: 'bm-1', ticks: 0, name: 'A' }]);
+  });
+
+  it('视图已有字段时写回更新后的轨道标志与书签', () => {
+    const project = makeProject();
+    project.scenes[0].tracks[0].muted = false;
+    project.scenes[0].tracks[0].hidden = true;
+    project.scenes[0].bookmarks = [];
+    const view = buildWriteView(
+      project, [], undefined,
+      { muted: ['main'], hidden: [] },
+      [{ id: 'bm-2', ticks: 42, name: 'B' }],
+    );
+    expect(view.scenes[0].tracks[0].muted).toBe(true);
+    expect(view.scenes[0].tracks[0].hidden).toBe(false);
+    expect(view.scenes[0].bookmarks).toEqual([{ id: 'bm-2', ticks: 42, name: 'B' }]);
+  });
+});
+
 describe('buildWriteView 合并编辑', () => {
   it('按 id 覆盖已存在元素的字段', () => {
     const view = buildWriteView(makeProject(), [makeElement()]);

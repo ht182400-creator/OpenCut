@@ -56,6 +56,10 @@ export interface EditorActionsDeps {
   resolution: ResolutionPreset
   exportSettings: ExportSettings
   exportState: ExportState
+  /** 第一档：轨道静音/隐藏状态，写回经典版 JSON 用。 */
+  trackFlags: { muted: string[]; hidden: string[] }
+  /** 第一档：场景书签，写回经典版 JSON 用。 */
+  bookmarks: Array<{ id: string; ticks: number; name: string }>
   proxyUrl: string | null
   otioUrl: string | null
   sourceName: string
@@ -103,6 +107,7 @@ export interface EditorActions {
 export function createEditorActions(deps: EditorActionsDeps): EditorActions {
   const {
     session, elements, media, frameCount, resolution, exportSettings, exportState,
+    trackFlags, bookmarks,
     proxyUrl, otioUrl, sourceName,
     setExportState, setErrorText, setProxyUrl, setOtioUrl, setBenchmarkInfo,
     setElements, setSelectedId, setAdjustments, setFrameIndex, setPlaying,
@@ -268,7 +273,7 @@ export function createEditorActions(deps: EditorActionsDeps): EditorActions {
   const handleSaveProject = () => {
     if (!session) return
     try {
-      const view = buildWriteView(session.project, elements, resolution)
+      const view = buildWriteView(session.project, elements, resolution, trackFlags, bookmarks)
       const result = saveProjectJson(
         session.adapter, session.originalJson, view,
         `${session.project.name || 'project'}-v31.json`,

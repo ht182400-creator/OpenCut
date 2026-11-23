@@ -4,7 +4,7 @@
 //! 幂等性、版本/实体异常分支。
 
 use ocx_domain::{CompatError, read_classic_project, write_classic_project};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const FIXTURE: &str = include_str!("../../../../apps/web/public/fixtures/classic-project-v31.json");
 
@@ -74,6 +74,68 @@ fn unknown_fields_survive_writeback() {
     );
     assert!(raw.get("sceneCount").is_none(), "sceneCount 是派生字段");
     assert_eq!(raw["version"], 31, "version 保持原始值");
+}
+
+///
+/// 第一档（2026-11-23）：轨道 muted/hidden 与 scene bookmarks 的写回闭环。
+/// 从真实 v31 fixture 读取这些字段 → 修改 → 写回 → 再读，验证 additive-only 字段可编辑。
+#[test]
+fn track_flags_and_bookmarks_roundtrip() {
+    let mut view = read_classic_project(FIXTURE).unwrap();
+    let scene = &mut view.scenes[0];
+    assert_eq!(scene.bookmarks, Some(json!([])), "fixture 带空书签数组");
+    scene.bookmarks = Some(json!([
+        { "id": "bm-1", "ticks": 120000, "name": "Intro" }
+    ]));
+    let audio = scene.tracks.iter_mut()
+        .find(|track| track.id == "audio-1")
+        .unwrap();
+    assert_eq!(audio.muted, Some(false), "fixture 带 muted");
+    audio.muted = Some(true);
+    audio.hidden = Some(false);
+    let main = scene.tracks.iter_mut()
+        .find(|track| track.id == "main")
+        .unwrap();
+    main.muted = Some(true);
+    main.hidden = Some(false);
+
+    let written = write_classic_project(FIXTURE, &view).unwrap();
+    let raw: Value = serde_json::from_str(&written).unwrap();
+    assert_eq!(raw["scenes"][0]["tracks"]["main"]["muted"], true);
+    assert_eq!(raw["scenes"][0]["tracks"]["main"]["hidden"], false);
+    assert_eq!(raw["scenes"][0]["tracks"]["audio"][0]["muted"], true);
+    assert_eq!(raw["scenes"][0]["bookmarks"][0]["name"], "Intro");
+
+    let reread = read_classic_project(&written).unwrap();
+    let audio2 = reread.scenes[0].tracks.iter()
+        .find(|track| track.id == "audio-1")
+        .unwrap();
+    assert_eq!(audio2.muted, Some(true));
+    assert_eq!(audio2.hidden, Some(false));
+}
+
+/// 第一档（2026-11-23）：视图字段为 None 时写回不新增 null，保持 additive-only。
+#[test]
+fn none_track_flags_do_not_add_fields() {
+    let minimal = r#"{
+        "version": 31,
+        "metadata": { "id": "p", "name": "P", "duration": 0 },
+        "settings": { "fps": { "numerator": 30, "denominator": 1 }, "canvasSize": { "width": 320, "height": 180 } },
+        "currentSceneId": "s",
+        "scenes": [{ "id": "s", "name": "S", "isMain": true, "tracks": {
+            "overlay": [], "main": { "id": "m", "type": "video", "elements": [] }, "audio": []
+        }}]
+    }"#;
+    let mut view = read_classic_project(minimal).unwrap();
+    let main = view.scenes[0].tracks.iter_mut().find(|t| t.id == "m").unwrap();
+    assert_eq!(main.muted, None, "缺失字段读回 None");
+    assert_eq!(main.hidden, None);
+    assert_eq!(view.scenes[0].bookmarks, None);
+    let written = write_classic_project(minimal, &view).unwrap();
+    let raw: Value = serde_json::from_str(&written).unwrap();
+    assert!(raw["scenes"][0]["tracks"]["main"].get("muted").is_none());
+    assert!(raw["scenes"][0]["tracks"]["main"].get("hidden").is_none());
+    assert!(raw["scenes"][0].get("bookmarks").is_none());
 }
 
 #[test]

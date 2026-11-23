@@ -138,6 +138,9 @@ export interface ProjectTrackView {
   trackType: string;
   elementCount: number;
   elements: ProjectElementView[];
+  /** 第一档：经典版可选字段，缺失时不写回。 */
+  muted?: boolean;
+  hidden?: boolean;
 }
 
 /** 经典版项目只读视图。 */
@@ -155,6 +158,8 @@ export interface ProjectView {
     name: string;
     isMain: boolean;
     tracks: ProjectTrackView[];
+    /** 第一档：场景书签原样透传，缺失时不写回。 */
+    bookmarks?: unknown;
   }>;
   warnings: string[];
 }

@@ -15,6 +15,58 @@ export interface WriteCanvasSize {
   height: number;
 }
 
+/** 轨道静音/隐藏状态（第一档：从 autosave state 写回经典版 JSON）。 */
+export interface WriteTrackFlags {
+  muted: string[];
+  hidden: string[];
+}
+
+/** 场景书签（第一档：原样透传，结构由 UI 决定）。 */
+export interface WriteBookmark {
+  id: string;
+  ticks: number;
+  name: string;
+}
+
+/**
+ * 从项目视图读取轨道静音/隐藏标志（第一档：只读，供 UI 初始化）。
+ *
+ * @param project 归一化项目视图
+ * @returns 静音/隐藏轨道 id 列表
+ */
+export function trackFlagsFromProject(project: ProjectView): WriteTrackFlags {
+  const muted: string[] = [];
+  const hidden: string[] = [];
+  for (const scene of project.scenes) {
+    for (const track of scene.tracks) {
+      if (track.muted === true) muted.push(track.id);
+      if (track.hidden === true) hidden.push(track.id);
+    }
+  }
+  return { muted, hidden };
+}
+
+/**
+ * 从项目视图读取场景书签（第一档：只接受 `{id,ticks,name}` 结构，损坏数据静默忽略）。
+ *
+ * @param project 归一化项目视图
+ * @returns 合法书签列表
+ */
+export function bookmarksFromProject(project: ProjectView): WriteBookmark[] {
+  for (const scene of project.scenes) {
+    if (!Array.isArray(scene.bookmarks)) continue;
+    return scene.bookmarks.filter((item): item is WriteBookmark => {
+      if (item === null || typeof item !== 'object') return false;
+      const value = item as Record<string, unknown>;
+      return typeof value.id === 'string'
+        && typeof value.ticks === 'number'
+        && Number.isFinite(value.ticks)
+        && typeof value.name === 'string';
+    }).map((item) => ({ id: item.id, ticks: item.ticks, name: item.name }));
+  }
+  return [];
+}
+
 /**
  * 把 UI 编辑后的元素字段合并进项目视图，返回新的 ProjectView（不改入参）。
  *
@@ -24,21 +76,31 @@ export interface WriteCanvasSize {
  * @param project 原始归一化项目视图
  * @param elements UI 当前可编辑元素（主轨）
  * @param canvas 可选画布尺寸覆盖（分辨率切换后写回）
+ * @param trackFlags 可选轨道静音/隐藏状态（第一档）
+ * @param bookmarks 可选场景书签（第一档）
  * @returns 合并后的新 ProjectView
  */
 export function buildWriteView(
   project: ProjectView,
   elements: readonly CoreElement[],
   canvas?: WriteCanvasSize,
+  trackFlags?: WriteTrackFlags,
+  bookmarks?: readonly WriteBookmark[],
 ): ProjectView {
   const edits = new Map(elements.map((element) => [element.id, element]));
+  const muted = trackFlags ? new Set(trackFlags.muted) : null;
+  const hidden = trackFlags ? new Set(trackFlags.hidden) : null;
   return {
     ...project,
     ...(canvas ? { canvas: { width: canvas.width, height: canvas.height } } : {}),
     scenes: project.scenes.map((scene) => ({
       ...scene,
+      ...(bookmarks !== undefined ? { bookmarks: bookmarks.map((item) => ({ ...item })) } : {}),
       tracks: scene.tracks.map((track) => ({
         ...track,
+        // additive-only：仅在视图原本带该字段时才写回，不新增字段。
+        ...(muted && track.muted !== undefined ? { muted: muted.has(track.id) } : {}),
+        ...(hidden && track.hidden !== undefined ? { hidden: hidden.has(track.id) } : {}),
         elements: track.elements.map((element) => {
           const edit = edits.get(element.id);
           if (!edit) return element;

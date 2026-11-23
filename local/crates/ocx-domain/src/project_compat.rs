@@ -120,6 +120,12 @@ pub struct TrackView {
     pub track_type: String,
     pub element_count: usize,
     pub elements: Vec<ElementView>,
+    /// 轨道静音标志。经典版可选字段，缺失为 None，写回时不新增。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub muted: Option<bool>,
+    /// 轨道隐藏标志。经典版可选字段，缺失为 None，写回时不新增。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden: Option<bool>,
 }
 
 /// 场景视图。
@@ -130,6 +136,9 @@ pub struct SceneView {
     pub name: String,
     pub is_main: bool,
     pub tracks: Vec<TrackView>,
+    /// 场景书签数组（原样透传，不解析结构）。经典版可选字段，缺失为 None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bookmarks: Option<serde_json::Value>,
 }
 
 /// 归一化只读视图。
@@ -216,6 +225,8 @@ fn parse_track(raw: &Value, default_type: &str, warnings: &mut Vec<String>) -> T
         track_type,
         element_count: elements.len(),
         elements,
+        muted: raw["muted"].as_bool(),
+        hidden: raw["hidden"].as_bool(),
     }
 }
 
@@ -246,6 +257,10 @@ fn parse_scene(raw: &Value, warnings: &mut Vec<String>) -> SceneView {
         name,
         is_main,
         tracks: result,
+        bookmarks: raw
+            .get("bookmarks")
+            .filter(|value| !value.is_null())
+            .cloned(),
     }
 }
 
@@ -333,6 +348,13 @@ pub fn read_classic_project(project_json: &str) -> Result<ProjectView, CompatErr
 fn merge_track(target: &mut Value, view: &TrackView) -> Result<(), CompatError> {
     let object = target.as_object_mut().ok_or(CompatError::EntityNotFound)?;
     object.insert("type".to_owned(), json!(view.track_type));
+    // additive-only：仅视图显式带值才写回，缺失字段不在原文档中新增 null。
+    if let Some(muted) = view.muted {
+        object.insert("muted".to_owned(), json!(muted));
+    }
+    if let Some(hidden) = view.hidden {
+        object.insert("hidden".to_owned(), json!(hidden));
+    }
     let elements = object.entry("elements").or_insert_with(|| json!([]));
     let list = elements.as_array_mut().ok_or(CompatError::EntityNotFound)?;
     for element_view in &view.elements {
@@ -436,6 +458,9 @@ pub fn write_classic_project(
         let scene_object = scene.as_object_mut().ok_or(CompatError::EntityNotFound)?;
         scene_object.insert("name".to_owned(), json!(scene_view.name));
         scene_object.insert("isMain".to_owned(), json!(scene_view.is_main));
+        if let Some(bookmarks) = &scene_view.bookmarks {
+            scene_object.insert("bookmarks".to_owned(), bookmarks.clone());
+        }
         let tracks = scene_object
             .get_mut("tracks")
             .and_then(Value::as_object_mut)
