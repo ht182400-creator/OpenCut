@@ -76,6 +76,15 @@ import {
 } from '../local/export-settings'
 import { matchShortcut, resolveBindings } from '../local/editor-shortcuts'
 import type { Keybindings } from '../local/editor-shortcuts'
+import {
+  jumpBackwardFiveSeconds,
+  jumpForwardFiveSeconds,
+  seekBackwardOneSecond,
+  seekForwardOneSecond,
+  splitAndRemoveLeft,
+  splitAndRemoveRight,
+  toggleBookmarkAt,
+} from '../local/shortcut-actions-model'
 import { ClassicTimeline } from '../local/classic-ui/timeline'
 import type { ClassicTimelineTrack, TimelineAction } from '../local/classic-ui/timeline'
 import { AssetsPanel } from '../local/classic-ui/assets-panel'
@@ -608,6 +617,18 @@ export function Editor() {
         case 'togglePlay':
           setPlaying((value) => !value)
           break
+        case 'stopPlayback':
+          setPlaying(false)
+          setFrameIndex(0)
+          break
+        case 'seekForward':
+          setPlaying(false)
+          setFrameIndex((value) => seekForwardOneSecond(value, session?.fps ?? 30, frameCount))
+          break
+        case 'seekBackward':
+          setPlaying(false)
+          setFrameIndex((value) => seekBackwardOneSecond(value, session?.fps ?? 30, frameCount))
+          break
         case 'prevFrame':
           setPlaying(false)
           setFrameIndex((value) => Math.max(0, value - 1))
@@ -615,6 +636,14 @@ export function Editor() {
         case 'nextFrame':
           setPlaying(false)
           setFrameIndex((value) => Math.min(frameCount - 1, value + 1))
+          break
+        case 'jumpForward':
+          setPlaying(false)
+          setFrameIndex((value) => jumpForwardFiveSeconds(value, session?.fps ?? 30, frameCount))
+          break
+        case 'jumpBackward':
+          setPlaying(false)
+          setFrameIndex((value) => jumpBackwardFiveSeconds(value, session?.fps ?? 30, frameCount))
           break
         case 'firstFrame':
           setPlaying(false)
@@ -630,6 +659,14 @@ export function Editor() {
         case 'splitAtPlayhead':
           applyClipEdit('播放头不在选中片段内部，无法分割',
             (cs, ctx) => splitClipAt(cs, ctx.clipId, ctx.playhead))
+          break
+        case 'splitLeft':
+          applyClipEdit('播放头不在选中片段内部，无法分割左侧',
+            (cs, ctx) => splitAndRemoveLeft(cs, ctx.clipId, ctx.playhead), undefined, '分割并删除左侧')
+          break
+        case 'splitRight':
+          applyClipEdit('播放头不在选中片段内部，无法分割右侧',
+            (cs, ctx) => splitAndRemoveRight(cs, ctx.clipId, ctx.playhead), undefined, '分割并删除右侧')
           break
         case 'trimIn':
           applyClipEdit('播放头不在选中片段内部，无法设置入点',
@@ -651,6 +688,15 @@ export function Editor() {
         case 'selectAll':
           selection.handleSelectAll()
           break
+        case 'deselectAll':
+          selection.handleClear()
+          break
+        case 'toggleBookmark': {
+          const ticks = frameIndex * (session?.ticksPerFrame ?? 0)
+          const id = `bm-shortcut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+          setBookmarks((current) => toggleBookmarkAt(current, ticks, id, `书签 ${current.length + 1}`))
+          break
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown)

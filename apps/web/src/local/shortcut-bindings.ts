@@ -20,21 +20,33 @@ export interface ShortcutEvent {
   target?: { tagName?: string; isContentEditable?: boolean } | null
 }
 
-/** 分发层动作名（保持既有 API 不变，13 项）。 */
+/**
+ * 分发层动作名（第二档项 3 补齐 9 项，共 22 项）。
+ * 新增动作均复用既有 UI 能力（播放头/分割/选择/书签），不引入新 core 契约。
+ */
 export type ShortcutAction =
   | 'togglePlay'
+  | 'stopPlayback'
+  | 'seekForward'
+  | 'seekBackward'
   | 'prevFrame'
   | 'nextFrame'
+  | 'jumpForward'
+  | 'jumpBackward'
   | 'firstFrame'
   | 'lastFrame'
   | 'deleteSelected'
   | 'splitAtPlayhead'
+  | 'splitLeft'
+  | 'splitRight'
   | 'trimIn'
   | 'trimOut'
   | 'copySelected'
   | 'pasteAtPlayhead'
   | 'duplicateSelected'
   | 'selectAll'
+  | 'deselectAll'
+  | 'toggleBookmark'
 
 /** 可注入的最小存储接口（localStorage 与内存桩都满足）。 */
 export interface BindingStorage {
@@ -52,18 +64,27 @@ export const KEYBINDINGS_STORAGE_KEY = 'opencut-keybindings'
  */
 export const SHORTCUT_ACTION_TO_ID: Readonly<Record<ShortcutAction, string>> = Object.freeze({
   togglePlay: 'toggle-play',
+  stopPlayback: 'stop-playback',
+  seekForward: 'seek-forward',
+  seekBackward: 'seek-backward',
   prevFrame: 'frame-step-backward',
   nextFrame: 'frame-step-forward',
+  jumpForward: 'jump-forward',
+  jumpBackward: 'jump-backward',
   firstFrame: 'goto-start',
   lastFrame: 'goto-end',
   deleteSelected: 'delete-selected',
   splitAtPlayhead: 'split',
+  splitLeft: 'split-left',
+  splitRight: 'split-right',
   trimIn: 'trim-in',
   trimOut: 'trim-out',
   copySelected: 'copy-selected',
   pasteAtPlayhead: 'paste-copied',
   duplicateSelected: 'duplicate-selected',
   selectAll: 'select-all',
+  deselectAll: 'deselect-all',
+  toggleBookmark: 'toggle-bookmark',
 })
 
 /** kebab id → 分发动作（上表的反向视图）。 */
@@ -80,18 +101,25 @@ export const ID_TO_SHORTCUT_ACTION: Readonly<Record<string, ShortcutAction>> = O
  */
 export const EFFECTIVE_DEFAULT_BINDINGS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   'toggle-play': ['space'],
+  'seek-forward': ['l'],
+  'seek-backward': ['j'],
   'frame-step-backward': ['left'],
   'frame-step-forward': ['right'],
+  'jump-forward': ['shift+right'],
+  'jump-backward': ['shift+left'],
   'goto-start': ['home'],
   'goto-end': ['end'],
   'delete-selected': ['delete', 'backspace'],
   split: ['s'],
+  'split-left': ['q'],
+  'split-right': ['w'],
   'trim-in': ['i'],
   'trim-out': ['o'],
   'copy-selected': ['ctrl+c'],
   'paste-copied': ['ctrl+v'],
   'duplicate-selected': ['ctrl+d'],
   'select-all': ['ctrl+a'],
+  // stop-playback / deselect-all / toggle-bookmark 经典版无默认键，保持空绑定（可在对话框录制）。
 })
 
 /** 用户绑定表：kebab id → combo 字符串数组。 */
@@ -176,13 +204,15 @@ export function loadBindings(storage?: BindingStorage): Keybindings {
 
 /**
  * 合并默认绑定与用户覆盖：用户为某动作录制过组合键则以用户值为准（旧默认失效）。
- * 只保留本工程已接入的动作 id，忽略存储中的未知 id。
+ * 第二档项 3：遍历全部已接入动作（含无默认键的 stop/deselect/bookmark），
+ * 使录制的组合键能生效；忽略存储中的未知 id。
  */
 export function resolveBindings(storage?: BindingStorage): Keybindings {
   const user = loadBindings(storage)
   const result: Keybindings = {}
-  for (const id of Object.keys(EFFECTIVE_DEFAULT_BINDINGS)) {
-    result[id] = user[id] ? [...user[id]] : [...EFFECTIVE_DEFAULT_BINDINGS[id]]
+  for (const id of Object.keys(ID_TO_SHORTCUT_ACTION)) {
+    const defaults = EFFECTIVE_DEFAULT_BINDINGS[id] ?? []
+    result[id] = user[id] ? [...user[id]] : [...defaults]
   }
   return result
 }

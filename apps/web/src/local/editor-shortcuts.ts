@@ -46,10 +46,11 @@ export function matchShortcut(
 /** 快捷键帮助文本，供 UI 展示。 */
 export const SHORTCUT_HELP = [
   '空格 播放/暂停',
-  '←/→ 逐帧',
+  'J/L 前后 1 秒',
+  '←/→ 逐帧 · Shift+←/→ 前后 5 秒',
   'Home/End 首尾帧',
   'Delete 删除片段',
-  'S 在播放头分割',
+  'S 在播放头分割 · Q/W 删左/删右',
   'I/O 设入/出点',
   'Ctrl/Cmd+C/V/D 复制/粘贴/副本',
   'Ctrl/Cmd+A 全选',

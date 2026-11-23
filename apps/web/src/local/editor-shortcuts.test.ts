@@ -51,9 +51,18 @@ describe('非修饰键动作', () => {
     expect(matchShortcut({ key: 'O' })).toBe('trimOut')
   })
 
+  it('第二档项3：q/w 分割左侧/右侧，j/l seek±1s，shift+方向 jump±5s', () => {
+    expect(matchShortcut({ key: 'q' })).toBe('splitLeft')
+    expect(matchShortcut({ key: 'w' })).toBe('splitRight')
+    expect(matchShortcut({ key: 'j' })).toBe('seekBackward')
+    expect(matchShortcut({ key: 'l' })).toBe('seekForward')
+    expect(matchShortcut({ key: 'ArrowRight', shiftKey: true })).toBe('jumpForward')
+    expect(matchShortcut({ key: 'ArrowLeft', shiftKey: true })).toBe('jumpBackward')
+  })
+
   it('未知键返回 null', () => {
-    expect(matchShortcut({ key: 'q' })).toBeNull()
     expect(matchShortcut({ key: '' })).toBeNull()
+    expect(matchShortcut({ key: 'f13' })).toBeNull()
   })
 })
 
@@ -132,6 +141,18 @@ describe('P3 批 2 · 快捷键重绑定', () => {
   it('Ctrl+Z 仍不接管（默认表无 undo），重绑定也不误伤', () => {
     const bindings = resolveBindings(memoryStorage(JSON.stringify({ redo: ['ctrl+z'] })))
     expect(matchShortcut({ key: 'z', ctrlKey: true }, bindings)).toBeNull()
+  })
+
+  it('第二档项3：无默认键动作（stop/deselect/bookmark）录制后生效', () => {
+    const store = memoryStorage(JSON.stringify({
+      'stop-playback': ['x'],
+      'deselect-all': ['ctrl+shift+a'],
+      'toggle-bookmark': ['b'],
+    }))
+    const bindings = resolveBindings(store)
+    expect(matchShortcut({ key: 'x' }, bindings)).toBe('stopPlayback')
+    expect(matchShortcut({ key: 'a', ctrlKey: true, shiftKey: true }, bindings)).toBe('deselectAll')
+    expect(matchShortcut({ key: 'b' }, bindings)).toBe('toggleBookmark')
   })
 
   it('冲突检测：同 combo 被占用返回归属 id，排除自身', () => {
