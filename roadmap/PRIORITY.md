@@ -51,7 +51,7 @@
 | **W-10** | OTIO 导入导出 + 版本化 schema | P1 | 跨 NLE 互通，落实 additive-only | W-05 | `local/crates/ocx-io` | 与第三方 OTIO 往返不丢剪辑决策 | T+24~30w | 标准表达力 |
 | **W-11** | Editor API 稳定化 + 能力发现 | P1 | 插件与 MCP 的前置 | W-03/W-05 | 版本化命令/事件/快照、`discover` 式能力协商 | 接口冻结并写入契约；向后兼容用例通过 | T+26~32w | R11 |
 | **W-12** | 插件 host（Extism / WIT）+ 示例插件 | P2 | 路线图「一等插件」，也是 C→B 迁移的落点 | W-11 | `local/crates/ocx-plugin-host`、manifest、能力清单 | 越权被拒；示例插件可注册 effect/command | T+32~40w | H07/R8 |
-| **W-13** | MCP server + Headless + scripting | P2 | AI Agent / 批量渲染 | W-11 | `apps/local-mcp`（`ocx.*`）、`ocx-render`、脚本标签页 | MCP `tools/list` 可完成一次导出；长任务可查进度 | T+40~48w | H08 |
+| **W-13** | MCP server + Headless + scripting | P2 | AI Agent / 批量渲染 | W-11 | `apps/local-mcp`（`ocx.*`）、`ocx-render`、脚本标签页 | MCP `tools/list` 可完成一次导出；长任务可查进度 | T+40~48w | H08；PNG/WAV 导出工具经 `ocx-cli` 同源编码器落地（2026-11-23，`server.test.mjs` 22/22，含 PNG/WAV 魔数校验），`scripting` 脚本标签页仍后置未做 |
 | **W-14** | 桌面 GPUI 接入（spike 先行） | P2 | H01 已由 2026-11-20 spike 决策（ADR-04） | W-07 + M1 spike 完成 | GPUI 显示 wgpu 合成帧（wgpu 后半段后置，当前 CPU BGRA 直传） | 桌面与 Web 输出像素一致帧（1080p checksum 已与 CLI/WASM 对齐） | T+48~56w | R1/H01 已缓解 |
 | **W-15** | 移动端 / 协同评估 | P2 | 长线 | W-11 | UniFFI 或 flutter_rust_bridge 原型 | 移动端可打开同一项目 JSON | T+56w+ | Q02/Q03 |
 

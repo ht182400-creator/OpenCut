@@ -86,14 +86,16 @@ flowchart LR
 
 | ID | 问题 | 候选 | 决策期限 | 状态 |
 | --- | --- | --- | --- | --- |
-| **Q01** | 桌面 GPU 后端走哪条路？ | 离屏 readback / 独立 wgpu 窗口 / 等 GPUI 换 wgpu | M1 结束 | 待 spike |
-| **Q02** | 移动端 UI 用 Flutter 还是原生？ | Flutter + `flutter_rust_bridge` / 原生 + UniFFI | M6 开始前 | 开放 |
-| **Q03** | 现在引入 Loro CRDT 吗？ | 引入 / 仅保持命令层可映射 | M2 结束 | 倾向「仅保持可映射」 |
-| **Q04** | 插件运行时用 Extism 还是自研 Component Model？ | Extism / wasmtime + wit-bindgen / 混合 | M2 并行 spike | 待验证 |
-| **Q05** | OTIO 作为原生格式还是仅交换格式？ | 双轨（推荐）/ 全用 OTIO | M2 开始前 | 倾向双轨 |
+| **Q01** | 桌面 GPU 后端走哪条路？ | 离屏 readback / 独立 wgpu 窗口 / 等 GPUI 换 wgpu | **2026-11-20 已决** | **CPU 帧→BGRA→GPUI `img` 过渡方案**（ADR-04）；H01/H05 由 W-14 spike 关闭：1080p 单帧 59.46ms、checksum `0x9a3e68dede39ed25` 与 Headless CLI 一致、原生窗口截图确认。无 wgpu 合成器，纹理 readback 后置到 M4 |
+| **Q02** | 移动端 UI 用 Flutter 还是原生？ | Flutter + `flutter_rust_bridge` / 原生 + UniFFI | M6 开始前 | 开放（H15 / W-15 完全未开始） |
+| **Q03** | 现在引入 Loro CRDT 吗？ | 引入 / 仅保持命令层可映射 | M2 结束 | 倾向「仅保持可映射」；仓库未落地 CRDT 依赖，不伪造已决 |
+| **Q04** | 插件运行时用 Extism 还是自研 Component Model？ | Extism / wasmtime + wit-bindgen / 混合 | **2026-11-17 已决** | **自研 wasmi 2.0 + WIT 契约层 + 声明式权限**（W-12 五批 + 第八、九批 native I/O）：零宿主导入沙箱、导出白名单、fuel/内存边界、deny-by-default scope、`ocx.file_read` / `ocx.net_fetch` native-only。**剩**完整 WebAssembly component model（wasmi 不原生支持，需换运行时/polyfill，另评估） |
+| **Q05** | OTIO 作为原生格式还是仅交换格式？ | 双轨（推荐）/ 全用 OTIO | **2026-11-11 已决** | **双轨**：自有 `EditTimeline` 为原生格式、OTIO 为交换格式；W-10 三批完成双向导入导出 + 官方 0.18 实文件往返 42/42 |
 | **Q06** | 上游若落地官方 Editor API，本地是否切换？ | 切换并做适配层 / 继续自有 core / 双轨共存 | 上游发布时 | 已有决策框架（`README.md` §7.9 / `COMPAT.md` §6）；最终路线待发布时按判据打分 |
 | **Q07** | Web 端导出继续用 WebCodecs 还是统一走 FFmpeg-WASM？ | WebCodecs / FFmpeg-WASM | **2026-11-08 已决** | **WebCodecs（Web）+ 原生 FFmpeg（桌面/headless）**；Rust core 出 `RenderFrame`+`ExportProfile`，见 `PRIORITY.md` §4 |
 | **Q08** | 是否把 `.codebuddy/` 加入 `.gitignore`？ | 加入 / 不加入 | **2026-11-08 已决** | **不加入**（用户决定）；且开发记录 `.codebuddy/memory/2026-11-08.md` 已显式纳入版本控制并推送到 GitHub 与 Forgejo，见 `PRIORITY.md` §5 |
+
+**开放问题校准（2026-11-23）**：Q01 / Q04 / Q05 已据代码实现结案（分别由 W-14 spike+ADR-04、W-12 wasmi 自研、W-10 OTIO 双轨支撑）；真正仍待决策只有 **Q02**（移动端技术栈，W-15 未开始）与 **Q06**（上游官方 Editor API 路线，待发布按判据打分）。Q03 保持「倾向可映射」但未落地 CRDT，不记为已决。Q07 / Q08 维持 2026-11-08 结论。完整 component model 作为 Q04 的剩余子边界继续挂账。
 
 ---
 
