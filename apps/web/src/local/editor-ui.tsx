@@ -144,6 +144,12 @@ export function TopBar(props: {
             <span data-testid="export-progress-text" style={{ color: TEXT_MUTED, fontSize: 13 }}>
               编码中 {props.exportState.done}/{props.exportState.total} ({percent}%)
             </span>
+            {/* Firefox 兼容：能力降级提示在编码期间就可见，不被进度更新覆盖。 */}
+            {props.exportState.message && (
+              <span data-testid="export-fallback-notice" style={{ color: '#eab308', fontSize: 12 }} title={props.exportState.message}>
+                {props.exportState.message}
+              </span>
+            )}
             <span
               data-testid="export-progress-bar"
               role="progressbar"
@@ -162,9 +168,14 @@ export function TopBar(props: {
         )
       })()}
       {props.exportState.status === 'done' && props.exportState.url && (
-        <a href={props.exportState.url} download={props.exportState.filename ?? 'opencut-export.mp4'} style={{ color: 'var(--primary)', fontSize: 'var(--text-xs)' }}>
-          下载 {props.exportState.filename?.includes('-av1') ? 'AV1 WebM' : props.exportState.filename?.endsWith('.webm') ? 'WebM' : 'MP4'}
-        </a>
+        <>
+          <span data-testid="export-result-message" style={{ color: TEXT_MUTED, fontSize: 12 }} title={props.exportState.message}>
+            {props.exportState.message}
+          </span>
+          <a href={props.exportState.url} download={props.exportState.filename ?? 'opencut-export.mp4'} style={{ color: 'var(--primary)', fontSize: 'var(--text-xs)' }}>
+            下载 {props.exportState.filename?.includes('-av1') ? 'AV1 WebM' : props.exportState.filename?.endsWith('.webm') ? 'WebM' : 'MP4'}
+          </a>
+        </>
       )}
       {props.exportState.status === 'error' && (
         <>

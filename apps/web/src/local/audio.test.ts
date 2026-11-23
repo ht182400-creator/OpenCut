@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AUDIO_CHANNELS,
@@ -9,6 +9,7 @@ import {
   createToneAudio,
   cumulativeSamples,
   downsampleForWaveform,
+  isAacEncodingSupported,
   mixdownToMono,
   planarChunk,
   samplesForFrame,
@@ -190,5 +191,43 @@ describe('downsampleForWaveform 降采样', () => {
     expect(Array.from(out).every(Number.isFinite)).toBe(true);
     expect(out[0]).toBe(0);
     expect(out[1]).toBeCloseTo(-0.5, 6);
+  });
+});
+
+/** Firefox 音频兼容回归（W-08 第七批）：AAC 能力探测全分支覆盖。 */
+describe('isAacEncodingSupported 能力探测', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('Node/无 AudioEncoder 环境返回 false', async () => {
+    vi.stubGlobal('AudioEncoder', undefined);
+    vi.stubGlobal('AudioData', undefined);
+    expect(await isAacEncodingSupported()).toBe(false);
+  });
+
+  it('模拟 Firefox：AudioEncoder 存在但 AAC 配置不支持时返回 false', async () => {
+    const isConfigSupported = vi.fn(async () => ({ supported: false }));
+    vi.stubGlobal('AudioEncoder', Object.assign(function MockEncoder() {}, { isConfigSupported }));
+    vi.stubGlobal('AudioData', function MockAudioData() {});
+    expect(await isAacEncodingSupported()).toBe(false);
+    expect(isConfigSupported).toHaveBeenCalledWith(expect.objectContaining({ codec: 'mp4a.40.2' }));
+  });
+
+  it('配置支持时返回 true，并把采样率/声道/码率传入探测', async () => {
+    const isConfigSupported = vi.fn(async () => ({ supported: true }));
+    vi.stubGlobal('AudioEncoder', Object.assign(function MockEncoder() {}, { isConfigSupported }));
+    vi.stubGlobal('AudioData', function MockAudioData() {});
+    expect(await isAacEncodingSupported()).toBe(true);
+    expect(isConfigSupported).toHaveBeenCalledWith({
+      codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2, bitrate: 128000,
+    });
+  });
+
+  it('探测抛异常时静默返回 false，不向上传播', async () => {
+    const isConfigSupported = vi.fn(async () => { throw new Error('platform codec unavailable') });
+    vi.stubGlobal('AudioEncoder', Object.assign(function MockEncoder() {}, { isConfigSupported }));
+    vi.stubGlobal('AudioData', function MockAudioData() {});
+    expect(await isAacEncodingSupported()).toBe(false);
   });
 });

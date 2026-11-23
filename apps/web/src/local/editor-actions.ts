@@ -20,6 +20,7 @@ import {
   isExportSupported,
   isOpusEncodingSupported,
 } from './export';
+import { resolveExportPlan } from './export-fallback';
 import type { ResolutionPreset } from './resolution';
 import {
   buildExportProfile,
@@ -113,16 +114,26 @@ export function createEditorActions(deps: EditorActionsDeps): EditorActions {
   /** 真实导出：同一帧源/音源编码为 MP4（H.264+AAC）或 WebM（VP9/AV1 + Opus）。 */
   const handleExport = async () => {
     if (!session) return
-    const container = exportSettings.container
-    if (!isExportSupported()) {
-      setExportState({ status: 'error', done: 0, total: 0, message: '当前浏览器不支持 WebCodecs 导出', url: null, bytes: 0 })
+    // Firefox 兼容：先探测全部能力，再由纯函数决定降级链（禁止静默丢音轨）。
+    const plan = resolveExportPlan({
+      webCodecsSupported: isExportSupported(),
+      aacSupported: await isAacEncodingSupported(),
+      opusSupported: await isOpusEncodingSupported(),
+      container: exportSettings.container,
+      includeAudio: exportSettings.includeAudio,
+      hasMediaAudio: Boolean(media?.audio),
+    })
+    if (plan.error) {
+      setExportState({ status: 'error', done: 0, total: 0, message: plan.error, url: null, bytes: 0 })
       return
     }
+    const container = plan.container
     if (exportState.url) URL.revokeObjectURL(exportState.url)
-    setExportState({ status: 'running', done: 0, total: frameCount, message: '', url: null, bytes: 0 })
+    // 降级提示放进运行态消息：进度期间就可见，不被 onProgress 覆盖。
+    setExportState({ status: 'running', done: 0, total: frameCount, message: plan.notice ?? '', url: null, bytes: 0 })
     try {
       let audioSource: PcmAudio | undefined
-      if (exportSettings.includeAudio && media?.audio && await (container !== 'mp4' ? isOpusEncodingSupported() : isAacEncodingSupported())) {
+      if (plan.withAudio && media?.audio) {
         audioSource = buildTimelineAudio({
           clips: elements,
           frameCount,
@@ -145,8 +156,8 @@ export function createEditorActions(deps: EditorActionsDeps): EditorActions {
       })
       setExportState({
         status: 'done', done: result.frameCount, total: frameCount,
-        message: `已导出 ${result.frameCount} 帧 · ${result.durationSeconds.toFixed(2)}s${result.hasAudio ? (container !== 'mp4' ? ' · 含 Opus 音轨' : ' · 含 AAC 音轨') : ''}`,
-        filename: exportFilename(exportSettings),
+        message: `已导出 ${result.frameCount} 帧 · ${result.durationSeconds.toFixed(2)}s${result.hasAudio ? (container !== 'mp4' ? ' · 含 Opus 音轨' : ' · 含 AAC 音轨') : ''}${plan.notice ? ` · ${plan.notice}` : ''}`,
+        filename: exportFilename({ ...exportSettings, container: plan.container }),
         url: URL.createObjectURL(result.blob), bytes: result.bytes,
       })
     } catch (error) {
