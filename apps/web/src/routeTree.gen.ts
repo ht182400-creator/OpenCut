@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CoreLabRouteImport } from './routes/core-lab'
 import { Route as EditorRouteImport } from './routes/editor'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CoreLabRoute = CoreLabRouteImport.update({
+  id: '/core-lab',
+  path: '/core-lab',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EditorRoute = EditorRouteImport.update({
@@ -25,27 +31,31 @@ const EditorRoute = EditorRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/core-lab': typeof CoreLabRoute
   '/editor': typeof EditorRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/core-lab': typeof CoreLabRoute
   '/editor': typeof EditorRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/core-lab': typeof CoreLabRoute
   '/editor': typeof EditorRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/editor'
+  fullPaths: '/' | '/core-lab' | '/editor'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/editor'
-  id: '__root__' | '/' | '/editor'
+  to: '/' | '/core-lab' | '/editor'
+  id: '__root__' | '/' | '/core-lab' | '/editor'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CoreLabRoute: typeof CoreLabRoute
   EditorRoute: typeof EditorRoute
 }
 
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/core-lab': {
+      id: '/core-lab'
+      path: '/core-lab'
+      fullPath: '/core-lab'
+      preLoaderRoute: typeof CoreLabRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/editor': {
@@ -70,6 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CoreLabRoute: CoreLabRoute,
   EditorRoute: EditorRoute,
 }
 export const routeTree = rootRouteImport

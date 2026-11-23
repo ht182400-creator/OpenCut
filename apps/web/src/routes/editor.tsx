@@ -15,7 +15,6 @@ import { isVerificationFrameMode, resolvePreviewPixels } from '../local/frame-so
 import { useClipHistory } from '../local/clip-history'
 import { createEditorAdapter, formatCoreError } from '../local/editor-adapter'
 import { createEditorActions } from '../local/editor-actions'
-import { createScriptExecutor } from '../local/classic-ui/script-console-dispatch'
 import { useSelection } from '../local/use-selection'
 import {
   DEFAULT_MEDIA_DURATION_SECONDS,
@@ -82,15 +81,6 @@ import { AssetsPanel } from '../local/classic-ui/assets-panel'
 import type { AssetDragPayload, AssetItem } from '../local/classic-ui/assets-panel'
 import { PropertiesPanel } from '../local/classic-ui/properties-panel'
 import { PreviewSection } from '../local/classic-ui/preview-section'
-import { ScriptConsole } from '../local/classic-ui/script-console'
-import { PluginSettingsPanel } from '../local/classic-ui/plugin-settings-panel'
-import {
-  DEFAULT_NEGOTIATION_REQUEST,
-  SAMPLE_PLUGIN_GRANTS,
-  SAMPLE_PLUGIN_MANIFEST,
-  SAMPLE_PLUGIN_URL,
-} from '../local/classic-ui/plugin-settings-model'
-import { loadPluginModule, validatePluginBytes, type PluginInstance } from '../local/plugin-runtime'
 import { ShortcutsDialog } from '../local/classic-ui/shortcuts-dialog'
 import { MobileGate } from '../local/classic-ui/mobile-gate'
 import {
@@ -260,8 +250,6 @@ export function Editor() {
   })
   /** P4 批 5：导出取消控制器（每次开始导出重建，取消时 abort）。 */
   const exportAbortRef = useRef<AbortController | null>(null)
-  /** 第一档 B：示例插件实例（注册成功后加载，供 effect/command 按钮调用）。 */
-  const pluginInstanceRef = useRef<PluginInstance | null>(null)
   /** P4 批 6：轨道静音/隐藏（第一档 A 起同时写回经典版 JSON）。 */
   const [trackFlags, setTrackFlags] = useState<{ muted: string[]; hidden: string[] }>({ muted: [], hidden: [] })
   /** P4 批 6：书签（autosave 持久化）。 */
@@ -891,41 +879,6 @@ export function Editor() {
           { label: '清空缓存', onClick: () => void handleClearCache() },
           { label: '导出 OTIO', onClick: () => void handleOtioExport(), disabled: !session },
         ]}
-      />
-      <ScriptConsole
-        onExecute={session ? createScriptExecutor(session.adapter) : async () => {
-          throw new Error('会话未就绪，请先加载项目')
-        }}
-        disabled={!session}
-      />
-      <PluginSettingsPanel
-        disabled={!session}
-        onNegotiate={() => {
-          if (!session) throw new Error('会话未就绪，请先加载项目')
-          return session.adapter.negotiate(DEFAULT_NEGOTIATION_REQUEST)
-        }}
-        onRegister={async () => {
-          if (!session) throw new Error('会话未就绪，请先加载项目')
-          const result = session.adapter.pluginRegister(SAMPLE_PLUGIN_MANIFEST, SAMPLE_PLUGIN_GRANTS)
-          if (!result.ok) return result
-          // 注册通过后加载同一份 wasm 产物，供 effect/command 按钮真实调用。
-          const response = await fetch(SAMPLE_PLUGIN_URL)
-          if (!response.ok) throw new Error(`示例插件 wasm 加载失败（HTTP ${response.status}）`)
-          const bytes = new Uint8Array(await response.arrayBuffer())
-          validatePluginBytes(bytes)
-          pluginInstanceRef.current = await loadPluginModule(bytes)
-          return result
-        }}
-        onRunEffect={async () => {
-          const plugin = pluginInstanceRef.current
-          if (!plugin) throw new Error('请先注册示例插件')
-          return plugin.runEffect('brightness', { amount: 0.25 })
-        }}
-        onRunCommand={async () => {
-          const plugin = pluginInstanceRef.current
-          if (!plugin) throw new Error('请先注册示例插件')
-          return plugin.runCommand('ping', { value: 7 })
-        }}
       />
     </div>
   )
