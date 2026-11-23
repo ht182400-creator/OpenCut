@@ -46,6 +46,21 @@ impl Shell {
             ),
         };
         initial.load_error = load_error;
+        // OTIO 启动导入：`--otio` / `OPENCUT_OTIO` 指定文件时替换主轨（失败保留原项目）。
+        if let Some(otio_path) = crate::_otio_io::resolve_otio_path() {
+            match std::fs::read_to_string(&otio_path) {
+                Ok(text) => {
+                    if !crate::_otio_io::apply_import(&mut initial, &text) {
+                        initial.load_error = Some(format!("OTIO 文件 {otio_path} 导入失败，已保留原项目"));
+                    }
+                }
+                Err(error) => {
+                    initial.load_error = Some(crate::_otio_io::OtioDesktopError::ReadFile(
+                        format!("{otio_path}：{error}"),
+                    ).to_string());
+                }
+            }
+        }
         if std::env::var_os(AUTOPLAY_ENV_VAR).is_some() {
             initial.toggle_play();
         }
@@ -179,6 +194,10 @@ impl Render for Shell {
                 let redo = event.keystroke.modifiers.control
                     && event.keystroke.modifiers.shift
                     && key == "z";
+                // Ctrl+E 导出 OTIO（与普通 S 分割、Ctrl+S 保存互不冲突）。
+                let export_otio = event.keystroke.modifiers.control
+                    && !event.keystroke.modifiers.shift
+                    && key == "e";
                 // 时间轴编辑快捷键：无修饰键时 Delete/S/I/O 走统一编辑入口。
                 let edit = if event.keystroke.modifiers.control {
                     None
@@ -191,7 +210,11 @@ impl Render for Shell {
                         _ => None,
                     }
                 };
-                if let Some(edit) = edit {
+                if export_otio {
+                    this.project.update(cx, |state, _| {
+                        crate::_otio_io::export_to_status(state);
+                    });
+                } else if let Some(edit) = edit {
                     this.project.update(cx, |state, _| {
                         crate::_timeline_edit::apply_to_state(state, edit);
                     });

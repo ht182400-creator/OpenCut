@@ -89,7 +89,7 @@ pub(crate) struct ProjectState {
     /// 原始 JSON 文本（写回时按 id 合并，保住 view 未覆盖的字段）。
     original_json: String,
     /// 项目文件路径（None 表示内嵌演示项目，不落盘）。
-    file_path: Option<std::path::PathBuf>,
+    pub(crate) file_path: Option<std::path::PathBuf>,
     /// 当前编辑的字段（None 表示不在编辑模式）。
     pub(crate) editing_field: Option<EditableField>,
     /// 编辑中的草稿（文本或数值字符串）。

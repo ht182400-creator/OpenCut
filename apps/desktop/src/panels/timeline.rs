@@ -33,6 +33,7 @@ impl Render for Timeline {
         let split_entity = self.project.clone();
         let trim_in_entity = self.project.clone();
         let trim_out_entity = self.project.clone();
+        let otio_entity = self.project.clone();
         let ticks = snapshot.playhead_ticks;
         let total = snapshot.view.duration_ticks.max(1);
         let play_ratio = (ticks as f32 / total as f32).clamp(0.0, 1.0);
@@ -134,6 +135,16 @@ impl Render for Timeline {
                                 });
                             })
                             .child(" 出 "),
+                    )
+                    .child(
+                        div()
+                            .id("timeline-otio-export")
+                            .on_click(move |_, _, app: &mut gpui::App| {
+                                otio_entity.update(app, |state, _| {
+                                    crate::_otio_io::export_to_status(state);
+                                });
+                            })
+                            .child(" OTIO "),
                     ),
             )
             // 秒刻度：按整秒等分，末段可能不足 1 秒但仍占一格

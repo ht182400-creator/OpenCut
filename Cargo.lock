@@ -3691,6 +3691,7 @@ dependencies = [
  "gpui",
  "image",
  "ocx-domain",
+ "ocx-io",
  "ocx-render",
  "ocx-time",
 ]

@@ -6,6 +6,7 @@ use gpui::{
 mod _project_edit;
 mod _project_history;
 mod _timeline_edit;
+mod _otio_io;
 mod components;
 mod panels;
 mod project;

@@ -19,3 +19,5 @@ ocx-render = { path = "../../local/crates/ocx-render" }
 ocx-domain = { path = "../../local/crates/ocx-domain" }
 # W-14 项目骨架：帧号换算用 tick 常量。
 ocx-time = { path = "../../local/crates/ocx-time" }
+# W-14 批10：OTIO 导入导出（纯 Rust，无 C++ FFI）。
+ocx-io = { path = "../../local/crates/ocx-io" }
