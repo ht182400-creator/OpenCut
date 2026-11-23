@@ -97,6 +97,15 @@ export const SPEED_ELEMENT_PARAMS: readonly ParamDefinition[] = [
   { key: 'speed', label: 'Speed', control: 'number', defaultValue: 1, min: 0.25, max: 4, step: 0.25, keyframable: false },
 ] as const;
 
+/** 第二档项 2：图形参数（graphic.*，经 ParamDefinition 的 text/number 控件编辑）。 */
+export const GRAPHIC_ELEMENT_PARAMS: readonly ParamDefinition[] = [
+  { key: 'graphic.shape', label: 'Shape', control: 'text', defaultValue: 'rectangle', keyframable: false },
+  { key: 'graphic.fill', label: 'Fill', control: 'text', defaultValue: '#ffffff', keyframable: false },
+  { key: 'graphic.stroke', label: 'Stroke', control: 'text', defaultValue: 'transparent', keyframable: false },
+  { key: 'graphic.strokeWidth', label: 'Stroke width', control: 'number', defaultValue: 0, min: 0, max: 64, step: 1, keyframable: false },
+  { key: 'graphic.cornerRadius', label: 'Corner radius', control: 'number', defaultValue: 0, min: 0, max: 256, step: 1, keyframable: false },
+] as const;
+
 /** 文本 17 项参数（textElementParams），背景 6 项依赖 background.enabled。 */
 export const TEXT_ELEMENT_PARAMS: readonly ParamDefinition[] = [
   { key: 'content', label: 'Content', control: 'text', defaultValue: 'Default text', keyframable: false },

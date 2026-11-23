@@ -52,6 +52,7 @@ import {
   PROPERTIES_TAB_LABELS,
   PROPERTIES_TAB_SIZE_PX,
   PROPERTIES_TABS_BY_TYPE,
+  GRAPHIC_ELEMENT_PARAMS,
   PROPERTIES_DEFAULT_TAB_BY_TYPE,
   SPEED_ELEMENT_PARAMS,
   TEXT_ELEMENT_PARAMS,
@@ -453,7 +454,7 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
   values.volume = typeof normalized.volume === 'number' ? normalized.volume : 0
   values.muted = typeof normalized.muted === 'boolean' ? normalized.muted : false
   // 默认值（元素未显式设置时显示合理默认，避免输入框空值）。
-  for (const param of [...MASK_ELEMENT_PARAMS, ...EFFECT_ELEMENT_PARAMS, ...SPEED_ELEMENT_PARAMS]) {
+  for (const param of [...MASK_ELEMENT_PARAMS, ...EFFECT_ELEMENT_PARAMS, ...SPEED_ELEMENT_PARAMS, ...GRAPHIC_ELEMENT_PARAMS]) {
     if (values[param.key] === undefined) values[param.key] = param.defaultValue
   }
 
@@ -478,6 +479,7 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
     ...(paramsForType.includes('visual') ? VISUAL_ELEMENT_PARAMS : []),
     ...(paramsForType.includes('audio') ? AUDIO_ELEMENT_PARAMS : []),
     ...(typeTabs.includes('speed') ? SPEED_ELEMENT_PARAMS : []),
+    ...(typeTabs.includes('graphic') ? GRAPHIC_ELEMENT_PARAMS : []),
     ...(typeTabs.includes('masks') ? MASK_ELEMENT_PARAMS : []),
     ...(typeTabs.includes('effects') ? EFFECT_ELEMENT_PARAMS : []),
   ]
@@ -495,6 +497,8 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
     content = <ParamsSection params={params} keys={['volume', 'muted']} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else if (activeTab === 'speed') {
     content = <ParamsSection params={params} keys={SPEED_ELEMENT_PARAMS.map((p) => p.key)} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
+  } else if (activeTab === 'graphic') {
+    content = <ParamsSection params={params} keys={GRAPHIC_ELEMENT_PARAMS.map((p) => p.key)} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else if (activeTab === 'text') {
     content = <ParamsSection params={params} keys={TEXT_ELEMENT_PARAMS.map((p) => p.key)} keyframes={keyframes} onKeyframe={onKeyframe} values={values} onParamChange={onParamChange} />
   } else if (activeTab === 'masks') {

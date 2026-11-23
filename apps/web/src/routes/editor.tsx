@@ -19,9 +19,11 @@ import { useSelection } from '../local/use-selection'
 import {
   DEFAULT_MEDIA_DURATION_SECONDS,
   DEFAULT_TEXT_CONTENT,
+  GRAPHIC_ID_PREFIX,
   MEDIA_ID_PREFIX,
   TEXT_ID_PREFIX,
   TICKS_PER_SECOND as MODEL_TICKS_PER_SECOND,
+  buildGraphicElement,
   buildMediaElement,
   buildTextElement,
   insertElement,
@@ -104,6 +106,7 @@ import {
   type DecodedMedia,
 } from '../local/media'
 import { mapProjectFrameWithSpeed } from '../local/speed-model'
+import { alphaBlendInto, rasterizeGraphic, readGraphicParams } from '../local/graphic-model'
 import {
   TICKS_PER_SECOND,
   clipAtTime,
@@ -565,6 +568,13 @@ export function Editor() {
         }
       }
     }
+
+    // 第二档项 2：图形元素栅格化为图层并叠加（无素材时也能独立显示）。
+    if (sampled.elementType === 'graphic') {
+      const graphicParams = readGraphicParams(sampled)
+      const graphicLayer = rasterizeGraphic(graphicParams, resolution.width, resolution.height, transform.opacity)
+      if (graphicLayer) alphaBlendInto(pixels, graphicLayer)
+    }
     return pixels
   }
 
@@ -847,6 +857,15 @@ export function Editor() {
           startTime: desiredStart,
           ticksPerSecond: MODEL_TICKS_PER_SECOND,
         })
+      } else if (payload.kind === 'graphic') {
+        // 第二档项 2：图形元素走独立构建函数，形状由素材卡指定。
+        element = buildGraphicElement({
+          id: makeElementId(GRAPHIC_ID_PREFIX),
+          name: payload.name,
+          shape: payload.shape,
+          startTime: desiredStart,
+          ticksPerSecond: MODEL_TICKS_PER_SECOND,
+        })
       } else {
         const asset = assets.find((item) => item.id === payload.id)
         const durationSeconds = asset?.duration ?? DEFAULT_MEDIA_DURATION_SECONDS
@@ -865,7 +884,7 @@ export function Editor() {
       const placed = { ...element, startTime: start }
       const next = insertElement(elements, placed)
       setElements(next)
-      clipHistory.record(next, `新增${payload.kind === 'text' ? '文字' : '媒体'}片段`)
+      clipHistory.record(next, `新增${payload.kind === 'text' ? '文字' : payload.kind === 'graphic' ? '图形' : '媒体'}片段`)
       setFrameCount(plannedFrameCount(next, session.adapter, session.profile))
       setSelectedId(placed.id)
       setErrorText(null)
@@ -877,7 +896,7 @@ export function Editor() {
 
   /** 时间轴拖放落点：由时间轴组件换算好 ticks，这里只做类型校验并插入。 */
   const handleTimelineDrop = (payload: AssetDragPayload, atTicks: number) => {
-    if (payload.kind !== 'text' && payload.kind !== 'media') return
+    if (payload.kind !== 'text' && payload.kind !== 'media' && payload.kind !== 'graphic') return
     handleAddAsset(payload, atTicks)
   }
 

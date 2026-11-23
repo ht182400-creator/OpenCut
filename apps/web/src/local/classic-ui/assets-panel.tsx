@@ -55,11 +55,13 @@ export interface AssetItem {
 
 /** 拖入时间轴的载荷（与经典版 TimelineDragData 的 key 对齐；内容为本工程最小子集）。 */
 export interface AssetDragPayload {
-  kind: 'media' | 'text'
+  kind: 'media' | 'text' | 'graphic'
   id: string
   name: string
   mediaType?: AssetItem['type']
   content?: string
+  /** 第二档项 2：图形形状（rectangle/ellipse/triangle/line）。 */
+  shape?: string
 }
 
 export interface AssetsPanelProps {
@@ -306,22 +308,59 @@ function MediaView({ props }: { props: AssetsPanelProps }) {
   )
 }
 
-/** Text 视图：经典版单卡「Default text」，拖入载荷为 text。 */
+/** 第二档项 2：图形卡片默认时长（秒）。 */
+const GRAPHIC_DEFAULT_DURATION_SECONDS = 3;
+
+/** 第二档项 2：可选图形形状（放 Text 视图，与 Default text 并列）。 */
+const GRAPHIC_CARD_SHAPES: ReadonlyArray<{ shape: string; label: string }> = [
+  { shape: 'rectangle', label: 'Rectangle' },
+  { shape: 'ellipse', label: 'Ellipse' },
+  { shape: 'triangle', label: 'Triangle' },
+  { shape: 'line', label: 'Line' },
+];
+
+/**
+ * 可拖入时间轴的通用素材卡（文字/图形共用）。
+ * @param label 卡片显示名
+ * @param payload 拖入载荷
+ * @param onAdd 点击添加回调
+ * @param preview 卡片预览样式
+ */
+function SimpleAssetCard({ label, payload, onAdd, preview }: {
+  label: string; payload: AssetDragPayload; onAdd?: (payload: AssetDragPayload) => void; preview?: CSSProperties
+}) {
+  return (
+    <div style={{
+      width: ASSETS_GRID_COLUMN_WIDTH_PX, aspectRatio: '1',
+      background: 'var(--accent)', borderRadius: 'var(--radius-sm)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 'var(--text-xs)', color: 'var(--accent-foreground)', cursor: 'grab', ...preview,
+    }} draggable data-asset-kind={payload.kind} data-asset-shape={payload.shape}
+      onDragStart={(event) => {
+        event.dataTransfer.setData(TIMELINE_DRAG_MIME, JSON.stringify(payload))
+        event.dataTransfer.effectAllowed = 'copy'
+      }}
+      onClick={() => onAdd?.(payload)}>{label}</div>
+  )
+}
+
+/** Text 视图：经典版「Default text」+ 第二档项 2 的四个图形卡。 */
 function TextView({ onAdd }: { onAdd?: (payload: AssetDragPayload) => void }) {
   const payload: AssetDragPayload = { kind: 'text', id: 'temp-text-id', name: 'Default text', content: 'Default text' }
   return (
     <PanelView title="Text">
-      <div style={{
-        width: ASSETS_GRID_COLUMN_WIDTH_PX, aspectRatio: '1',
-        background: 'var(--accent)', borderRadius: 'var(--radius-sm)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 'var(--text-xs)', color: 'var(--accent-foreground)', cursor: 'grab',
-      }} draggable
-        onDragStart={(event) => {
-          event.dataTransfer.setData(TIMELINE_DRAG_MIME, JSON.stringify(payload))
-          event.dataTransfer.effectAllowed = 'copy'
-        }}
-        onClick={() => onAdd?.(payload)}>Default text</div>
+      <SimpleAssetCard label="Default text" payload={payload} onAdd={onAdd} />
+      <div style={{ marginTop: 12, color: 'var(--muted-foreground)', fontSize: 'var(--text-xs)' }}>Graphic</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+        {GRAPHIC_CARD_SHAPES.map(({ shape, label }) => (
+          <SimpleAssetCard key={shape} label={label} onAdd={onAdd}
+            payload={{
+              kind: 'graphic', id: `temp-graphic-${shape}`, name: label, shape,
+              content: String(GRAPHIC_DEFAULT_DURATION_SECONDS),
+            }}
+            preview={{ background: 'var(--muted)', color: 'var(--foreground)' }} />
+        ))}
+      </div>
     </PanelView>
   )
 }

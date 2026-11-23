@@ -72,6 +72,8 @@ export const DEFAULT_TEXT_COLOR = '#ffffff';
 /** 生成元素 id 的前缀（便于在时间轴/日志中辨认来源）。 */
 export const TEXT_ID_PREFIX = 'text';
 export const MEDIA_ID_PREFIX = 'media';
+/** 第二档项 2：图形元素 id 前缀。 */
+export const GRAPHIC_ID_PREFIX = 'graphic';
 
 /**
  * 把任意输入夹逼到 [min, max]；非有限值回落到 fallback。
@@ -237,6 +239,37 @@ export function buildMediaElement(input: {
     duration: secondsToTicks(input.durationSeconds, tps, DEFAULT_MEDIA_DURATION_SECONDS),
     trimStart: 0,
     params: normalizeElementParams(),
+  };
+}
+
+/**
+ * 构建图形元素（第二档项 2：graphic 参数走透传字段）。
+ * @param input 构建参数
+ * @returns {CoreElement} 图形元素
+ */
+export function buildGraphicElement(input: {
+  id: string;
+  name: string;
+  startTime: number;
+  shape?: string;
+  durationTicks?: number;
+  ticksPerSecond?: number;
+}): CoreElement {
+  const tps = input.ticksPerSecond ?? TICKS_PER_SECOND;
+  return {
+    id: input.id,
+    name: input.name,
+    elementType: 'graphic',
+    startTime: Math.max(0, Math.round(input.startTime)),
+    duration: input.durationTicks ?? secondsToTicks(DEFAULT_TEXT_DURATION_SECONDS, tps, DEFAULT_TEXT_DURATION_SECONDS),
+    trimStart: 0,
+    params: normalizeElementParams({
+      'graphic.shape': input.shape ?? 'rectangle',
+      'graphic.fill': '#ffffff',
+      'graphic.stroke': 'transparent',
+      'graphic.strokeWidth': 0,
+      'graphic.cornerRadius': 0,
+    }),
   };
 }
 
