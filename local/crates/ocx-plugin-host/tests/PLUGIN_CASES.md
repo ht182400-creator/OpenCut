@@ -195,3 +195,81 @@ capability-based security 共识：deny-by-default（manifest 显式声明能力
 ### 诚实边界
 
 本批是 **Rust core 侧的 capability 权限原型**：只验证"显式声明 → 按授予注入 → 函数内按 scope 校验"闭环，受控函数仅返回资源字节数（host 资源表由调用方注入），不提供真实文件/网络访问。未实现通用 WASI P1/P2 能力、文件系统/网络 scope、跨调用资源句柄；WASM glue / TS 未新增入口（避免重复重编 wasm）。能力函数用 wasmi `func_wrap` + `Result::Err` trap，未引入 Extism / Wasmtime / 第三方权限框架。
+
+## W-12 第八批：native-only 受控文件读取（`ocx.file_read`）
+
+执行：`cargo test -p ocx-plugin-host`（新增 `io_scope` 单测 6 项 + `tests/io_native.rs` 6 项），`cargo clippy -p ocx-plugin-host --all-targets -- -D warnings` 零告警；wasm32 目标 `cargo check --target wasm32-unknown-unknown` 通过（真实 I/O 完全隔离）。
+
+### 调研结论（官方/社区资料）
+
+- Rust 路径穿越防护共识（Snyk Learn / clean-code.dev）：先校验请求路径为预期根目录内的相对路径，再 `canonicalize` 解析 symlink，最后用 `strip_prefix`/`starts_with` 确认解析后仍在根目录内；Tauri 文件系统以「默认拒绝 + 显式 allowlist」为最小权限基线。本批据此做三层防护：字符串层拒绝绝对路径/`..`/`.`/反斜杠/控制字符/部分通配 → `canonicalize` 解析 symlink → `starts_with(canonical_root)` 确认未逃逸。
+
+### 交付与契约
+
+| 项 | 内容 |
+| --- | --- |
+| 新能力 | `file-read`（加入 `PLUGIN_PERMISSIONS` 与资源型 scope 能力集合） |
+| scope 语法 | `namespace:relative/path`（如 `assets:images/logo.png`）或 `namespace:*`；namespace 须由 host 用 `HostState::with_file_root` 绑定到真实目录 |
+| 能力函数 | `ocx.file_read(key_ptr,key_len,out_ptr,out_cap) -> i64`：按 `file-read` scope 校验 → 三层路径校验 → 读文件写回插件线性内存，返回字节数；不存在返回路径错误码 |
+| 纯函数模块 | `src/io_scope.rs`（字符串层校验，wasm32 可编译）：`validate_file_scope` / `validate_relative_path` / `validate_network_scope` / `parse_request_url` / `validate_output_buffer` |
+| cfg 隔离 | `HostState.file_roots` / `with_file_root` / 能力函数 / ureq 依赖全部 `#[cfg(not(target_arch = "wasm32"))]`；wasm32 构建零影响 |
+
+### 新增稳定错误码
+
+| 错误码 | 触发 |
+| --- | --- |
+| `PATH_TRAVERSAL` | 请求路径越出授予目录（含未绑定 namespace、symlink 逃逸） |
+| `FILE_NOT_FOUND` | 文件不存在或目标不是普通文件 |
+| `FILE_READ_FAILED` | 本地读取/元数据失败或文件超过输出上限 |
+
+### 用例（`tests/io_native.rs`，WAT 生成最小 + 临时目录，native-only）
+
+| 用例 | 输入 | 预期 |
+| --- | --- | --- |
+| FR01 | 授予 `assets:*` + 绑定目录 + `assets:probe.txt` 存在 | 读出文件内容 JSON |
+| FR02 | 宿主仅授予 `other:*`，请求 `assets:secret.txt` | `SCOPE_DENIED`（含资源名） |
+| FR03 | key 含 `..` 段 | `INVALID_SCOPE`（字符串层拒绝，不触碰 FS） |
+| FR04 | namespace 未绑定宿主目录 | `PATH_TRAVERSAL` |
+| FR05 | 授予 + 绑定但文件不存在 | `FILE_NOT_FOUND`（区别于越权/未绑定） |
+| FR06 | manifest 声明 `assets:../x` | 注册阶段 `INVALID_SCOPE` |
+
+## W-12 第九批：native-only 受控网络抓取（`ocx.net_fetch`）
+
+执行：`cargo test -p ocx-plugin-host`（新增 `tests/net_native.rs` 6 项，本地 TcpListener 最小 HTTP 服务，零外网依赖），clippy 零告警。
+
+### 调研结论（官方一手资料）
+
+- ureq 3.x 官方文档：纯 Rust 同步客户端、支持 `Agent::config_builder()` 的 `timeout_global`/`timeout_connect` 与 `BodyWithConfig::limit(u64)` 限制响应体；最小 TLS 配置为 `default-features=false, features=["rustls"]`。本地 3.4.2 源码确认长度限制方法名为 `limit`（3.5.2 文档的 `max_read_length` 不适用），依赖仅 native target 引入。
+- 出站安全共识（Anthropic Claude Code sandbox 事件、pubby-sdk）：空 allowlist = 禁止全部网络、重定向每跳重新校验目标。本批以「host 显式 `with_network()` 开启 + scope deny-by-default + 字符串层 URL 校验」实现最小权限；当前仅 GET、不跟随自定义重定向逻辑交由 ureq 默认策略，响应体上限 256 KiB、超时 8 秒。
+
+### 交付与契约
+
+| 项 | 内容 |
+| --- | --- |
+| 新能力 | `network-fetch`（加入 `PLUGIN_PERMISSIONS` 与资源型 scope 能力集合） |
+| scope 语法 | `http:host/path` / `https:host/path`（如 `http:127.0.0.1`）或 `http:*` / `https:*`；仅 http/https、拒绝内嵌凭据与 fragment |
+| 能力函数 | `ocx.net_fetch(url_ptr,url_len,out_ptr,out_cap) -> i64`：URL 字符串层校验 → 按 `scheme:host` 匹配 scope → 带超时/大小上限 GET → 写回插件内存，返回字节数 |
+| 显式开关 | 宿主必须 `HostState::with_network()`；未开启时即便授予 scope 也不注入该导入（含导入的插件加载即 `DISALLOWED_IMPORT`） |
+| 依赖隔离 | ureq 3.4 仅 `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]`，wasm32 不引入 |
+
+### 新增稳定错误码
+
+| 错误码 | 触发 |
+| --- | --- |
+| `INVALID_URL` | 非 http/https、无主机、含凭据/fragment、超长 |
+| `NETWORK_FAILED` | 连接/DNS/超时失败或 HTTP 状态码非 2xx |
+
+### 用例（`tests/net_native.rs`，本地 HTTP 服务，native-only）
+
+| 用例 | 输入 | 预期 |
+| --- | --- | --- |
+| NF01 | 授予 `http:127.0.0.1` + 开启网络 + 本地 200 响应 | 读出响应体 JSON |
+| NF02 | 授予 `http:example.com`，请求 127.0.0.1 | `SCOPE_DENIED`（含主机） |
+| NF03 | `ftp://...` | `INVALID_URL` |
+| NF04 | 宿主未 `with_network()` | 加载即 `DISALLOWED_IMPORT` |
+| NF05 | 本地 HTTP 500 | `NETWORK_FAILED`（含 `HTTP 500`） |
+| NF06 | manifest 声明 `ftp:example.com` | 注册阶段 `INVALID_SCOPE` |
+
+### 诚实边界
+
+两批均为 **native-only Rust core 能力**：浏览器/WASM 侧不注入文件/网络能力（Web 沙箱不应触碰本机文件，也不允许插件任意 fetch），故 WASM glue / TS 未新增入口、WASM 产物无需重编。文件读取为只读、按 scope 绑定目录，不提供写入/列目录/通用 WASI；网络抓取仅 GET、按 host 白名单、不暴露原始 socket。完整 WebAssembly component model 仍未实现（wasmi 2.0 原生只跑 core wasm，见第四批调研）。
