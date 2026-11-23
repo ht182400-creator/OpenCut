@@ -51,6 +51,7 @@ export const SHORTCUT_HELP = [
   'Home/End 首尾帧',
   'Delete 删除片段',
   'S 在播放头分割 · Q/W 删左/删右',
+  'N 自动吸附开关',
   'I/O 设入/出点',
   'Ctrl/Cmd+C/V/D 复制/粘贴/副本',
   'Ctrl/Cmd+A 全选',

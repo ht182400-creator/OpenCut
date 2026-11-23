@@ -168,6 +168,8 @@ export function Editor() {
   const [adjustments, setAdjustments] = useState<RippleAdjustment[]>([])
   const [frameIndex, setFrameIndex] = useState(0)
   const [frameCount, setFrameCount] = useState(1)
+  /** 第二档项3：时间轴吸附开关（受控，磁铁按钮与快捷键 n 共用）。 */
+  const [snapping, setSnapping] = useState(true)
   const [frameCost, setFrameCost] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [media, setMedia] = useState<DecodedMedia | null>(null)
@@ -679,6 +681,9 @@ export function Editor() {
           applyClipEdit('播放头不在选中片段内部，无法分割右侧',
             (cs, ctx) => splitAndRemoveRight(cs, ctx.clipId, ctx.playhead), undefined, '分割并删除右侧')
           break
+        case 'toggleSnapping':
+          setSnapping((value) => !value)
+          break
         case 'trimIn':
           applyClipEdit('播放头不在选中片段内部，无法设置入点',
             (cs, ctx) => trimClipInAt(cs, ctx.clipId, ctx.playhead))
@@ -1101,6 +1106,8 @@ export function Editor() {
             })}
             bookmarks={bookmarks}
             onBookmarksChange={setBookmarks}
+            snapping={snapping}
+            onSnappingChange={setSnapping}
             selectedId={selectedId}
             selectedIds={selection.selectedIds}
             onSelect={selection.handleSelectClip}

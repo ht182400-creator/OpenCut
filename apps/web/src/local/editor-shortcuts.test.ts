@@ -54,6 +54,7 @@ describe('非修饰键动作', () => {
   it('第二档项3：q/w 分割左侧/右侧，j/l seek±1s，shift+方向 jump±5s', () => {
     expect(matchShortcut({ key: 'q' })).toBe('splitLeft')
     expect(matchShortcut({ key: 'w' })).toBe('splitRight')
+    expect(matchShortcut({ key: 'n' })).toBe('toggleSnapping')
     expect(matchShortcut({ key: 'j' })).toBe('seekBackward')
     expect(matchShortcut({ key: 'l' })).toBe('seekForward')
     expect(matchShortcut({ key: 'ArrowRight', shiftKey: true })).toBe('jumpForward')

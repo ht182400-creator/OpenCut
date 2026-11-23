@@ -215,9 +215,14 @@ export function ClassicTimeline(props: {
   bookmarks?: ReadonlyArray<{ id: string; ticks: number; name: string }>
   /** P4 批 6：书签增删改回调。 */
   onBookmarksChange?: (bookmarks: Array<{ id: string; ticks: number; name: string }>) => void
+  /** 第二档项3：外部受控吸附开关（缺省时退化为内部 state，保持向后兼容）。 */
+  snapping?: boolean
+  /** 第二档项3：吸附开关变更回调（工具栏磁铁 + 快捷键 n 共用）。 */
+  onSnappingChange?: (value: boolean) => void
 }) {
   const [zoomLevel, setZoomLevel] = useState(1)
-  const [snapping, setSnapping] = useState(true)
+  const [localSnapping, setLocalSnapping] = useState(true)
+  const snapping = props.snapping ?? localSnapping
   const [preview, setPreview] = useState<ClipPreview | null>(null)
   const [snapLine, setSnapLine] = useState<number | null>(null)
   /** P4 批 6：轨道标志由外部 autosave 状态派生（无回调时退回本地 state）。 */
@@ -611,7 +616,11 @@ export function ClassicTimeline(props: {
         <div className="classic-timeline-toolbar-right">
           <button type="button" className={`classic-timeline-tool-button${snapping ? ' is-active' : ''}`}
             title="自动吸附" aria-pressed={snapping}
-            onClick={() => setSnapping((value) => !value)}>
+            onClick={() => {
+              const next = !snapping
+              if (props.onSnappingChange) props.onSnappingChange(next)
+              else setLocalSnapping(next)
+            }}>
             <TimelineIcon name="magnet" />
           </button>
           <span className="classic-timeline-divider" />

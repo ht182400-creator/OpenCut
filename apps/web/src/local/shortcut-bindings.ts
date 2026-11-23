@@ -39,6 +39,7 @@ export type ShortcutAction =
   | 'splitAtPlayhead'
   | 'splitLeft'
   | 'splitRight'
+  | 'toggleSnapping'
   | 'trimIn'
   | 'trimOut'
   | 'copySelected'
@@ -77,6 +78,7 @@ export const SHORTCUT_ACTION_TO_ID: Readonly<Record<ShortcutAction, string>> = O
   splitAtPlayhead: 'split',
   splitLeft: 'split-left',
   splitRight: 'split-right',
+  toggleSnapping: 'toggle-snapping',
   trimIn: 'trim-in',
   trimOut: 'trim-out',
   copySelected: 'copy-selected',
@@ -113,6 +115,7 @@ export const EFFECTIVE_DEFAULT_BINDINGS: Readonly<Record<string, readonly string
   split: ['s'],
   'split-left': ['q'],
   'split-right': ['w'],
+  'toggle-snapping': ['n'],
   'trim-in': ['i'],
   'trim-out': ['o'],
   'copy-selected': ['ctrl+c'],
