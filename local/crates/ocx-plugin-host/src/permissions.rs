@@ -10,14 +10,21 @@
 
 use std::collections::BTreeMap;
 
+use crate::io_scope::{validate_file_scope, validate_network_scope};
 use crate::model::{
     MAX_SCOPE_LEN, MAX_SCOPES_PER_CAPABILITY, PluginError, PluginManifest,
-    SCOPE_CAPABILITY_MEDIA_READ, SCOPE_SEPARATOR, SCOPE_WILDCARD,
+    SCOPE_CAPABILITY_FILE_READ, SCOPE_CAPABILITY_MEDIA_READ, SCOPE_CAPABILITY_NETWORK_FETCH,
+    SCOPE_SEPARATOR, SCOPE_WILDCARD,
 };
 
 /// 支持资源 scope 的能力集合（资源型能力）。
-/// 目前仅 `media-read` 有资源概念；`effect` / `command` 是工作类型非资源，不接受 scope。
-const SCOPE_CAPABILITIES: &[&str] = &[SCOPE_CAPABILITY_MEDIA_READ];
+/// `media-read` / `file-read` / `network-fetch` 有资源概念；
+/// `effect` / `command` 是工作类型非资源，不接受 scope。
+const SCOPE_CAPABILITIES: &[&str] = &[
+    SCOPE_CAPABILITY_MEDIA_READ,
+    SCOPE_CAPABILITY_FILE_READ,
+    SCOPE_CAPABILITY_NETWORK_FETCH,
+];
 
 /**
  * 校验单个 scope 字符串：非空、长度受限、含命名空间、`*` 只能作为资源段的唯一通配。
@@ -59,8 +66,13 @@ pub fn validate_permission_scopes(manifest: &PluginManifest) -> Result<(), Plugi
         if scopes.len() > MAX_SCOPES_PER_CAPABILITY {
             return Err(PluginError::InvalidScope(capability.clone()));
         }
+        // 按能力分派专用校验：文件 scope 拒绝路径穿越，网络 scope 拒绝非 http(s)/凭据。
         for scope in scopes {
-            validate_scope(scope)?;
+            match capability.as_str() {
+                SCOPE_CAPABILITY_FILE_READ => validate_file_scope(scope)?,
+                SCOPE_CAPABILITY_NETWORK_FETCH => validate_network_scope(scope)?,
+                _ => validate_scope(scope)?,
+            }
         }
     }
     Ok(())

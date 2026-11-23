@@ -8,6 +8,7 @@
 //! - I-03：跨边界字段 additive-only，旧 manifest 缺字段按 v1 兼容；
 //! - 稳定错误码由 `PluginError::code()` 提供，供 WASM / TS / MCP 映射。
 
+pub mod io_scope;
 pub mod model;
 pub mod permissions;
 pub mod registry;
@@ -15,10 +16,11 @@ pub mod runtime;
 pub mod wit;
 
 pub use model::{
-    DEFAULT_FUEL_LIMIT, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, MAX_SCOPE_LEN,
-    MAX_SCOPES_PER_CAPABILITY, PERMISSION_COMMAND, PERMISSION_EFFECT, PLUGIN_MANIFEST_VERSION,
-    PLUGIN_PERMISSIONS, PluginError, PluginManifest, RegisterResult, Registration,
-    SCOPE_CAPABILITY_MEDIA_READ,
+    DEFAULT_FUEL_LIMIT, MAX_FILE_KEY_LEN, MAX_FILE_SCOPE_LEN, MAX_INPUT_BYTES, MAX_NETWORK_BYTES,
+    MAX_OUTPUT_BYTES, MAX_SCOPE_LEN, MAX_SCOPES_PER_CAPABILITY, NETWORK_TIMEOUT_SECS,
+    PERMISSION_COMMAND, PERMISSION_EFFECT, PLUGIN_MANIFEST_VERSION, PLUGIN_PERMISSIONS,
+    PluginError, PluginManifest, RegisterResult, Registration, SCOPE_CAPABILITY_FILE_READ,
+    SCOPE_CAPABILITY_MEDIA_READ, SCOPE_CAPABILITY_NETWORK_FETCH,
 };
 pub use permissions::{granted_allows, scope_allows, validate_permission_scopes, validate_scope};
 pub use registry::{Handler, PluginHost, check_manifest};

@@ -17,6 +17,8 @@ pub const PLUGIN_PERMISSIONS: &[&str] = &[
     "effect",
     "media-read",
     "export",
+    "file-read",
+    "network-fetch",
 ];
 /// 注册 effect 必需声明的能力。
 pub const PERMISSION_EFFECT: &str = "effect";
@@ -38,6 +40,10 @@ pub const NULL_POINTER: i64 = 0;
 // ---- W-12 第五批：声明式权限（资源 scope）----
 /// 可声明资源 scope 的能力名（与 `PLUGIN_PERMISSIONS` 中的资源型能力对应）。
 pub const SCOPE_CAPABILITY_MEDIA_READ: &str = "media-read";
+/// 受控文件读取能力（native-only）：按 `file:相对路径` scope 读取宿主允许目录内的文件。
+pub const SCOPE_CAPABILITY_FILE_READ: &str = "file-read";
+/// 受控网络抓取能力（native-only）：按 `https:host/path` scope 发起 GET。
+pub const SCOPE_CAPABILITY_NETWORK_FETCH: &str = "network-fetch";
 /// scope 前缀通配符：`clip:*` 表示允许 clip 命名空间下全部资源。
 pub const SCOPE_WILDCARD: &str = "*";
 /// scope 命名空间与资源名的分隔符。
@@ -46,6 +52,16 @@ pub const SCOPE_SEPARATOR: char = ':';
 pub const MAX_SCOPE_LEN: usize = 256;
 /// 单个能力的 scope 条数上限（防清单爆炸）。
 pub const MAX_SCOPES_PER_CAPABILITY: usize = 64;
+
+// ---- W-12 第八、九批：native-only 受控文件/网络 I/O 的硬上限 ----
+/// 单次网络请求超时（秒），防慢速攻击占用宿主线程。
+pub const NETWORK_TIMEOUT_SECS: u64 = 8;
+/// 单次网络响应体最大字节数（防 OOM）。
+pub const MAX_NETWORK_BYTES: usize = 262_144;
+/// 文件读取 scope 的最大长度（防超长路径注入）。
+pub const MAX_FILE_SCOPE_LEN: usize = 512;
+/// 文件路径相对段的最大字节数。
+pub const MAX_FILE_KEY_LEN: usize = 512;
 
 /// 插件清单；camelCase 与 WASM / TS 侧一致。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,6 +127,17 @@ pub enum PluginError {
     InvalidScope(String),
     /// 插件请求的资源超出 host 授予的 scope。
     ScopeDenied(String),
+    // ---- native-only 受控 I/O 错误（第八、九批）----
+    /// 文件路径越出授予的宿主目录（含 `..` / 绝对路径 / symlink 逃逸）。
+    PathTraversal(String),
+    /// 文件不存在（区别于越权与读取失败）。
+    FileNotFound(String),
+    /// 本地文件读取失败（权限/IO 错误）。
+    FileReadFailed(String),
+    /// URL 非法（非 http/https、无主机名、含凭据或超长）。
+    InvalidUrl(String),
+    /// 网络请求失败（连接/DNS/超时/状态码非 2xx）。
+    NetworkFailed(String),
 }
 
 impl PluginError {
@@ -142,6 +169,11 @@ impl PluginError {
             Self::UnknownScopeCapability(_) => "UNKNOWN_SCOPE_CAPABILITY",
             Self::InvalidScope(_) => "INVALID_SCOPE",
             Self::ScopeDenied(_) => "SCOPE_DENIED",
+            Self::PathTraversal(_) => "PATH_TRAVERSAL",
+            Self::FileNotFound(_) => "FILE_NOT_FOUND",
+            Self::FileReadFailed(_) => "FILE_READ_FAILED",
+            Self::InvalidUrl(_) => "INVALID_URL",
+            Self::NetworkFailed(_) => "NETWORK_FAILED",
         }
     }
 
@@ -201,6 +233,21 @@ impl fmt::Display for PluginError {
                     "{}：资源 {resource} 不在授予 scope 内",
                     self.code()
                 );
+            }
+            Self::PathTraversal(path) => {
+                return write!(formatter, "{}：路径 {path} 越出授予目录", self.code());
+            }
+            Self::FileNotFound(path) => {
+                return write!(formatter, "{}：文件 {path} 不存在", self.code());
+            }
+            Self::FileReadFailed(path) => {
+                return write!(formatter, "{}：文件 {path} 读取失败", self.code());
+            }
+            Self::InvalidUrl(url) => {
+                return write!(formatter, "{}：URL {url} 非法", self.code());
+            }
+            Self::NetworkFailed(reason) => {
+                return write!(formatter, "{}：网络请求失败 {reason}", self.code());
             }
         };
         write!(formatter, "{}：{detail}", self.code())

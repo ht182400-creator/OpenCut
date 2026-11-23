@@ -24,6 +24,10 @@ use crate::model::{
     DEFAULT_FUEL_LIMIT, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, MAX_SCOPE_LEN, PERMISSION_COMMAND,
     PERMISSION_EFFECT, PluginError, Registration, SCOPE_CAPABILITY_MEDIA_READ,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::io_scope::{
+    parse_request_url, validate_output_buffer, validate_relative_path,
+};
 use crate::permissions::granted_allows;
 use crate::wit::{WitContract, default_contract};
 
@@ -37,6 +41,12 @@ const CAPABILITY_MODULE: &str = "ocx";
 const CAPABILITY_RESOURCE_LEN: &str = "resource_len";
 /// 受控能力函数名：读取授予资源内容（W-12 core 扩展，media-read 从「可查长度」升级为「可读内容」）。
 const CAPABILITY_RESOURCE_READ: &str = "resource_read";
+/// 受控能力函数名：读取宿主允许目录内的文件（第八批，native-only）。
+#[cfg(not(target_arch = "wasm32"))]
+const CAPABILITY_FILE_READ: &str = "file_read";
+/// 受控能力函数名：按白名单抓取 URL（第九批，native-only）。
+#[cfg(not(target_arch = "wasm32"))]
+const CAPABILITY_NET_FETCH: &str = "net_fetch";
 /// scope 拒绝 trap 的稳定前缀（供错误映射识别）。
 const SCOPE_DENIED_MARKER: &str = "scope_denied:";
 /// 资源读取目标缓冲过大的稳定 trap 前缀。
@@ -49,6 +59,13 @@ pub struct HostState {
     granted_scopes: BTreeMap<String, Vec<String>>,
     /// 资源 key（`ns:name`）→ 字节内容（host 提供的最小数据集）。
     resources: BTreeMap<String, Vec<u8>>,
+    /// 文件命名空间（`file:*` scope 的 ns）→ 宿主允许的绝对路径根目录。
+    /// 仅在 native 构建中存在；wasm32 下为空映射，能力函数不注入。
+    #[cfg(not(target_arch = "wasm32"))]
+    file_roots: BTreeMap<String, std::path::PathBuf>,
+    /// 是否允许真实网络抓取（host 显式开启；wasm32 恒为 false）。
+    #[cfg(not(target_arch = "wasm32"))]
+    network_enabled: bool,
 }
 
 impl HostState {
@@ -65,7 +82,34 @@ impl HostState {
         Self {
             granted_scopes,
             resources,
+            #[cfg(not(target_arch = "wasm32"))]
+            file_roots: BTreeMap::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            network_enabled: false,
         }
+    }
+
+    /**
+     * 绑定文件命名空间到宿主允许的目录（native-only）。
+     * scope 中的 ns 必须先用此方法绑定，否则读取一律 `PATH_TRAVERSAL`。
+     * @param namespace 文件 scope 的命名空间（如 `assets`）
+     * @param root 宿主允许的绝对根目录
+     * @returns {HostState} 自身（链式调用）
+     */
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_file_root(mut self, namespace: &str, root: impl Into<std::path::PathBuf>) -> Self {
+        self.file_roots.insert(namespace.to_owned(), root.into());
+        self
+    }
+
+    /**
+     * 显式开启真实网络抓取（native-only）。未开启时即便授予 scope 也不注入该能力。
+     * @returns {HostState} 自身（链式调用）
+     */
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_network(mut self) -> Self {
+        self.network_enabled = true;
+        self
     }
 }
 
@@ -90,10 +134,43 @@ impl LoadedPlugin {
     }
 }
 
+/// native I/O 错误的稳定 trap 前缀（供 `map_trap` 还原为 PluginError）。
+const IO_ERROR_MARKER: &str = "ocx_io_error:";
+
+/**
+ * 从 native I/O trap 的 `CODE:消息` 还原稳定错误（跨端可用，wasm32 下未被触发但需编译）。
+ * @param code 稳定错误码字符串
+ * @param detail 错误详情（作为变体的负载）
+ * @returns {PluginError} 对应变体；未知码回落为 FileReadFailed
+ */
+fn io_error_from_code(code: &str, detail: &str) -> PluginError {
+    match code {
+        "SCOPE_DENIED" => PluginError::ScopeDenied(detail.to_owned()),
+        "PATH_TRAVERSAL" => PluginError::PathTraversal(detail.to_owned()),
+        "FILE_NOT_FOUND" => PluginError::FileNotFound(detail.to_owned()),
+        "FILE_READ_FAILED" => PluginError::FileReadFailed(detail.to_owned()),
+        "INVALID_URL" => PluginError::InvalidUrl(detail.to_owned()),
+        "NETWORK_FAILED" => PluginError::NetworkFailed(detail.to_owned()),
+        "INVALID_SCOPE" => PluginError::InvalidScope(detail.to_owned()),
+        "INVALID_OUTPUT" => PluginError::InvalidOutput,
+        _ => PluginError::FileReadFailed(detail.to_owned()),
+    }
+}
+
 /// 把 wasmi 的实例化/调用错误按来源映射为稳定错误码。
 fn map_trap(error: &wasmi::Error, out_of_fuel: bool) -> PluginError {
     let text = error.to_string();
     let lowered = text.to_ascii_lowercase();
+    // native-only I/O 能力优先：其 SCOPE_DENIED 文本也含 "scope_denied:" 子串，
+    // 必须先用更具体的 ocx_io_error 前缀还原，保留完整资源名（避免被通用分支截断）。
+    if let Some(index) = lowered.find(IO_ERROR_MARKER) {
+        let begin = index + IO_ERROR_MARKER.len();
+        let payload = &text[begin..];
+        let mut parts = payload.splitn(2, ':');
+        let code = parts.next().unwrap_or("");
+        let detail = parts.next().unwrap_or("");
+        return io_error_from_code(code, detail);
+    }
     // 声明式权限：能力函数用 Result::Err(trap) 拒绝越权资源，按稳定前缀提取资源名。
     if let Some(index) = lowered.find(SCOPE_DENIED_MARKER) {
         let begin = index + SCOPE_DENIED_MARKER.len();
@@ -291,6 +368,230 @@ fn register_capabilities(linker: &mut Linker<HostState>) -> Result<(), PluginErr
 }
 
 /**
+ * 从插件线性内存读取一段长度受限的 UTF-8 字符串（能力函数入参统一读取）。
+ * @param memory 插件线性内存
+ * @param caller wasmi 调用上下文
+ * @param ptr 字符串指针（须 > 0）
+ * @param len 字符串字节长度
+ * @param max_len 允许的最大长度
+ * @returns {Result<String, wasmi::Error>} 读取到的字符串
+ */
+#[cfg(not(target_arch = "wasm32"))]
+fn read_guest_string(
+    memory: &Memory,
+    caller: &Caller<'_, HostState>,
+    ptr: i32,
+    len: i32,
+    max_len: usize,
+) -> Result<String, wasmi::Error> {
+    if ptr <= 0 || len <= 0 || len as usize > max_len {
+        return Err(wasmi::Error::new("invalid guest string length"));
+    }
+    let mut buffer = vec![0u8; len as usize];
+    memory
+        .read(caller, ptr as usize, &mut buffer)
+        .map_err(|error| wasmi::Error::new(format!("memory read failed: {error}")))?;
+    String::from_utf8(buffer).map_err(|_| wasmi::Error::new("invalid utf8 guest string"))
+}
+
+/**
+ * 将稳定错误映射为 wasmi trap（native I/O 能力函数在 trap 中携带稳定前缀供 map_trap 识别）。
+ * @param error 稳定错误
+ * @returns {wasmi::Error} 带稳定标记的 trap
+ */
+#[cfg(not(target_arch = "wasm32"))]
+fn io_trap(error: &PluginError) -> wasmi::Error {
+    wasmi::Error::new(format!("{IO_ERROR_MARKER}{}:{}", error.code(), error))
+}
+
+/**
+ * 注册 native-only 受控能力：`ocx.file_read` 与 `ocx.net_fetch`。
+ * 仅在授予对应 scope 且 host 显式允许时注入；wasm32 下整个函数不存在。
+ * @param linker 宿主链接器（数据类型为 HostState）
+ * @param host_state 宿主状态（读取文件根目录/网络开关决定注入哪些）
+ * @returns {Result<(), PluginError>} 注册失败给稳定错误码
+ */
+#[cfg(not(target_arch = "wasm32"))]
+fn register_native_capabilities(
+    linker: &mut Linker<HostState>,
+    host_state: &HostState,
+) -> Result<(), PluginError> {
+    use crate::model::{
+        MAX_FILE_KEY_LEN, PluginError, SCOPE_CAPABILITY_FILE_READ,
+        SCOPE_CAPABILITY_NETWORK_FETCH,
+    };
+
+    // ---- 文件读取：ocx.file_read(key_ptr,key_len,out_ptr,out_cap) -> i64 ----
+    // key 形如 `assets:images/logo.png`：ns 必须绑定到宿主目录，相对路径经字符串层 + canonicalize 双重校验。
+    let file_scopes = host_state
+        .granted_scopes
+        .get(SCOPE_CAPABILITY_FILE_READ)
+        .cloned()
+        .unwrap_or_default();
+    let file_roots = host_state.file_roots.clone();
+    if !file_scopes.is_empty() {
+        linker
+            .func_wrap(
+                CAPABILITY_MODULE,
+                CAPABILITY_FILE_READ,
+                move |mut caller: Caller<'_, HostState>,
+                      key_ptr: i32,
+                      key_len: i32,
+                      out_ptr: i32,
+                      out_cap: i32|
+                      -> Result<i64, wasmi::Error> {
+                    let memory = caller
+                        .get_export("memory")
+                        .and_then(|external| external.into_memory())
+                        .ok_or_else(|| wasmi::Error::new("missing memory"))?;
+                    let key = read_guest_string(&memory, &caller, key_ptr, key_len, MAX_FILE_KEY_LEN)?;
+                    let (namespace, relative) = key.split_once(':').ok_or_else(|| {
+                        io_trap(&PluginError::InvalidScope(key.clone()))
+                    })?;
+                    // 第一层：key 的 ns:relative 必须命中授予 scope（deny-by-default）。
+                    if !granted_allows(&caller.data().granted_scopes, SCOPE_CAPABILITY_FILE_READ, &key) {
+                        return Err(io_trap(&PluginError::ScopeDenied(key.clone())));
+                    }
+                    // 第二层：相对路径字符串层校验（拒绝 .. / 绝对路径 / 反斜杠 / 控制字符）。
+                    validate_relative_path(relative)
+                        .map_err(|error| io_trap(&error))?;
+                    // 第三层：ns 必须绑定到宿主目录；canonicalize 后必须仍在根目录内（防 symlink 逃逸）。
+                    let root = file_roots.get(namespace).ok_or_else(|| {
+                        io_trap(&PluginError::PathTraversal(key.clone()))
+                    })?;
+                    let candidate = root.join(relative);
+                    let canonical_root = root.canonicalize().map_err(|_| {
+                        io_trap(&PluginError::FileReadFailed(namespace.to_owned()))
+                    })?;
+                    let canonical_file = candidate.canonicalize().map_err(|error| {
+                        if error.kind() == std::io::ErrorKind::NotFound {
+                            io_trap(&PluginError::FileNotFound(key.clone()))
+                        } else {
+                            io_trap(&PluginError::FileReadFailed(key.clone()))
+                        }
+                    })?;
+                    if !canonical_file.starts_with(&canonical_root) {
+                        return Err(io_trap(&PluginError::PathTraversal(key.clone())));
+                    }
+                    // canonicalize 结果必须是普通文件（拒绝目录/设备）。
+                    if !canonical_file.is_file() {
+                        return Err(io_trap(&PluginError::FileNotFound(key.clone())));
+                    }
+                    let size = std::fs::metadata(&canonical_file)
+                        .map(|meta| meta.len() as usize)
+                        .map_err(|_| io_trap(&PluginError::FileReadFailed(key.clone())))?;
+                    if size > MAX_OUTPUT_BYTES {
+                        return Err(io_trap(&PluginError::FileReadFailed(key.clone())));
+                    }
+                    if size > out_cap as usize {
+                        return Err(wasmi::Error::new(format!("{RESOURCE_BUFFER_MARKER}{size}")));
+                    }
+                    let bytes = std::fs::read(&canonical_file)
+                        .map_err(|_| io_trap(&PluginError::FileReadFailed(key.clone())))?;
+                    memory
+                        .write(&mut caller, out_ptr as usize, &bytes)
+                        .map_err(|error| wasmi::Error::new(format!("memory write failed: {error}")))?;
+                    Ok(bytes.len() as i64)
+                },
+            )
+            .map_err(|_| PluginError::InvalidWasm)?;
+    }
+
+    // ---- 网络抓取：ocx.net_fetch(url_ptr,url_len,out_ptr,out_cap) -> i64 ----
+    // 仅 host 显式 with_network() 且授予 network-fetch scope 时注入；ureq 走 native TLS。
+    let net_scopes = host_state
+        .granted_scopes
+        .get(SCOPE_CAPABILITY_NETWORK_FETCH)
+        .cloned()
+        .unwrap_or_default();
+    if host_state.network_enabled && !net_scopes.is_empty() {
+        linker
+            .func_wrap(
+                CAPABILITY_MODULE,
+                CAPABILITY_NET_FETCH,
+                move |mut caller: Caller<'_, HostState>,
+                      url_ptr: i32,
+                      url_len: i32,
+                      out_ptr: i32,
+                      out_cap: i32|
+                      -> Result<i64, wasmi::Error> {
+                    let memory = caller
+                        .get_export("memory")
+                        .and_then(|external| external.into_memory())
+                        .ok_or_else(|| wasmi::Error::new("missing memory"))?;
+                    let url = read_guest_string(&memory, &caller, url_ptr, url_len, MAX_SCOPE_LEN)?;
+                    let (scheme, host) = parse_request_url(&url).map_err(|error| io_trap(&error))?;
+                    let scope_key = format!("{scheme}:{host}");
+                    // scope 命中按 `scheme:host` 判定（精确主机或 `scheme:*` 通配）。
+                    if !granted_allows(
+                        &caller.data().granted_scopes,
+                        SCOPE_CAPABILITY_NETWORK_FETCH,
+                        &scope_key,
+                    ) {
+                        return Err(io_trap(&PluginError::ScopeDenied(url.clone())));
+                    }
+                    validate_output_buffer(out_ptr, out_cap)
+                        .map_err(|error| io_trap(&error))?;
+                    // 委托给独立的真实请求函数（便于单测与 cfg 隔离）。
+                    let bytes = http_get_bounded(&url, out_cap as usize)
+                        .map_err(|error| io_trap(&error))?;
+                    memory
+                        .write(&mut caller, out_ptr as usize, &bytes)
+                        .map_err(|error| wasmi::Error::new(format!("memory write failed: {error}")))?;
+                    Ok(bytes.len() as i64)
+                },
+            )
+            .map_err(|_| PluginError::InvalidWasm)?;
+    }
+    Ok(())
+}
+
+/**
+ * 执行一次带超时与响应体上限的 HTTP GET（native-only，UREQ）。
+ * @param url 已通过 scope 校验的 URL
+ * @param max_bytes 响应体最大字节数
+ * @returns {Result<Vec<u8>, PluginError>} 响应体字节；失败映射稳定错误码
+ */
+#[cfg(not(target_arch = "wasm32"))]
+fn http_get_bounded(url: &str, max_bytes: usize) -> Result<Vec<u8>, PluginError> {
+    use std::time::Duration;
+
+    use ureq::config::Config;
+    use ureq::Error as UreqError;
+
+    use crate::model::NETWORK_TIMEOUT_SECS;
+
+    let config = Config::builder()
+        .timeout_global(Some(Duration::from_secs(NETWORK_TIMEOUT_SECS)))
+        .timeout_connect(Some(Duration::from_secs(NETWORK_TIMEOUT_SECS)))
+        .build();
+    let agent = config.new_agent();
+    let mut response = agent
+        .get(url)
+        .call()
+        .map_err(|error| PluginError::NetworkFailed(format_ureq_error(&error)))?;
+    response
+        .body_mut()
+        .with_config()
+        .limit(max_bytes as u64)
+        .read_to_vec()
+        .map_err(|error: UreqError| PluginError::NetworkFailed(format_ureq_error(&error)))
+}
+
+/**
+ * 把 ureq 错误压成稳定的一行文本（不泄露 URL 凭据，因为 URL 已在入口拒绝内嵌凭据）。
+ * @param error ureq 错误
+ * @returns {String} 简短错误描述
+ */
+#[cfg(not(target_arch = "wasm32"))]
+fn format_ureq_error(error: &ureq::Error) -> String {
+    match error {
+        ureq::Error::StatusCode(code) => format!("HTTP {code}"),
+        other => other.to_string().lines().next().unwrap_or("network error").to_owned(),
+    }
+}
+
+/**
  * 实例化插件的共用实现：零导入或按 scope 注入能力函数两种模式。
  * @param wasm_bytes 插件 wasm 二进制
  * @param registration 已校验注册项
@@ -321,13 +622,15 @@ fn instantiate(
 
     let mut linker = Linker::<HostState>::new(&engine);
     // 仅按授予 scope 注入受控能力；未授予任何 scope 时保持零导入语义。
-    let should_inject = with_capabilities
-        && host_state
-            .granted_scopes
-            .values()
-            .any(|scopes| !scopes.is_empty());
-    if should_inject {
+    let has_scopes = host_state
+        .granted_scopes
+        .values()
+        .any(|scopes| !scopes.is_empty());
+    if with_capabilities && has_scopes {
         register_capabilities(&mut linker)?;
+        // native-only 能力：按授予的 file-read / network-fetch scope 精细注入。
+        #[cfg(not(target_arch = "wasm32"))]
+        register_native_capabilities(&mut linker, &host_state)?;
     }
     let mut store = Store::new(&engine, host_state);
     store

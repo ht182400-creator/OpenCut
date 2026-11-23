@@ -15,5 +15,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 wasmi = "2.0.0"
 
+# native-only 受控网络抓取能力：ureq 仅 rustls 最小 feature，wasm32 构建不引入。
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+
 [dev-dependencies]
 wat = "1"
