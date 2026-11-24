@@ -58,8 +58,8 @@ export interface EditorActionsDeps {
   exportState: ExportState
   /** 第一档：轨道静音/隐藏状态，写回经典版 JSON 用。 */
   trackFlags: { muted: string[]; hidden: string[] }
-  /** 第一档：场景书签，写回经典版 JSON 用。 */
-  bookmarks: Array<{ id: string; ticks: number; name: string }>
+  /** 第一档：场景书签，写回经典版 JSON 用（note 可选备注）。 */
+  bookmarks: Array<{ id: string; ticks: number; name: string; note?: string }>
   proxyUrl: string | null
   otioUrl: string | null
   sourceName: string

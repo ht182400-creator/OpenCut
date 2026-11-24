@@ -87,6 +87,23 @@ describe('trackFlags / bookmarks 项目视图读写', () => {
     expect(view.scenes[0].tracks[0].hidden).toBe(false);
     expect(view.scenes[0].bookmarks).toEqual([{ id: 'bm-2', ticks: 42, name: 'B' }]);
   });
+
+  it('UI 长尾：note 从视图读取并写回透传，非法 note 被过滤', () => {
+    const project = makeProject();
+    project.scenes[0].bookmarks = [
+      { id: 'bm-1', ticks: 10, name: 'A', note: '开场提示' },
+      { id: 'bm-2', ticks: 20, name: 'B', note: 42 },
+    ];
+    // 非法 note（数字）的整条书签被丢弃，与 NaN ticks 的既有防御一致。
+    expect(bookmarksFromProject(project)).toEqual([
+      { id: 'bm-1', ticks: 10, name: 'A', note: '开场提示' },
+    ]);
+    const view = buildWriteView(
+      project, [], undefined, undefined,
+      [{ id: 'bm-3', ticks: 30, name: 'C', note: '收尾提示' }],
+    );
+    expect(view.scenes[0].bookmarks).toEqual([{ id: 'bm-3', ticks: 30, name: 'C', note: '收尾提示' }]);
+  });
 });
 
 describe('buildWriteView 合并编辑', () => {

@@ -34,11 +34,12 @@ export interface TrackFlagsState {
   hidden: string[]
 }
 
-/** 书签（P4 批 6）：本地 autosave 持久化，不写回经典版 JSON（core 无字段）。 */
+/** 书签：本地 autosave 持久化 + 经典版 JSON 写回；note 为 additive-only 可选备注。 */
 export interface BookmarkState {
   id: string
   ticks: number
   name: string
+  note?: string
 }
 
 export interface AutosaveState {
@@ -113,7 +114,8 @@ export function readAutosave(
     }
     if (state.bookmarks !== undefined) {
       if (!Array.isArray(state.bookmarks) || !state.bookmarks.every((b) =>
-        b && typeof b.id === 'string' && Number.isFinite(b.ticks) && typeof b.name === 'string')) return null;
+        b && typeof b.id === 'string' && Number.isFinite(b.ticks) && typeof b.name === 'string'
+        && (b.note === undefined || typeof b.note === 'string'))) return null;
     }
     return parsed;
   } catch {

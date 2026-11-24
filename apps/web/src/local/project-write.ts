@@ -21,11 +21,12 @@ export interface WriteTrackFlags {
   hidden: string[];
 }
 
-/** 场景书签（第一档：原样透传，结构由 UI 决定）。 */
+/** 场景书签（第一档：原样透传；note 为可选备注，additive-only）。 */
 export interface WriteBookmark {
   id: string;
   ticks: number;
   name: string;
+  note?: string;
 }
 
 /**
@@ -61,8 +62,12 @@ export function bookmarksFromProject(project: ProjectView): WriteBookmark[] {
       return typeof value.id === 'string'
         && typeof value.ticks === 'number'
         && Number.isFinite(value.ticks)
-        && typeof value.name === 'string';
-    }).map((item) => ({ id: item.id, ticks: item.ticks, name: item.name }));
+        && typeof value.name === 'string'
+        && (value.note === undefined || typeof value.note === 'string');
+    }).map((item) => ({
+      id: item.id, ticks: item.ticks, name: item.name,
+      ...(typeof item.note === 'string' ? { note: item.note } : {}),
+    }));
   }
   return [];
 }

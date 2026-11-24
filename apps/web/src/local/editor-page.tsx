@@ -265,8 +265,8 @@ export function Editor() {
   const exportAbortRef = useRef<AbortController | null>(null)
   /** P4 批 6：轨道静音/隐藏（第一档 A 起同时写回经典版 JSON）。 */
   const [trackFlags, setTrackFlags] = useState<{ muted: string[]; hidden: string[] }>({ muted: [], hidden: [] })
-  /** P4 批 6：书签（autosave 持久化）。 */
-  const [bookmarks, setBookmarks] = useState<Array<{ id: string; ticks: number; name: string }>>([])
+  /** P4 批 6 + UI 长尾：书签（autosave 持久化，note 可选备注）。 */
+  const [bookmarks, setBookmarks] = useState<Array<{ id: string; ticks: number; name: string; note?: string }>>([])
   const [sourceName, setSourceName] = useState('内置示例项目')
   const [exportSettings, setExportSettings] = useState<ExportSettings>(DEFAULT_EXPORT_SETTINGS)
   /** 批 7.2：当前帧分辨率，贯穿解码/合成/预览/导出；默认 320×180 保持回归。 */

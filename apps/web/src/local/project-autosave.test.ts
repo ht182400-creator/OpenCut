@@ -65,6 +65,32 @@ describe('persistAutosave / readAutosave（往返）', () => {
     expect(restored?.state.bookmarks).toEqual([{ id: 'bm-1', ticks: 120000, name: '书签 1' }])
   })
 
+  it('UI 长尾：书签 note 往返保留，旧书签无 note 兼容', () => {
+    const storage = memoryStorage()
+    const state: AutosaveState = {
+      ...makeState(),
+      bookmarks: [
+        { id: 'bm-1', ticks: 120000, name: '书签 1', note: '开场提示' },
+        { id: 'bm-2', ticks: 0, name: '书签 2' },
+      ],
+    }
+    expect(persistAutosave(state, 'proj-a', storage)).toBe(true)
+    const restored = readAutosave(storage, 'proj-a')
+    expect(restored?.state.bookmarks).toEqual([
+      { id: 'bm-1', ticks: 120000, name: '书签 1', note: '开场提示' },
+      { id: 'bm-2', ticks: 0, name: '书签 2' },
+    ])
+  })
+
+  it('UI 长尾：非法 note 类型使状态作废（不静默吞损坏数据）', () => {
+    const storage = memoryStorage()
+    persistAutosave(makeState(), 'proj-a', storage)
+    const raw = JSON.parse(storage.getItem(AUTOSAVE_STORAGE_KEY) ?? '{}')
+    raw.state.bookmarks = [{ id: 'bm-1', ticks: 0, name: 'A', note: 42 }]
+    storage.setItem(AUTOSAVE_STORAGE_KEY, JSON.stringify(raw))
+    expect(readAutosave(storage, 'proj-a')).toBeNull()
+  })
+
   it('P4 批 6：旧状态无新字段也能读回（additive 兼容）', () => {
     const storage = memoryStorage()
     persistAutosave(makeState(), 'proj-a', storage) // makeState 无 trackFlags/bookmarks

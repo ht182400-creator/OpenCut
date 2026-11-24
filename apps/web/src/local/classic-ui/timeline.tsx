@@ -44,6 +44,7 @@ import {
   zoomToSlider,
 } from './timeline-tokens'
 import type { ClassicTrackType, TimelineRect } from './timeline-tokens'
+import { draggedBookmarkTicks, moveBookmark, setBookmarkNote } from '../bookmark-model'
 
 /** 时间轴单条轨道视图（main 轨用可编辑 elements，其余轨只读展示）。 */
 export interface ClassicTimelineTrack {
@@ -92,6 +93,9 @@ const MAX_RULER_TICKS = 1000
 
 /** 播放头圆点直径（经典版 size-3 = 0.75rem）。 */
 const PLAYHEAD_KNOB_SIZE_PX = 12
+
+/** 书签拖动进入拖拽态的位移阈值（px）：低于此值视为点击 seek（Chrome 官方指南建议 4px）。 */
+const BOOKMARK_DRAG_THRESHOLD_PX = 4
 
 /** 图标路径表：按经典版同位置形状本地绘制。 */
 const ICON_PATHS: Record<string, string> = {
@@ -211,10 +215,10 @@ export function ClassicTimeline(props: {
   hiddenTrackIds?: readonly string[]
   /** P4 批 6：轨道标志变更回调（autosave 持久化）。 */
   onToggleTrackFlag?: (trackId: string, flag: 'muted' | 'hidden') => void
-  /** P4 批 6：外部持久化的书签。 */
-  bookmarks?: ReadonlyArray<{ id: string; ticks: number; name: string }>
-  /** P4 批 6：书签增删改回调。 */
-  onBookmarksChange?: (bookmarks: Array<{ id: string; ticks: number; name: string }>) => void
+  /** 外部持久化的书签（note 为可选备注）。 */
+  bookmarks?: ReadonlyArray<{ id: string; ticks: number; name: string; note?: string }>
+  /** 书签增删改回调。 */
+  onBookmarksChange?: (bookmarks: Array<{ id: string; ticks: number; name: string; note?: string }>) => void
   /** 第二档项3：外部受控吸附开关（缺省时退化为内部 state，保持向后兼容）。 */
   snapping?: boolean
   /** 第二档项3：吸附开关变更回调（工具栏磁铁 + 快捷键 n 共用）。 */
@@ -232,8 +236,75 @@ export function ClassicTimeline(props: {
   const hiddenTracks = useMemo(() => new Set(props.hiddenTrackIds ?? localHiddenTracks), [props.hiddenTrackIds, localHiddenTracks])
   /** P2：框选橡皮筋的当前矩形（内容坐标 px），null 表示未框选。 */
   const [marquee, setMarquee] = useState<TimelineRect | null>(null)
+  /** UI 长尾：双击书签时的备注编辑目标 id 与草稿文本。 */
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
 
   const containerRef = useRef<HTMLDivElement>(null)
+  /** UI 长尾：书签拖动会话（按下基准；pointer capture 在元素自身）。 */
+  const bookmarkDragRef = useRef<{ id: string; startClientX: number; startTicks: number; moved: boolean } | null>(null)
+
+  /**
+   * 书签拖动起手：记录原始 ticks 与指针基准，接管 pointer 序列（避免移出元素丢事件）。
+   * @param event React 指针事件
+   * @param bookmark 被拖动的书签
+   */
+  const startBookmarkDrag = (event: React.PointerEvent<HTMLSpanElement>, bookmark: { id: string; ticks: number }) => {
+    if (event.button !== 0 || !props.onBookmarksChange) return
+    bookmarkDragRef.current = {
+      id: bookmark.id, startClientX: event.clientX, startTicks: bookmark.ticks, moved: false,
+    }
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // pointer capture 在部分环境不可用，退化为依赖元素的 pointermove（不影响数据正确性）。
+    }
+  }
+
+  /**
+   * 书签拖动过程：超 4px 阈值后按位移换算 ticks 并写回（每帧吸附到 tick 网格）。
+   * @param event React 指针事件
+   */
+  const updateBookmarkDrag = (event: React.PointerEvent<HTMLSpanElement>) => {
+    const session = bookmarkDragRef.current
+    if (!session || !props.onBookmarksChange) return
+    const deltaPixels = event.clientX - session.startClientX
+    if (!session.moved && Math.abs(deltaPixels) < BOOKMARK_DRAG_THRESHOLD_PX) return
+    session.moved = true
+    const nextTicks = draggedBookmarkTicks(
+      session.startTicks, deltaPixels, safeZoom, props.ticksPerSecond, props.ticksPerFrame,
+    )
+    props.onBookmarksChange(moveBookmark(props.bookmarks ?? [], session.id, nextTicks))
+  }
+
+  /**
+   * 书签拖动结束：未移动则视为点击 seek；释放 pointer capture 并清会话。
+   * @param event React 指针事件
+   */
+  const endBookmarkDrag = (event: React.PointerEvent<HTMLSpanElement>, bookmark: { id: string; ticks: number }) => {
+    const session = bookmarkDragRef.current
+    bookmarkDragRef.current = null
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch {
+      // 释放失败无需处理：浏览器会在 pointerup 后自动释放。
+    }
+    if (session && !session.moved) {
+      props.onSeek(Math.max(0, Math.round(bookmark.ticks / props.ticksPerFrame)))
+    }
+  }
+
+  /**
+   * 提交书签备注编辑（回车/失焦），空值删除 note 字段。
+   * @param id 书签 id
+   */
+  const commitBookmarkNote = (id: string) => {
+    props.onBookmarksChange?.(setBookmarkNote(props.bookmarks ?? [], id, noteDraft))
+    setEditingNoteId(null)
+    setNoteDraft('')
+  }
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<TimelineDrag | null>(null)
   /** P2：框选起点（内容坐标 px）与是否加框，null 表示未开始。 */
@@ -692,20 +763,46 @@ export function ClassicTimeline(props: {
               style={{ height: TIMELINE_BOOKMARK_ROW_HEIGHT_PX, position: 'relative' }}>
               {(props.bookmarks ?? []).map((bookmark) => {
                 const left = timelineTimeToPixels(bookmark.ticks, safeZoom, props.ticksPerSecond)
+                const isEditing = editingNoteId === bookmark.id
+                if (isEditing) {
+                  return (
+                    <input key={bookmark.id} data-testid={`bookmark-note-input-${bookmark.id}`}
+                      autoFocus value={noteDraft}
+                      onChange={(event) => setNoteDraft(event.target.value)}
+                      onBlur={() => commitBookmarkNote(bookmark.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') commitBookmarkNote(bookmark.id)
+                        if (event.key === 'Escape') { setEditingNoteId(null); setNoteDraft('') }
+                      }}
+                      placeholder="备注（回车保存）"
+                      style={{
+                        position: 'absolute', left, top: 0, width: 120, height: 15,
+                        fontSize: 10, zIndex: TIMELINE_LAYERS.marquee,
+                      }} />
+                  )
+                }
                 return (
                   <span key={bookmark.id} data-testid={`bookmark-${bookmark.id}`}
-                    title={`${bookmark.name}（点击跳转 · 右键删除）`}
-                    onClick={() => props.onSeek(Math.max(0, Math.round(bookmark.ticks / props.ticksPerFrame)))}
+                    title={`${bookmark.name}${bookmark.note ? ` · ${bookmark.note}` : ''}（点击跳转 · 拖动改位置 · 双击备注 · 右键删除）`}
+                    onPointerDown={(event) => startBookmarkDrag(event, bookmark)}
+                    onPointerMove={updateBookmarkDrag}
+                    onPointerUp={(event) => endBookmarkDrag(event, bookmark)}
+                    onPointerCancel={(event) => endBookmarkDrag(event, bookmark)}
+                    onDoubleClick={(event) => {
+                      event.preventDefault()
+                      setEditingNoteId(bookmark.id)
+                      setNoteDraft(bookmark.note ?? '')
+                    }}
                     onContextMenu={(event) => {
                       event.preventDefault()
                       props.onBookmarksChange?.((props.bookmarks ?? []).filter((item) => item.id !== bookmark.id))
                     }}
                     style={{
-                      position: 'absolute', left, top: 1, cursor: 'pointer',
+                      position: 'absolute', left, top: 1, cursor: 'grab', touchAction: 'none',
                       fontSize: 10, color: 'var(--primary)', userSelect: 'none',
                       maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}>
-                    ◆ {bookmark.name}
+                    ◆ {bookmark.name}{bookmark.note ? ` · ${bookmark.note}` : ''}
                   </span>
                 )
               })}
