@@ -166,6 +166,8 @@
 
 | 2026-11-24 | U-02 撤销重做全覆盖 | 本次提交（见 `git log -1`） | UI 长尾 A 档第 2 批。`clip-history.ts` 的 `TimelineSnapshot` 扩为 `EditorSnapshotState`（clips + 书签 + 轨道标志 + 选中态 + ripple），保留旧类型名、`moveHistory().clips` 兼容字段与可选 `parts` 以兼容既有 14 项用例；新增深拷贝与旧格式归一化（旧持久化条目缺字段给安全默认值）。`record` 注入 `getParts` 读取编辑器现场，新增/删除/片段编辑/复制粘贴/书签/轨道标志统一 `pushSnapshot`；书签拖动加 `commit` 标志，pointerup 只记一条。`recordHistory` 扩第三参数 `selectedId`，同步 `use-selection.ts`/`editor-actions.ts` 全部调用方。**验收**：tsc 0、vitest **42 文件/518 项**（+10）全绿、vite build 成功；ego(lite) 实测添加书签→静音→删除→撤销恢复片段 1→2 且书签/静音保持、选中态回到 clip-intro，重做再删、连续撤销逐条回退，截图 `roadmap/oc-undo-full-coverage.png`。FEATURE_PARITY §6 撤销行 🟡→✅，统计 43/4/5/15。**边界**：不扩 core；导出设置/主题等非编辑现场未纳入快照。 | `apps/web/src/local/clip-history.ts` / `clip-history.test.ts` / `editor-page.tsx` / `use-selection.ts` / `editor-actions.ts` / `classic-ui/timeline.tsx` |
 
+| 2026-11-24 | U-03 自动保存介质升级 | 本次提交（见 `git log -1`） | UI 长尾 A 档第 3 批（依赖 U-02 已就绪）。`project-autosave.ts` 保留同步纯函数并提取共用校验 `parseAutosaveEnvelope`，新增 `AsyncAutosaveStorage` + 异步读/写/清除；新 `autosave-idb.ts` 提供 IndexedDB 后端（事务 complete 后 resolve）、IDB→localStorage 降级复合后端、`migrateLegacyAutosave` 一次性迁移（标记防重复、损坏数据跳过、目标失败不写标记可重试）。编辑器加载项目时先迁移再异步读取，防抖写入改异步。**验收**：tsc 0、vitest **43 文件/530 项**（+12）全绿、vite build 成功；ego(lite) 实测旧 localStorage 信封迁移到 IDB（标记写入、旧数据保留）、清除 localStorage 后新增书签→IDB 更新→刷新恢复两个书签，`roadmap/oc-autosave-idb.png`。FEATURE_PARITY §6 自动保存行 🟡→✅，统计 44/3/5/15。**边界**：OPFS 与多端同步未做；IDB 失败自动降级读旧 localStorage。 | `apps/web/src/local/project-autosave.ts` / `autosave-idb.ts` / `autosave-idb.test.ts` / `editor-page.tsx` |
+
 ## 9. 未开展进度明细（2026-11-16 会话总结登记）
 
 > 本节是批 7 剩余项与批 8 的**统一进度落点**，由本次会话总结（见 `.codebuddy/memory/2026-11-16.md`）登记。§3 批次表给出状态概览，本节给出逐项范围、DoD、边界与当前探查结论。更新任一子项时同步 §3 行、§8 变更记录与看板。

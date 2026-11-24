@@ -46,9 +46,11 @@ import {
 import {
   AUTOSAVE_DEBOUNCE_MS,
   defaultAutosaveStorage,
-  persistAutosave,
-  readAutosave,
+  persistAutosaveAsync,
+  readAutosaveAsync,
+  type AsyncAutosaveStorage,
 } from './project-autosave'
+import { defaultAutosaveBackend, migrateLegacyAutosave } from './autosave-idb'
 import {
   BASE_PROFILE,
   PANEL_STYLE,
@@ -341,8 +343,12 @@ export function Editor() {
         kind: 'buildFramePlan', durationTicks: timelineDuration(historyClips), profile,
       })
 
-      // P0 自动保存：同项目且有合法快照时，恢复元素与编辑现场；否则用历史/项目基线。
-      const saved = readAutosave(defaultAutosaveStorage(), name)
+      // U-03：先把旧 localStorage 自动保存一次性迁移到 IndexedDB，再走异步读取。
+      const autosaveBackend = defaultAutosaveBackend()
+      autosaveBackendRef.current = autosaveBackend
+      await migrateLegacyAutosave(defaultAutosaveStorage(), autosaveBackend)
+      // 同项目且有合法快照时恢复元素与编辑现场；否则用历史/项目基线。
+      const saved = await readAutosaveAsync(autosaveBackend, name)
       const restored: CoreElement[] = saved ? saved.state.elements.map((item) => ({ ...item })) : historyClips
       const duration = timelineDuration(restored)
       const restoredPlan = saved
@@ -405,17 +411,15 @@ export function Editor() {
    * P0 自动保存：编辑现场变化后防抖落盘。仅在会话就绪时写入，
    * 用 ref 保存最新状态以避免 effect 依赖状态导致每次按键都重设定时器开销。
    */
+  /** U-03：异步自动保存后端句柄，项目加载时初始化（IndexedDB 优先）。 */
+  const autosaveBackendRef = useRef<AsyncAutosaveStorage | null>(null)
   const autosaveStateRef = useRef({ elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks })
   autosaveStateRef.current = { elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks }
   useEffect(() => {
     if (!session) return
     const timer = window.setTimeout(() => {
-      try {
-        persistAutosave(autosaveStateRef.current, sourceName, defaultAutosaveStorage())
-      } catch (error) {
-        // 自动保存失败不阻断编辑，只记录一次可恢复警告。
-        setErrorText(`自动保存失败：${formatCoreError(error)}`)
-      }
+      // U-03：异步写入 IndexedDB；后端内部已做 localStorage 降级，失败返回 false 不阻断编辑。
+      void persistAutosaveAsync(autosaveStateRef.current, sourceName, autosaveBackendRef.current)
     }, AUTOSAVE_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
   }, [session, elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks])

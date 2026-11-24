@@ -1,10 +1,11 @@
 /**
- * P0 本地自动保存：把当前编辑状态（元素、时间轴、分辨率等）防抖写入 localStorage，
- * 刷新页面后自动恢复，做到「刷新不丢」。
+ * 本地自动保存：把当前编辑状态（元素、时间轴、分辨率等）防抖落盘，刷新后恢复。
+ * P0 使用 localStorage；U-03 主后端升级为 IndexedDB（见 autosave-idb.ts），
+ * 同步函数保留用于单测与旧数据迁移，异步函数供编辑器实际读写。
  *
  * 设计约束（与 clip-history.ts 对齐）：
  * - 存储后端可注入，便于 Node 单测覆盖读/写/损坏/配额异常分支；
- * - localStorage 不可用（隐私模式/配额）时静默降级，不阻断编辑；
+ * - 后端不可用（隐私模式/配额/IDB 建库失败）时静默降级，不阻断编辑；
  * - 按项目标识隔离，避免不同项目互相覆盖；
  * - schema 带版本号，结构不合法整体作废。
  */
@@ -20,11 +21,18 @@ export const AUTOSAVE_SCHEMA_VERSION = 1;
 /** 防抖时长（毫秒）：每次编辑后等待多久落盘。 */
 export const AUTOSAVE_DEBOUNCE_MS = 800;
 
-/** 可注入的存储后端（与 HistoryStorage 同构）。 */
+/** 可注入的同步存储后端（与 HistoryStorage 同构，保留用于单测与旧数据迁移）。 */
 export interface AutosaveStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
+}
+
+/** U-03：异步存储后端（IndexedDB 实现，localStorage 降级）。 */
+export interface AsyncAutosaveStorage {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+  removeItem(key: string): Promise<void>;
 }
 
 /** 落盘的编辑状态。 */
@@ -87,19 +95,15 @@ function isValidElement(value: unknown): value is CoreElement {
 }
 
 /**
- * 读取并校验持久化状态；版本不符/项目不匹配/结构损坏时返回 null。
- * @param storage 存储后端
+ * 解析并校验持久化原始字符串；版本/项目/结构不合法时返回 null。
+ * 同步与异步读取共用同一份校验，避免两条路径行为漂移。
+ * @param raw 持久化原始字符串
  * @param projectKey 当前项目标识
- * @returns {PersistedAutosave | null} 合法持久化内容
+ * @returns {PersistedAutosave | null} 合法内容
  */
-export function readAutosave(
-  storage: AutosaveStorage | null,
-  projectKey: string,
-): PersistedAutosave | null {
-  if (!storage || !projectKey) return null;
+export function parseAutosaveEnvelope(raw: string | null, projectKey: string): PersistedAutosave | null {
+  if (!raw || !projectKey) return null;
   try {
-    const raw = storage.getItem(AUTOSAVE_STORAGE_KEY);
-    if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedAutosave;
     if (parsed?.version !== AUTOSAVE_SCHEMA_VERSION || parsed?.projectKey !== projectKey) return null;
     const state = parsed.state;
@@ -124,10 +128,28 @@ export function readAutosave(
 }
 
 /**
+ * 同步读取并校验持久化状态（供旧数据迁移与单测使用）。
+ * @param storage 同步存储后端
+ * @param projectKey 当前项目标识
+ * @returns {PersistedAutosave | null} 合法持久化内容
+ */
+export function readAutosave(
+  storage: AutosaveStorage | null,
+  projectKey: string,
+): PersistedAutosave | null {
+  if (!storage || !projectKey) return null;
+  try {
+    return parseAutosaveEnvelope(storage.getItem(AUTOSAVE_STORAGE_KEY), projectKey);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 写入自动保存；失败返回 false（配额/隐私模式不阻断编辑）。
  * @param state 当前编辑状态
  * @param projectKey 项目标识
- * @param storage 存储后端
+ * @param storage 同步存储后端
  * @param savedAt ISO 时间戳（可注入便于单测）
  * @returns {boolean} 是否写入成功
  */
@@ -153,6 +175,53 @@ export function persistAutosave(
 }
 
 /**
+ * U-03：异步读取（IndexedDB 主后端）。校验规则与同步路径完全一致。
+ * @param storage 异步存储后端
+ * @param projectKey 当前项目标识
+ * @returns {Promise<PersistedAutosave | null>} 合法持久化内容
+ */
+export async function readAutosaveAsync(
+  storage: AsyncAutosaveStorage | null,
+  projectKey: string,
+): Promise<PersistedAutosave | null> {
+  if (!storage || !projectKey) return null;
+  try {
+    return parseAutosaveEnvelope(await storage.getItem(AUTOSAVE_STORAGE_KEY), projectKey);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * U-03：异步写入（IndexedDB 主后端）；失败返回 false，不阻断编辑。
+ * @param state 当前编辑状态
+ * @param projectKey 项目标识
+ * @param storage 异步存储后端
+ * @param savedAt ISO 时间戳（可注入便于单测）
+ * @returns {Promise<boolean>} 是否写入成功
+ */
+export async function persistAutosaveAsync(
+  state: AutosaveState,
+  projectKey: string,
+  storage: AsyncAutosaveStorage | null,
+  savedAt: string = new Date().toISOString(),
+): Promise<boolean> {
+  if (!storage || !projectKey) return false;
+  try {
+    const envelope: PersistedAutosave = {
+      version: AUTOSAVE_SCHEMA_VERSION,
+      projectKey,
+      savedAt,
+      state,
+    };
+    await storage.setItem(AUTOSAVE_STORAGE_KEY, JSON.stringify(envelope));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 清除当前项目的自动保存（如用户主动加载项目 JSON 时避免旧状态覆盖）。
  * @param storage 存储后端
  * @returns {boolean} 是否清除成功
@@ -161,6 +230,21 @@ export function clearAutosave(storage: AutosaveStorage | null): boolean {
   if (!storage) return false;
   try {
     storage.removeItem(AUTOSAVE_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * U-03：异步清除（IndexedDB 主后端）；失败返回 false，不阻断编辑。
+ * @param storage 异步存储后端
+ * @returns {Promise<boolean>} 是否清除成功
+ */
+export async function clearAutosaveAsync(storage: AsyncAutosaveStorage | null): Promise<boolean> {
+  if (!storage) return false;
+  try {
+    await storage.removeItem(AUTOSAVE_STORAGE_KEY);
     return true;
   } catch {
     return false;
