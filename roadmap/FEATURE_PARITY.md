@@ -54,7 +54,7 @@
 | 功能 | 经典版 | 本版本 | 状态 | 判定依据 |
 | --- | --- | --- | --- | --- |
 | 三轨结构（overlay/main/audio） | 真实（可动态建 text/graphic/effect 子轨） | 三轨展示，graphic 元素可经 Text tab 素材卡加入；无动态子轨 | 🟡 | 视觉与选中真实，结构固定；第二档项2 graphic 卡片（rectangle/ellipse/triangle/line）走 `buildGraphicElement` 加入时间轴 |
-| 轨道头静音/隐藏 | 真实 | 点击真实生效并 autosave 持久化（刷新恢复），但不写回经典版 JSON（core 无轨道字段） | 🟡 | P4 批 6：`project-autosave.ts` trackFlags + `timeline.tsx` 外部状态，浏览器刷新后静音按钮保持；JSON 级持久化需扩 core，见台账 |
+| 轨道头静音/隐藏 | 真实 | 点击生效 + autosave 刷新恢复 + 写回经典版 JSON（additive-only） | ✅ | P4 批 6 autosave + `fad92d49` 第一档 A：`buildWriteView` 传 trackFlags → core `project_compat.rs` `muted`/`hidden` 按 id 写回原 JSON；`project_write.rs` 往返测试含「原 JSON 无字段不新增」保护 |
 | 片段选中/点击联动属性 | 真实 | 真实 | ✅ | 批 4 浏览器验收 |
 | 片段移动/resize/trim（main 轨） | 真实 | 真实（core 契约） | ✅ | `moveClipClamped`/`resizeClipEdge` |
 | overlay/audio 轨编辑 | 真实（全轨） | 只读展示（点击可选中，不能编辑） | 🔴 | core 编辑契约只覆盖 main |
@@ -65,7 +65,7 @@
 | 复制 / 粘贴片段 | 真实 | 真实（Ctrl+C/V 内存剪贴板） | ✅ | P1：`element-operations.ts` `copyElements`/`pasteElements`，浏览器验收 6→8 片段 |
 | Ripple editing 开关 | 真实 | 无（core 有契约但 UI 未接） | ⚪ | — |
 | 关键帧显示/拖动/曲线编辑器 | 真实 | 真实动画轨道 + 可视化 SVG 曲线（拖动改值/双击加点/右键删点/缓动切换） | ✅ | P2 关键帧模型 + P3 批 3 `curve-editor.tsx`/`curve-editor-model.ts`，浏览器验收拖动改 time/value，`oc-p3-curve-editor.png` |
-| 书签（增删改/拖动/备注） | 真实 | 可添加/点击 seek/右键删除，autosave 持久化（刷新恢复）；无拖动/备注，不写回 JSON | 🟡 | P4 批 6：书签行真实渲染 + autosave（3 项单测），浏览器添加后刷新恢复 `oc-p4-bookmarks.png`；拖动/备注/JSON 级需扩 core，见台账 |
+| 书签（增删改/拖动/备注） | 真实 | 可添加/点击 seek/右键删除，autosave 刷新恢复，JSON 级写回已完成；拖动/备注仍缺 | 🟡 | P4 批 6 书签渲染 + autosave（`oc-p4-bookmarks.png`）+ `fad92d49` 第一档 A：`buildWriteView` 传 bookmarks → core `scene.bookmarks` 按 id 写回、往返测试覆盖；拖动/备注属 UI 长尾，未做不伪造 |
 | 缩放（按钮/滑杆/ctrl-wheel） | 真实 | 真实 | ✅ | 批 2 验收 |
 | seek（标尺点击/播放头拖动） | 真实 | 真实 | ✅ | 批 2 验收 |
 | 场景切换/删除 | 真实 | 无（单场景 fixture） | ⚪ | — |
@@ -138,12 +138,12 @@
 
 | 状态 | 数量 | 分布（§） | 主要条目 |
 | --- | --- | --- | --- |
-| ✅ 已实现 | 38 | §1:5 §2:4 §3:11 §4:6 §5:4 §6:4 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、MP4/WebM 导出、质量档位 |
-| 🟡 部分闭环 | 9 | §1:0 §2:1 §3:3 §4:0 §5:2 §6:3 §7:0 | 网格卡片/无排序、三轨结构固定、遮罩手柄（参数化无拖拽）、Masks/Effects 基础参数（无 GPU 效果）、撤销重做、自动保存（localStorage）、拖拽排序、导出进度无取消、选框/手柄写回 transform（参考线仍视觉、旋转手柄被顶栏遮挡未端到端） |
-| 🔴 占位 | 5 | §2:4 §3:1 §4:1 | Sounds/Stickers/Effects/Settings 数据源、静音隐藏、overlay/audio 编辑、书签、时间码编辑、右键菜单 |
+| ✅ 已实现 | 40 | §1:5 §2:4 §3:12 §4:6 §5:5 §6:4 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）** |
+| 🟡 部分闭环 | 7 | §2:1 §3:2 §4:1 §6:3 | 网格卡片/无排序、三轨结构固定、遮罩手柄（参数化无拖拽）、Masks/Effects 基础参数（无 GPU 效果）、撤销重做、自动保存（localStorage）、拖拽排序、书签（JSON 写回已完成，拖动/备注仍缺）、选框/手柄写回 transform（参考线仍视觉、旋转手柄被顶栏遮挡未端到端） |
+| 🔴 占位 | 5 | §2:4 §3:1 | Sounds/Stickers/Effects/Settings 数据源、overlay/audio 编辑、时间码编辑、右键菜单 |
 | ⚪ 未覆盖 | 15 | §1:5 §2:5 §3:2 §4:1 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、双击文字就地编辑、素材右键 Export clips、剪贴板直接贴媒体 |
 
-> 合计 67 项（38+8+6+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算，与表格严格一致。
+> 合计 67 项（40+7+5+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计）。
 > **2026-11-17 P0 完成后变化**：✅ 20→23（Text/Media 加轨、落轨拖放），🟡 7→9（参数编辑、自动保存由 🔴 升级），🔴 19→14。详见 `UI_REPLICA_PLAN.md` §8「P0 闭环实现」。
 > **2026-11-17 P1 完成后变化**：✅ 23→25（Duplicate、复制/粘贴），🟡 9→11（多选、快捷键分发升级），🔴 14→13（Duplicate 出占位），⚪ 20→17（多选/复制粘贴出未覆盖）。数据源接入（Sounds/Stickers/Effects）依赖服务端素材库，本仓库无此后端且超出 UI 闭环范围，记 🔴 并写入 `UI_REPLICA_PLAN.md` §7 差异台账；不伪造数据。
 > **2026-11-17 P2 完成后变化**：新增 GPU 项（总 66→67）；✅ 25→28（Transform/Text 参数修复 key 映射升 ✅、GPU 提示、WebM 文档更正），🟡 11→13（遮罩/效果基础参数、关键帧真实数据模型），🔴 13→11（参数/关键帧出占位），⚪ 17→15（WebM/GPU 出未覆盖）。AI 字幕、项目管理页无后端，保持 ⚪ 并写入台账；曲线编辑器、GPU 效果、框选橡皮筋归长尾。
@@ -155,6 +155,7 @@
 - **P2（长尾）— ✅ 2026-11-17 完成（可闭环项）**：关键帧曲线（真实动画轨道 + 播放头插值驱动画面，无曲线编辑器 UI）、遮罩/效果编辑（矩形裁剪 + brightness/contrast/saturate 纯像素运算，无 GPU 效果）、GPU 提示（WebGL2/WebGPU/硬件编码能力探测）、WebM 导出（核实早已实现，更正文档）。tsc 0 / vitest 357 / build 通过 + 浏览器截图验收（`oc-p2-keyframes.png`）。**Blocked（无后端，写入台账不伪造）**：项目管理页（无多项目持久化）、AI 字幕（无转写服务）。**归长尾**：可视化曲线编辑器、GPU 效果、框选橡皮筋、快捷键重绑定。
 - **P3（UI 长尾三件套，2026-11-20 起逐批推送）— 进行中**：用户选「框选橡皮筋 + 快捷键重绑定 + 可视化关键帧曲线编辑器」逐批提交。① 框选橡皮筋 ✅：`timeline.tsx` 空白拖框 + `selectFromBox` 归约，§3/§6 多选行由 🟡 升 ✅（统计 ✅28→30、🟡13→11），vitest 365、浏览器验收 `oc-p3-marquee.png`。② 快捷键重绑定 ✅：新增 `shortcut-bindings.ts` 作单一事实来源，统一 kebab 动作 id/camel 分发/对话框已实现集（消除原 9 项硬编码错位），`matchShortcut(event, bindings)` 读用户绑定、`ShortcutsDialog` 录制经回调刷新分发，冲突检测拒绝覆盖，未实现动作诚实 disabled；补经典版定义表缺失的 trim-in/trim-out；§1/§6 两行 🟡→✅（统计 ✅30→32、🟡11→9），vitest 373、浏览器验收 k→播放 / space 旧键失效 / Reset 恢复 / 冲突提示，`oc-p3-keybinding.png`。③ 可视化关键帧曲线编辑器 ✅：新增 `curve-editor-model.ts`（坐标换算/命中/值域/折线采样/单帧删除纯函数，20 项单测）+ `curve-editor.tsx`（SVG 网格+曲线+播放头线+菱形关键点，拖动改 time/value、双击加点、右键删点、缓动切换），属性面板加「Animation Curves」入口（有轨道即可用）；修正 §3 L67 过时 🔴 行为 ✅（菱形早已真实写轨）；统计 ✅32→34 / 🟡9→8 / 🔴11→10，vitest 393（31 文件）、浏览器验收拖动关键点改 time/value 生效，`oc-p3-curve-editor.png`。**P3 三件套全部完成**。
 - **P4（UI 闭环收尾，2026-11-20 续）— 进行中**：用户「UI 闭环，然后 W-14」。批 4 ✅：预览时间码可编辑（`parseFrameTimecode`/`formatFrameTimecode` + 9 项单测，输入 `00:00:01:15` 精确 seek，越界 clamp 到末帧）+ 右键菜单（Fit/Full screen/Save snapshot/Copy snapshot，`oc-p4-timecode-menu.png`）；§4 两行 🔴→✅、统计 ✅34→36 / 🔴10→8，vitest 397、build 通过、浏览器验收。批 5 ✅：遮罩可视化手柄（`resizeMask` 纯函数 + 预览 4 边拖拽，浏览器拖 left 写回 `mask.left=0.052`，`oc-p4-mask-handle.png`）+ 导出取消/重试（AbortController signal → 循环检测 → `isExportAborted` → idle + Retry，端到端受浏览器 WebCodecs 环境限制未实测，判断函数单测覆盖）；§4 遮罩手柄、§7 导出两行 🟡→✅、统计 ✅36→38 / 🟡8→6，vitest 402。批 6 ✅：书签（添加/点击 seek/右键删除 + autosave）+ 轨道静音/隐藏（点击生效 + autosave），均刷新恢复（`oc-p4-bookmarks.png`），但**不写回经典版 JSON**（core 无轨道/书签字段），按「不伪造」原则记为 🟡 非 ✅；§3 两行 🔴→🟡、统计 🔴8→6 / 🟡6→8，vitest 405。**阶段 A UI 闭环收尾完成**：✅38 / 🟡8 / 🔴6 / ⚪15，剩余 🔴6 中 4 项需后端数据源（Sounds/Stickers/Effects/Settings）、1 项 overlay/audio 轨编辑需扩 core、1 项预览选框手柄改 core 画面需扩 core；均写入台账不伪造。**阶段 B W-14 待 H01 spike 决策后启动**。
+- **2026-11-24 校准（第一档 A 写回闭环）**：`fad92d49 feat(web): 第一档A — 轨道静音/隐藏与书签写回经典版 JSON` 已补齐 P4 批 6 留下的 JSON 级缺口：`buildWriteView` 传 trackFlags/bookmarks → core `project_compat.rs` 按 id 写回 `muted`/`hidden`/`scene.bookmarks`（additive-only，原 JSON 无字段不新增），`project_write.rs` 往返测试覆盖。据此 §3「轨道头静音/隐藏」🟡→✅、「书签」描述更新为「JSON 写回已完成、拖动/备注仍缺」（保留 🟡）。重逐行核算 §1~§7 表格符号得 **✅40 / 🟡7 / 🔴5 / ⚪15**（此前统计 38/9/5/15 与表格不符，且 P4 后多处状态更新未回写统计）；统计表分布列同步按实测修正。历史快照（P0~P4）保留原值不篡改。
 
 ## 附录 A：经典版「新增文字」实证（为什么不是 core 的事）
 
