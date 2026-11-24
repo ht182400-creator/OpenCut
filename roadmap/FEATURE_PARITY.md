@@ -35,7 +35,7 @@
 | Tab / 功能 | 经典版 | 本版本 | 状态 | 判定依据 |
 | --- | --- | --- | --- | --- |
 | Media：导入视频/音频 | 真实 | 真实（JSON 项目 + 真实音视频解码） | ✅ | `editor.tsx` 导入 + `media.ts` |
-| Media：网格卡片/时长/名称/排序 | 真实 | 真实（网格/缩略图/名称，无排序） | 🟡 | `assets-panel.tsx`；排序无 |
+| Media：网格卡片/时长/名称/排序 | 真实 | 真实（网格/缩略图/名称 + 原序/名称/时长/类型四键排序） | ✅ | `asset-sort.ts` 纯函数 11 项单测 + `assets-panel.tsx` 排序控件；浏览器验收名称升/降序真实换序、Original 恢复导入序、排序后加入时间轴闭环（片段 2→3），`oc-asset-sort.png` |
 | Media：真实帧缩略图 | 真实 | 真实（批 7.4） | ✅ | `thumbnail.ts` + core `thumbnail_rgba` |
 | Media：卡片 + / 拖拽加入时间轴 | 真实 | 真实（点击 + 拖放均插入，自动找空位 + undo） | ✅ | P0：`element-model.ts` + `handleAddAsset` + 时间轴 `onDropAsset`，浏览器验收 |
 | 视频卡片预览播放 | 真实 | 无 | ⚪ | — |
@@ -138,12 +138,12 @@
 
 | 状态 | 数量 | 分布（§） | 主要条目 |
 | --- | --- | --- | --- |
-| ✅ 已实现 | 41 | §1:5 §2:4 §3:13 §4:6 §5:5 §6:4 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）** |
-| 🟡 部分闭环 | 6 | §2:1 §3:1 §4:1 §6:3 | 网格卡片/无排序、三轨结构固定、遮罩手柄（参数化无拖拽）、Masks/Effects 基础参数（无 GPU 效果）、撤销重做、自动保存（localStorage）、拖拽排序、选框/手柄写回 transform（参考线仍视觉、旋转手柄被顶栏遮挡未端到端） |
+| ✅ 已实现 | 42 | §1:5 §2:5 §3:13 §4:6 §5:5 §6:4 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、**素材排序**、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）** |
+| 🟡 部分闭环 | 5 | §3:1 §4:1 §6:3 | 三轨结构固定、遮罩手柄（参数化无拖拽）、Masks/Effects 基础参数（无 GPU 效果）、撤销重做、自动保存（localStorage）、拖拽排序、选框/手柄写回 transform（参考线仍视觉、旋转手柄被顶栏遮挡未端到端） |
 | 🔴 占位 | 5 | §2:4 §3:1 | Sounds/Stickers/Effects/Settings 数据源、overlay/audio 编辑、时间码编辑、右键菜单 |
 | ⚪ 未覆盖 | 15 | §1:5 §2:5 §3:2 §4:1 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、双击文字就地编辑、素材右键 Export clips、剪贴板直接贴媒体 |
 
-> 合计 67 项（41+6+5+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后再核算为 41/6/5/15）。
+> 合计 67 项（42+5+5+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后核算为 41/6/5/15，UI 长尾 U-01 素材排序闭环后再核算为 42/5/5/15）。
 > **2026-11-17 P0 完成后变化**：✅ 20→23（Text/Media 加轨、落轨拖放），🟡 7→9（参数编辑、自动保存由 🔴 升级），🔴 19→14。详见 `UI_REPLICA_PLAN.md` §8「P0 闭环实现」。
 > **2026-11-17 P1 完成后变化**：✅ 23→25（Duplicate、复制/粘贴），🟡 9→11（多选、快捷键分发升级），🔴 14→13（Duplicate 出占位），⚪ 20→17（多选/复制粘贴出未覆盖）。数据源接入（Sounds/Stickers/Effects）依赖服务端素材库，本仓库无此后端且超出 UI 闭环范围，记 🔴 并写入 `UI_REPLICA_PLAN.md` §7 差异台账；不伪造数据。
 > **2026-11-17 P2 完成后变化**：新增 GPU 项（总 66→67）；✅ 25→28（Transform/Text 参数修复 key 映射升 ✅、GPU 提示、WebM 文档更正），🟡 11→13（遮罩/效果基础参数、关键帧真实数据模型），🔴 13→11（参数/关键帧出占位），⚪ 17→15（WebM/GPU 出未覆盖）。AI 字幕、项目管理页无后端，保持 ⚪ 并写入台账；曲线编辑器、GPU 效果、框选橡皮筋归长尾。
@@ -157,6 +157,7 @@
 - **P4（UI 闭环收尾，2026-11-20 续）— 进行中**：用户「UI 闭环，然后 W-14」。批 4 ✅：预览时间码可编辑（`parseFrameTimecode`/`formatFrameTimecode` + 9 项单测，输入 `00:00:01:15` 精确 seek，越界 clamp 到末帧）+ 右键菜单（Fit/Full screen/Save snapshot/Copy snapshot，`oc-p4-timecode-menu.png`）；§4 两行 🔴→✅、统计 ✅34→36 / 🔴10→8，vitest 397、build 通过、浏览器验收。批 5 ✅：遮罩可视化手柄（`resizeMask` 纯函数 + 预览 4 边拖拽，浏览器拖 left 写回 `mask.left=0.052`，`oc-p4-mask-handle.png`）+ 导出取消/重试（AbortController signal → 循环检测 → `isExportAborted` → idle + Retry，端到端受浏览器 WebCodecs 环境限制未实测，判断函数单测覆盖）；§4 遮罩手柄、§7 导出两行 🟡→✅、统计 ✅36→38 / 🟡8→6，vitest 402。批 6 ✅：书签（添加/点击 seek/右键删除 + autosave）+ 轨道静音/隐藏（点击生效 + autosave），均刷新恢复（`oc-p4-bookmarks.png`），但**不写回经典版 JSON**（core 无轨道/书签字段），按「不伪造」原则记为 🟡 非 ✅；§3 两行 🔴→🟡、统计 🔴8→6 / 🟡6→8，vitest 405。**阶段 A UI 闭环收尾完成**：✅38 / 🟡8 / 🔴6 / ⚪15，剩余 🔴6 中 4 项需后端数据源（Sounds/Stickers/Effects/Settings）、1 项 overlay/audio 轨编辑需扩 core、1 项预览选框手柄改 core 画面需扩 core；均写入台账不伪造。**阶段 B W-14 待 H01 spike 决策后启动**。
 - **2026-11-24 校准（第一档 A 写回闭环）**：`fad92d49 feat(web): 第一档A — 轨道静音/隐藏与书签写回经典版 JSON` 已补齐 P4 批 6 留下的 JSON 级缺口：`buildWriteView` 传 trackFlags/bookmarks → core `project_compat.rs` 按 id 写回 `muted`/`hidden`/`scene.bookmarks`（additive-only，原 JSON 无字段不新增），`project_write.rs` 往返测试覆盖。据此 §3「轨道头静音/隐藏」🟡→✅、「书签」描述更新为「JSON 写回已完成、拖动/备注仍缺」（保留 🟡）。重逐行核算 §1~§7 表格符号得 **✅40 / 🟡7 / 🔴5 / ⚪15**（此前统计 38/9/5/15 与表格不符，且 P4 后多处状态更新未回写统计）；统计表分布列同步按实测修正。历史快照（P0~P4）保留原值不篡改。
 - **2026-11-24 UI 长尾：书签拖动 / 备注（用户指定）**：新 `bookmark-model.ts` 纯函数（`draggedBookmarkTicks` 拖动位移→ticks 按帧网格吸附、`moveBookmark`、`setBookmarkNote` 空备注删 note 字段），10 项单测覆盖正常/边界/异常；`timeline.tsx` 书签行改 pointer capture + 4px 阈值拖动（Chrome 官方指南）、双击 inline input 设备注（回车/blur 提交、Esc 取消），`touch-action:none`/`user-select:none`；`BookmarkState`/`WriteBookmark`/`timeline props`/`autosave` 全链路加可选 `note`（additive-only，旧数据兼容，非法 note 整条丢弃）。验收：tsc 0、vitest 41 文件 497/497（新增 13）、build 成功、浏览器拖动 left 0→98.58px 且 autosave `ticks=128000/note=开场提示`、`oc-bookmark-drag-note.png`；§3 书签行 🟡→✅，统计 41/6/5/15。**边界**：经典版 note 字段按 changelog 0.1.0 语义以 `{id,ticks,name,note?}` 透传，颜色标签/可选时长未做（不伪造）。
+- **2026-11-24 UI 长尾 U-01：Media 素材排序（按 `UI_TAIL_SCHEDULE.md` A 档启动）**：新 `asset-sort.ts` 纯函数（`original`/`name`/`duration`/`type` 四键 × 升降序；原序保持导入顺序、无时长项恒末尾不随方向翻转、名称显式小写比较不依赖运行时 locale、同键值索引兜底稳定），11 项单测覆盖正常/边界/异常；`assets-panel.tsx` MediaView 加本地 `useState<AssetSort>` + `useMemo` 排序后渲染，排序控件带 `data-testid`。不扩 core、不改 `props.assets`（排序只影响展示）。验收：tsc 0、vitest 42 文件 508/508（新增 11）、build 成功；ego(lite) 三份不同文件名真实 MP4 上传后，名称升序 `[a-first,m-mid,z-last]`、降序 `[z-last,m-mid,a-first]`、Original 恢复导入序，排序后点加号加入时间轴片段 2→3，`oc-asset-sort.png`。§2 排序列 🟡→✅，统计 42/5/5/15。
 
 ## 附录 A：经典版「新增文字」实证（为什么不是 core 的事）
 

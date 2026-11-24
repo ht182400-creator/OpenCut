@@ -40,6 +40,13 @@ import {
   ASSETS_TAB_SIZE_PX,
   TIMELINE_DRAG_MIME,
 } from './assets-tokens';
+import {
+  DEFAULT_ASSET_SORT,
+  sortAssets,
+  toggleSort,
+  type AssetSort,
+  type AssetSortKey,
+} from '../asset-sort';
 
 /** 素材条目（对应经典版 MediaAssetData 的最小可视子集）。 */
 export interface AssetItem {
@@ -178,6 +185,31 @@ function ComingSoon({ label }: { label: string }) {
   )
 }
 
+/** U-01 素材排序控件文案与符号（集中放置，避免业务 JSX 里散落裸字符串）。 */
+const ASSET_SORT_LABEL = 'Sort';
+const ASSET_SORT_TITLE_PREFIX = 'Sort by ';
+const ASSET_SORT_ARROW_ASC = ' ↑';
+const ASSET_SORT_ARROW_DESC = ' ↓';
+
+/** U-01：素材排序按钮（键 + 英文标签，与经典版 UI 文案一致）。 */
+const ASSET_SORT_CONTROLS: ReadonlyArray<{ key: AssetSortKey; label: string }> = [
+  { key: 'original', label: 'Original' },
+  { key: 'name', label: 'Name' },
+  { key: 'duration', label: 'Duration' },
+  { key: 'type', label: 'Type' },
+];
+
+/**
+ * 排序按钮上的方向箭头：原序无方向不显示，仅激活键按当前方向显示。
+ * @param sort 当前排序配置
+ * @param key 按钮对应的排序键
+ * @returns {string} 带前导空格的箭头符号，或空串
+ */
+function sortArrow(sort: AssetSort, key: AssetSortKey): string {
+  if (sort.key !== key || key === 'original') return '';
+  return sort.direction === 'asc' ? ASSET_SORT_ARROW_ASC : ASSET_SORT_ARROW_DESC;
+}
+
 /** 素材卡：16:9 缩略图 + 时长徽标 + 名称 + hover 加号 + 拖入时间轴。 */
 function AssetCard({ item, onAdd }: { item: AssetItem; onAdd?: (payload: AssetDragPayload) => void }) {
   const [dragging, setDragging] = useState(false)
@@ -255,8 +287,11 @@ function AssetCard({ item, onAdd }: { item: AssetItem; onAdd?: (payload: AssetDr
   )
 }
 
-/** Media 视图：Import 按钮 + 网格/列表切换占位 + 素材网格 + 拖入态。 */
+/** Media 视图：Import 按钮 + U-01 排序控件 + 素材网格 + 拖入态。 */
 function MediaView({ props }: { props: AssetsPanelProps }) {
+  const [sort, setSort] = useState<AssetSort>(DEFAULT_ASSET_SORT);
+  // 排序只作用于展示顺序，不改 props.assets；切走 tab 后 state 重置为原序（U-01 本地 state 口径）。
+  const sortedAssets = useMemo(() => sortAssets(props.assets, sort), [props.assets, sort]);
   return (
     <PanelView title="Assets" actions={
       <button type="button" className="classic-button" title="Import"
@@ -282,12 +317,32 @@ function MediaView({ props }: { props: AssetsPanelProps }) {
         <button type="button" className="classic-button" style={{ padding: '2px 8px', fontSize: 'var(--text-xs)' }}
           onClick={props.onDemo}>Demo</button>
       </div>
-      {props.assets.length > 0 ? (
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--muted-foreground)' }}>{ASSET_SORT_LABEL}</span>
+        {ASSET_SORT_CONTROLS.map(({ key, label }) => {
+          // 点击已激活键翻转方向，点击其他键切到该键升序；Original 恢复导入顺序。
+          const active = sort.key === key;
+          return (
+            <button key={key} type="button" className="classic-button"
+              data-testid={`asset-sort-${key}`} data-active={active} aria-pressed={active}
+              title={`${ASSET_SORT_TITLE_PREFIX}${label}`}
+              onClick={() => setSort(current => toggleSort(current, key))}
+              style={{
+                padding: '2px 8px', fontSize: 'var(--text-xs)',
+                background: active ? 'var(--accent)' : undefined,
+                color: active ? 'var(--accent-foreground)' : undefined,
+              }}>
+              {label}{sortArrow(sort, key)}
+            </button>
+          );
+        })}
+      </div>
+      {sortedAssets.length > 0 ? (
         <div className="classic-assets-grid" style={{
           display: 'grid', gap: ASSETS_GRID_GAP_PX,
           gridTemplateColumns: `repeat(auto-fill, ${ASSETS_GRID_COLUMN_WIDTH_PX}px)`,
         }}>
-          {props.assets.map((item) => (
+          {sortedAssets.map((item) => (
             <AssetCard key={item.id} item={item} onAdd={props.onAddToTimeline} />
           ))}
         </div>
