@@ -234,7 +234,7 @@ export function ExportSettingsPanel(props: {
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           容器
-          <select aria-label="导出容器" value={settings.container}
+          <select aria-label="导出容器" data-testid="export-container-select" value={settings.container}
             style={{ ...INPUT_STYLE, width: 'auto' }}
             onChange={(event) => props.onChange({
               ...settings, container: event.target.value as ExportContainerChoice,
@@ -260,7 +260,7 @@ export function ExportSettingsPanel(props: {
         </label>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           分辨率
-          <select aria-label="导出分辨率" value={`${props.resolution.width}x${props.resolution.height}`}
+          <select aria-label="导出分辨率" data-testid="export-resolution-select" value={`${props.resolution.width}x${props.resolution.height}`}
             style={{ ...INPUT_STYLE, width: 'auto' }}
             disabled={!props.onResolutionChange}
             onChange={(event) => {

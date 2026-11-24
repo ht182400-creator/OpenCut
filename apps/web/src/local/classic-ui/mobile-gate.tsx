@@ -83,10 +83,8 @@ export function MobileGate(props: { children: ReactNode }) {
           <button type="button" style={{ ...GATE_STYLE.button, ...GATE_STYLE.primary }} onClick={handleContinue}>
             {MOBILE_GATE_COPY.continue}
           </button>
-          <a href="/roadmap" style={{ ...GATE_STYLE.button, ...GATE_STYLE.ghost, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <span>{MOBILE_GATE_COPY.roadmap}</span>
-            <span aria-hidden="true">›</span>
-          </a>
+          {/* 经典版此处为 Roadmap 外链；本工程无对应 web 路由（/roadmap 返回 404），
+              为避免死链不再渲染该链接。文案常量保留以维持经典版原文锁定。 */}
         </div>
       </div>
     </div>
