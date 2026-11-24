@@ -11,6 +11,8 @@ import {
   pushSnapshot,
   readPersistedHistory,
   restoreProjectClips,
+  restoreProjectSnapshot,
+  type HistoryParts,
   type HistoryState,
 } from './clip-history';
 import type { TimelineClip } from './timeline';
@@ -175,5 +177,158 @@ describe('跨会话持久化', () => {
       removeItem: () => {},
     };
     expect(persistHistory(createHistory(clips()), 'a', broken)).toBe(false);
+  });
+});
+
+/** U-02：编辑器快照（书签/轨道标志/选中态/ripple）全覆盖回归。 */
+describe('编辑器快照全覆盖', () => {
+  /** 一份完整的编辑器侧状态样本；每次调用返回新对象，避免用例间共享可变引用。 */
+  const sampleParts = (): HistoryParts => ({
+    bookmarks: [{ id: 'bm-1', ticks: 24000, name: '开场', note: '提示' }],
+    trackFlags: { muted: ['audio'], hidden: ['overlay'] },
+    selectedId: 'clip-0',
+    adjustments: [{ trackId: 'main', afterTime: 120000, shiftAmount: 4000 }],
+  });
+
+  it('初始快照携带编辑器侧状态且与外部对象隔离', () => {
+    const external = sampleParts();
+    const state = createHistory(clips(), '导入项目', external);
+    expect(state.entries[0].bookmarks).toEqual(external.bookmarks);
+    expect(state.entries[0].trackFlags).toEqual({ muted: ['audio'], hidden: ['overlay'] });
+    expect(state.entries[0].selectedId).toBe('clip-0');
+    expect(state.entries[0].adjustments).toEqual(external.adjustments);
+    external.bookmarks[0].name = '外部改动';
+    external.trackFlags.muted.push('main');
+    expect(state.entries[0].bookmarks[0].name).toBe('开场');
+    expect(state.entries[0].trackFlags.muted).toEqual(['audio']);
+  });
+
+  it('片段动作未传 parts 时继承上一条快照的编辑器状态', () => {
+    const state = pushSnapshot(createHistory(clips(), '初始', sampleParts()), clips(1), '删除片段');
+    expect(state.entries[1].bookmarks).toEqual(sampleParts().bookmarks);
+    expect(state.entries[1].trackFlags).toEqual(sampleParts().trackFlags);
+    expect(state.entries[1].selectedId).toBe('clip-0');
+    expect(state.entries[1].adjustments).toEqual(sampleParts().adjustments);
+  });
+
+  it('显式 parts 只覆盖指定字段，其余沿用上一条', () => {
+    const nextBookmarks = [{ id: 'bm-2', ticks: 48000, name: '新书签' }];
+    const state = pushSnapshot(
+      createHistory(clips(), '初始', sampleParts()), clips(1), '编辑书签', { bookmarks: nextBookmarks },
+    );
+    expect(state.entries[1].bookmarks).toEqual(nextBookmarks);
+    expect(state.entries[1].trackFlags).toEqual(sampleParts().trackFlags);
+    expect(state.entries[1].selectedId).toBe('clip-0');
+  });
+
+  it('删除后撤销/重做恢复完整编辑器状态', () => {
+    let state = createHistory(clips(), '初始', sampleParts());
+    state = pushSnapshot(state, clips(1), '删除片段', {
+      bookmarks: [], trackFlags: { muted: [], hidden: [] }, selectedId: null, adjustments: [],
+    });
+    const undone = moveHistory(state, -1);
+    expect(undone.clips).toHaveLength(2);
+    expect(undone.snapshot?.clips).toHaveLength(2);
+    expect(undone.snapshot?.bookmarks).toEqual(sampleParts().bookmarks);
+    expect(undone.snapshot?.trackFlags).toEqual(sampleParts().trackFlags);
+    expect(undone.snapshot?.selectedId).toBe('clip-0');
+    expect(undone.snapshot?.adjustments).toEqual(sampleParts().adjustments);
+
+    const redone = moveHistory(undone.state, 1);
+    expect(redone.snapshot?.clips).toHaveLength(1);
+    expect(redone.snapshot?.bookmarks).toEqual([]);
+    expect(redone.snapshot?.trackFlags).toEqual({ muted: [], hidden: [] });
+    expect(redone.snapshot?.selectedId).toBeNull();
+    expect(redone.snapshot?.adjustments).toEqual([]);
+  });
+
+  it('恢复的编辑器状态是副本，修改不污染历史', () => {
+    const state = createHistory(clips(), '初始', sampleParts());
+    const restored = moveHistory(pushSnapshot(state, clips(1), '删除'), -1).snapshot;
+    if (restored) {
+      restored.bookmarks[0].name = '污染';
+      restored.trackFlags.muted.push('main');
+      restored.adjustments[0].shiftAmount = 999;
+    }
+    expect(state.entries[0].bookmarks[0].name).toBe('开场');
+    expect(state.entries[0].trackFlags.muted).toEqual(['audio']);
+    expect(state.entries[0].adjustments[0].shiftAmount).toBe(4000);
+  });
+
+  it('到头/到尾时快照为 null，不返回半个状态', () => {
+    const state = createHistory(clips(), '初始', sampleParts());
+    expect(moveHistory(state, -1).snapshot).toBeNull();
+    expect(moveHistory(state, 1).snapshot).toBeNull();
+  });
+
+  it('容量裁剪后最新快照仍保留编辑器侧状态', () => {
+    let state: HistoryState = createHistory(clips(), '初始', sampleParts());
+    for (let index = 0; index < MAX_HISTORY + 5; index += 1) {
+      state = pushSnapshot(state, clips(1), `step-${index}`);
+    }
+    expect(state.entries).toHaveLength(MAX_HISTORY);
+    expect(state.entries[state.index].bookmarks).toEqual(sampleParts().bookmarks);
+    expect(state.entries[state.index].selectedId).toBe('clip-0');
+  });
+});
+
+/** U-02：编辑器快照持久化与旧格式兼容回归。 */
+describe('编辑器快照持久化', () => {
+  /** 内存存储桩。 */
+  function memoryStorage() {
+    const map = new Map<string, string>();
+    return {
+      getItem: (key: string) => map.get(key) ?? null,
+      setItem: (key: string, value: string) => void map.set(key, value),
+      removeItem: (key: string) => void map.delete(key),
+    };
+  }
+
+  it('完整快照写入后按项目键读回', () => {
+    const storage = memoryStorage();
+    const state = pushSnapshot(
+      createHistory(clips(), '初始', { bookmarks: [{ id: 'bm-1', ticks: 1, name: '开场' }],
+        trackFlags: { muted: ['audio'], hidden: [] }, selectedId: 'clip-0',
+        adjustments: [{ trackId: 'main', afterTime: 1, shiftAmount: 2 }] }),
+      clips(1), '删除片段',
+    );
+    expect(persistHistory(state, 'project-a', storage)).toBe(true);
+    const restored = restoreProjectSnapshot(readPersistedHistory(storage), 'project-a');
+    expect(restored?.bookmarks).toEqual([{ id: 'bm-1', ticks: 1, name: '开场' }]);
+    expect(restored?.trackFlags.muted).toEqual(['audio']);
+    expect(restored?.selectedId).toBe('clip-0');
+    expect(restored?.adjustments).toEqual([{ trackId: 'main', afterTime: 1, shiftAmount: 2 }]);
+    expect(restoreProjectSnapshot(readPersistedHistory(storage), 'project-b')).toBeNull();
+  });
+
+  it('旧格式条目只有 clips 时补齐安全默认值', () => {
+    const storage = memoryStorage();
+    storage.setItem('opencut-clip-history-v1', JSON.stringify({
+      projectKey: 'legacy',
+      state: { entries: [{ id: 0, label: '旧格式', at: 0, clips: clips(2) }], index: 0 },
+    }));
+    const loaded = readPersistedHistory(storage);
+    expect(loaded?.state.entries[0].clips).toHaveLength(2);
+    expect(loaded?.state.entries[0].bookmarks).toEqual([]);
+    expect(loaded?.state.entries[0].trackFlags).toEqual({ muted: [], hidden: [] });
+    expect(loaded?.state.entries[0].selectedId).toBeNull();
+    expect(loaded?.state.entries[0].adjustments).toEqual([]);
+  });
+
+  it('编辑器侧字段损坏时逐项归一化，不影响 clips 恢复', () => {
+    const storage = memoryStorage();
+    storage.setItem('opencut-clip-history-v1', JSON.stringify({
+      projectKey: 'bad-parts',
+      state: { entries: [{
+        id: 0, label: 'x', at: 0, clips: clips(1),
+        bookmarks: '非数组', trackFlags: { muted: '非数组' }, selectedId: 42, adjustments: {},
+      }], index: 0 },
+    }));
+    const loaded = readPersistedHistory(storage);
+    expect(loaded?.state.entries[0].clips).toHaveLength(1);
+    expect(loaded?.state.entries[0].bookmarks).toEqual([]);
+    expect(loaded?.state.entries[0].trackFlags).toEqual({ muted: [], hidden: [] });
+    expect(loaded?.state.entries[0].selectedId).toBeNull();
+    expect(loaded?.state.entries[0].adjustments).toEqual([]);
   });
 });

@@ -11,7 +11,7 @@ import {
   thumbnailCache,
 } from './thumbnail'
 import { isVerificationFrameMode, resolvePreviewPixels } from './frame-source'
-import { useClipHistory } from './clip-history'
+import { useClipHistory, EMPTY_HISTORY_PARTS, type HistoryParts } from './clip-history'
 import { createEditorAdapter, formatCoreError } from './editor-adapter'
 import { createEditorActions } from './editor-actions'
 import { useSelection } from './use-selection'
@@ -185,7 +185,9 @@ export function Editor() {
     elements, primaryId: selectedId,
     setPrimaryId: setSelectedId,
     setElements,
-    recordHistory: (clips, label) => clipHistory.record(clips, label),
+    recordHistory: (clips, label, selectedId) => clipHistory.record(
+      clips, label, selectedId === undefined ? {} : { selectedId },
+    ),
     recomputeFrameCount: (clips) => {
       if (session) setFrameCount(plannedFrameCount(clips, session.adapter, session.profile))
     },
@@ -267,6 +269,9 @@ export function Editor() {
   const [trackFlags, setTrackFlags] = useState<{ muted: string[]; hidden: string[] }>({ muted: [], hidden: [] })
   /** P4 批 6 + UI 长尾：书签（autosave 持久化，note 可选备注）。 */
   const [bookmarks, setBookmarks] = useState<Array<{ id: string; ticks: number; name: string; note?: string }>>([])
+  /** U-02：历史快照的编辑器侧状态引用，供 record 读取，避免改动所有调用方签名。 */
+  const historyPartsRef = useRef<HistoryParts>(EMPTY_HISTORY_PARTS)
+  historyPartsRef.current = { bookmarks, trackFlags, selectedId, adjustments }
   const [sourceName, setSourceName] = useState('内置示例项目')
   const [exportSettings, setExportSettings] = useState<ExportSettings>(DEFAULT_EXPORT_SETTINGS)
   /** 批 7.2：当前帧分辨率，贯穿解码/合成/预览/导出；默认 320×180 保持回归。 */
@@ -277,13 +282,16 @@ export function Editor() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   /** P2：GPU/编解码能力报告（只读探测，供诊断面板提示）。 */
   const [gpuCapability, setGpuCapability] = useState<GpuCapabilityReport | null>(null)
-  /** 撤销/重做恢复的片段重新应用帧计划；历史由 M6 快照驱动。 */
-  const clipHistory = useClipHistory((clips) => {
-    setElements(clips as CoreElement[])
-    setSelectedId(null)
+  /** U-02：撤销/重做恢复完整编辑器快照（片段 + 书签 + 轨道标志 + 选中态 + ripple）。 */
+  const clipHistory = useClipHistory((snapshot) => {
+    setElements(snapshot.clips as CoreElement[])
+    setBookmarks(snapshot.bookmarks)
+    setTrackFlags(snapshot.trackFlags)
+    setSelectedId(snapshot.selectedId)
+    setAdjustments(snapshot.adjustments)
     setPlaying(false)
-    if (session) setFrameCount(plannedFrameCount(clips, session.adapter, session.profile))
-  })
+    if (session) setFrameCount(plannedFrameCount(snapshot.clips, session.adapter, session.profile))
+  }, () => historyPartsRef.current)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const projectFileRef = useRef<HTMLInputElement>(null)
   const videoFileRef = useRef<HTMLInputElement>(null)
@@ -327,7 +335,8 @@ export function Editor() {
       const profile = {
         ...BASE_PROFILE, width: resolution.width, height: resolution.height, frameRate: project.fps,
       }
-      const historyClips = clipHistory.reset(mainElements, '导入项目', name) ?? mainElements
+      const historySnapshot = clipHistory.reset(mainElements, '导入项目', name)
+      const historyClips = historySnapshot?.clips ?? mainElements
       const plan = adapter.evaluate<FramePlanView>({
         kind: 'buildFramePlan', durationTicks: timelineDuration(historyClips), profile,
       })
@@ -350,16 +359,16 @@ export function Editor() {
       setMediaStatus(saved
         ? `已恢复自动保存的编辑现场（${saved.state.elements.length} 个片段）`
         : restored === mainElements ? '未加载素材' : '已恢复上次编辑会话（可撤销）')
-      setAdjustments(saved?.state.adjustments ?? [])
-      setSelectedId(saved?.state.selectedId ?? null)
+      setAdjustments(saved?.state.adjustments ?? historySnapshot?.adjustments ?? [])
+      setSelectedId(saved?.state.selectedId ?? historySnapshot?.selectedId ?? null)
       selection.resetSelection()
       setFrameIndex(saved?.state.frameIndex ?? 0)
       setFrameCount(Math.max(restoredPlan.frameCount, 1))
       setSourceName(name)
       setResolution(saved?.state.resolution ?? resolution)
-      // 第一档：autosave 优先；无 autosave 时从项目 JSON 的 muted/hidden/bookmarks 初始化。
-      setTrackFlags(saved?.state.trackFlags ?? trackFlagsFromProject(project))
-      setBookmarks(saved?.state.bookmarks ?? bookmarksFromProject(project))
+      // 优先级：autosave > 历史快照 > 项目 JSON 的 muted/hidden/bookmarks。
+      setTrackFlags(saved?.state.trackFlags ?? historySnapshot?.trackFlags ?? trackFlagsFromProject(project))
+      setBookmarks(saved?.state.bookmarks ?? historySnapshot?.bookmarks ?? bookmarksFromProject(project))
     } catch (error) {
       setErrorText(formatCoreError(error))
       setSession(null)
@@ -431,7 +440,7 @@ export function Editor() {
         .map((item) => ({ ...item, trimStart: trimById.get(item.id) ?? 0 }))
       setAdjustments(ripple.adjustments)
       setElements(next)
-      clipHistory.record(next, '删除片段')
+      clipHistory.record(next, '删除片段', { selectedId: null })
       setSelectedId(null)
       setFrameCount(plannedFrameCount(next, session.adapter, session.profile))
       setFrameIndex(0)
@@ -462,7 +471,7 @@ export function Editor() {
       return
     }
     setElements(next)
-    clipHistory.record(next, label)
+    clipHistory.record(next, label, { selectedId: null })
     setSelectedId(null)
     setPlaying(false)
     setFrameCount(plannedFrameCount(next, session.adapter, session.profile))
@@ -708,7 +717,9 @@ export function Editor() {
         case 'toggleBookmark': {
           const ticks = frameIndex * (session?.ticksPerFrame ?? 0)
           const id = `bm-shortcut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-          setBookmarks((current) => toggleBookmarkAt(current, ticks, id, `书签 ${current.length + 1}`))
+          const next = toggleBookmarkAt(bookmarks, ticks, id, `书签 ${bookmarks.length + 1}`)
+          setBookmarks(next)
+          clipHistory.record(elements, '切换书签', { bookmarks: next })
           break
         }
       }
@@ -788,7 +799,9 @@ export function Editor() {
     setElements, setSelectedId, setAdjustments, setFrameIndex, setPlaying,
     setSourceName, setFrameCount,
     frameSource, readFile, refreshCacheInfo,
-    recordHistory: (clips, label) => clipHistory.record(clips, label),
+    recordHistory: (clips, label, selectedId) => clipHistory.record(
+      clips, label, selectedId === undefined ? {} : { selectedId },
+    ),
     getExportSignal: () => exportAbortRef.current?.signal,
     onExportSettled: () => { exportAbortRef.current = null },
   })
@@ -887,7 +900,7 @@ export function Editor() {
       const placed = { ...element, startTime: start }
       const next = insertElement(elements, placed)
       setElements(next)
-      clipHistory.record(next, `新增${payload.kind === 'text' ? '文字' : payload.kind === 'graphic' ? '图形' : '媒体'}片段`)
+      clipHistory.record(next, `新增${payload.kind === 'text' ? '文字' : payload.kind === 'graphic' ? '图形' : '媒体'}片段`, { selectedId: placed.id })
       setFrameCount(plannedFrameCount(next, session.adapter, session.profile))
       setSelectedId(placed.id)
       setErrorText(null)
@@ -1096,14 +1109,20 @@ export function Editor() {
             videoThumbnails={videoThumbnails}
             mutedTrackIds={trackFlags.muted}
             hiddenTrackIds={trackFlags.hidden}
-            onToggleTrackFlag={(trackId, flag) => setTrackFlags((previous) => {
-              const next = new Set(previous[flag])
-              if (next.has(trackId)) next.delete(trackId)
-              else next.add(trackId)
-              return { ...previous, [flag]: [...next] }
-            })}
+            onToggleTrackFlag={(trackId, flag) => {
+              const nextSet = new Set(trackFlags[flag])
+              if (nextSet.has(trackId)) nextSet.delete(trackId)
+              else nextSet.add(trackId)
+              const nextFlags = { ...trackFlags, [flag]: [...nextSet] }
+              setTrackFlags(nextFlags)
+              clipHistory.record(elements, '切换轨道标志', { trackFlags: nextFlags })
+            }}
             bookmarks={bookmarks}
-            onBookmarksChange={setBookmarks}
+            onBookmarksChange={(next, commit = true) => {
+              setBookmarks(next)
+              // 拖动中间态不记历史，避免 pointermove 高频写入；由 timeline 结束时提交。
+              if (commit) clipHistory.record(elements, '编辑书签', { bookmarks: next })
+            }}
             snapping={snapping}
             onSnappingChange={setSnapping}
             selectedId={selectedId}

@@ -28,7 +28,8 @@ export interface UseSelectionDeps {
   primaryId: string | null
   setPrimaryId: (id: string | null) => void
   setElements: (next: CoreElement[]) => void
-  recordHistory: (clips: CoreElement[], label: string) => void
+  /** 记录历史；第三参数是动作后的选中 id，缺省表示沿用当前现场。 */
+  recordHistory: (clips: CoreElement[], label: string, selectedId?: string | null) => void
   recomputeFrameCount: (clips: CoreElement[]) => void
   formatError: (error: unknown) => string
   setErrorText: (text: string | null) => void
@@ -105,9 +106,9 @@ export function useSelection(deps: UseSelectionDeps): SelectionApi {
       const next = pasteElements(deps.elements, clipboardRef.current, deps.playheadTicks())
       if (next.length === deps.elements.length) return
       deps.setElements(next)
-      deps.recordHistory(next, '粘贴片段')
-      deps.recomputeFrameCount(next)
       const added = next.filter((item) => !deps.elements.some((old) => old.id === item.id)).map((item) => item.id)
+      deps.recordHistory(next, '粘贴片段', added[0] ?? null)
+      deps.recomputeFrameCount(next)
       applySelection({ selectedIds: added, anchorId: added[0] ?? null, primaryId: added[0] ?? null })
       deps.setMediaStatus(`已粘贴 ${added.length} 个片段`)
     } catch (error) {
@@ -123,7 +124,7 @@ export function useSelection(deps: UseSelectionDeps): SelectionApi {
       const { elements: next, newIds } = duplicateElements(deps.elements, targets)
       if (newIds.length === 0) return
       deps.setElements(next)
-      deps.recordHistory(next, '复制片段')
+      deps.recordHistory(next, '复制片段', newIds[0])
       deps.recomputeFrameCount(next)
       applySelection({ selectedIds: newIds, anchorId: newIds[0], primaryId: newIds[0] })
       deps.setMediaStatus(`已复制 ${newIds.length} 个片段`)

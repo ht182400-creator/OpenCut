@@ -79,7 +79,8 @@ export interface EditorActionsDeps {
   frameSource: (index: number) => Uint8Array
   readFile: (file: File | undefined) => Promise<void>
   refreshCacheInfo: () => Promise<void>
-  recordHistory: (clips: CoreElement[], label: string) => void
+  /** 记录历史；第三参数是动作后的选中 id（导入/加载快照后置空）。 */
+  recordHistory: (clips: CoreElement[], label: string, selectedId?: string | null) => void
   /** P4 批 5：取当前取消信号（getter 避免闭包捕获旧 controller），传给导出循环。 */
   getExportSignal?: () => AbortSignal | undefined
   /** P4 批 5：导出结束（含取消）回调，供调用方清理 controller。 */
@@ -231,7 +232,7 @@ export function createEditorActions(deps: EditorActionsDeps): EditorActions {
       setFrameIndex(0)
       setPlaying(false)
       setSourceName(file.name)
-      recordHistory(clips, '导入 OTIO')
+      recordHistory(clips, '导入 OTIO', null)
       setFrameCount(plannedFrameCount(clips, session.adapter, session.profile))
     } catch (error) {
       setErrorText(formatCoreError(error))
@@ -296,7 +297,7 @@ export function createEditorActions(deps: EditorActionsDeps): EditorActions {
     }
     const restored: CoreElement[] = parsed.snapshot.elements.map((item) => ({ ...item }))
     setElements(restored)
-    recordHistory(restored, '加载项目快照')
+    recordHistory(restored, '加载项目快照', null)
     setSelectedId(null)
     setAdjustments([])
     setPlaying(false)

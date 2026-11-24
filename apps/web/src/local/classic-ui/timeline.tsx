@@ -217,8 +217,14 @@ export function ClassicTimeline(props: {
   onToggleTrackFlag?: (trackId: string, flag: 'muted' | 'hidden') => void
   /** 外部持久化的书签（note 为可选备注）。 */
   bookmarks?: ReadonlyArray<{ id: string; ticks: number; name: string; note?: string }>
-  /** 书签增删改回调。 */
-  onBookmarksChange?: (bookmarks: Array<{ id: string; ticks: number; name: string; note?: string }>) => void
+  /**
+   * 书签增删改回调。commit=false 表示拖动中间态（只更新现场、不记历史）；
+   * 缺省或 true 表示离散动作或拖动结束，调用方应记录一条历史。
+   */
+  onBookmarksChange?: (
+    bookmarks: Array<{ id: string; ticks: number; name: string; note?: string }>,
+    commit?: boolean,
+  ) => void
   /** 第二档项3：外部受控吸附开关（缺省时退化为内部 state，保持向后兼容）。 */
   snapping?: boolean
   /** 第二档项3：吸附开关变更回调（工具栏磁铁 + 快捷键 n 共用）。 */
@@ -242,7 +248,11 @@ export function ClassicTimeline(props: {
 
   const containerRef = useRef<HTMLDivElement>(null)
   /** UI 长尾：书签拖动会话（按下基准；pointer capture 在元素自身）。 */
-  const bookmarkDragRef = useRef<{ id: string; startClientX: number; startTicks: number; moved: boolean } | null>(null)
+  const bookmarkDragRef = useRef<{
+    id: string; startClientX: number; startTicks: number; moved: boolean;
+    /** 拖动过程中的最新书签集合，结束时用于提交一条历史。 */
+    lastBookmarks?: Array<{ id: string; ticks: number; name: string; note?: string }>
+  } | null>(null)
 
   /**
    * 书签拖动起手：记录原始 ticks 与指针基准，接管 pointer 序列（避免移出元素丢事件）。
@@ -274,7 +284,10 @@ export function ClassicTimeline(props: {
     const nextTicks = draggedBookmarkTicks(
       session.startTicks, deltaPixels, safeZoom, props.ticksPerSecond, props.ticksPerFrame,
     )
-    props.onBookmarksChange(moveBookmark(props.bookmarks ?? [], session.id, nextTicks))
+    const next = moveBookmark(props.bookmarks ?? [], session.id, nextTicks)
+    session.lastBookmarks = next
+    // 拖动中间态只更新现场，不写历史；pointerup 时统一提交一条。
+    props.onBookmarksChange(next, false)
   }
 
   /**
@@ -291,7 +304,10 @@ export function ClassicTimeline(props: {
     } catch {
       // 释放失败无需处理：浏览器会在 pointerup 后自动释放。
     }
-    if (session && !session.moved) {
+    if (session?.moved) {
+      // 拖动结束后提交唯一一条历史，避免每个 pointermove 都产生快照。
+      if (session.lastBookmarks) props.onBookmarksChange?.(session.lastBookmarks, true)
+    } else if (session) {
       props.onSeek(Math.max(0, Math.round(bookmark.ticks / props.ticksPerFrame)))
     }
   }
