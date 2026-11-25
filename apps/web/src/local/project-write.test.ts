@@ -153,6 +153,26 @@ describe('buildWriteView 合并编辑', () => {
     const empty: ProjectView = { ...makeProject(), scenes: [] };
     expect(buildWriteView(empty, []).scenes).toEqual([]);
   });
+
+  it('U-06：新增轨追加到第一个场景，可选标志保真', () => {
+    const view = buildWriteView(
+      makeProject(), [], undefined, undefined, undefined,
+      [
+        { id: 'new-1', trackType: 'text' },
+        { id: 'new-2', trackType: 'audio', muted: true, hidden: false },
+      ],
+    );
+    const tracks = view.scenes[0].tracks;
+    expect(tracks).toHaveLength(3);
+    expect(tracks[1]).toMatchObject({ id: 'new-1', trackType: 'text', elements: [] });
+    expect(tracks[2]).toMatchObject({ id: 'new-2', trackType: 'audio', muted: true, hidden: false });
+    expect(tracks[0].id).toBe('main');
+  });
+
+  it('U-06：无新增轨时视图轨道数不变（默认 additive-only）', () => {
+    expect(buildWriteView(makeProject(), [], undefined, undefined, undefined, []).scenes[0].tracks)
+      .toHaveLength(1);
+  });
 });
 
 /** saveProjectJson 的写回结果与异常分支（Node 无 document，用假 adapter 驱动）。 */
@@ -173,5 +193,29 @@ describe('saveProjectJson 写回', () => {
     const result = saveProjectJson(adapter, '{}', makeProject(), 'out.json');
     expect(result.ok).toBe(false);
     expect(result.message).toContain('boom');
+  });
+
+  it('U-06：allowNewTracks 为真时透传给适配层', () => {
+    let received: boolean | undefined;
+    const adapter = {
+      writeClassicProject: (_original: string, _view: ProjectView, allow?: boolean) => {
+        received = allow;
+        return { ok: false, error: 'ENTITY_NOT_FOUND' };
+      },
+    } as unknown as EditorAdapter;
+    saveProjectJson(adapter, '{}', makeProject(), 'out.json', true);
+    expect(received).toBe(true);
+  });
+
+  it('U-06：默认不传 allowNewTracks（保持 additive-only）', () => {
+    let received: boolean | undefined;
+    const adapter = {
+      writeClassicProject: (_original: string, _view: ProjectView, allow?: boolean) => {
+        received = allow;
+        return { ok: false, error: 'ENTITY_NOT_FOUND' };
+      },
+    } as unknown as EditorAdapter;
+    saveProjectJson(adapter, '{}', makeProject(), 'out.json');
+    expect(received).toBe(false);
   });
 });

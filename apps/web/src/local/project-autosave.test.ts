@@ -9,6 +9,7 @@ import {
   AUTOSAVE_STORAGE_KEY,
   clearAutosave,
   defaultAutosaveStorage,
+  parseAutosaveEnvelope,
   persistAutosave,
   readAutosave,
   type AutosaveState,
@@ -63,6 +64,33 @@ describe('persistAutosave / readAutosave（往返）', () => {
     const restored = readAutosave(storage, 'proj-a')
     expect(restored?.state.trackFlags).toEqual({ muted: ['main'], hidden: ['audio'] })
     expect(restored?.state.bookmarks).toEqual([{ id: 'bm-1', ticks: 120000, name: '书签 1' }])
+  })
+
+  it('U-06：新增轨往返保留，非法类型/结构整体作废', () => {
+    const storage = memoryStorage()
+    const state: AutosaveState = {
+      ...makeState(),
+      extraTracks: [
+        { id: 'new-track-1', trackType: 'text' },
+        { id: 'new-track-2', trackType: 'audio', muted: true, hidden: false },
+      ],
+    }
+    expect(persistAutosave(state, 'proj-a', storage)).toBe(true)
+    const restored = readAutosave(storage, 'proj-a')
+    expect(restored?.state.extraTracks).toEqual(state.extraTracks)
+
+    const envelope = {
+      version: AUTOSAVE_SCHEMA_VERSION,
+      projectKey: 'proj-a',
+      savedAt: '2026-01-01T00:00:00.000Z',
+      state: { ...makeState(), extraTracks: [{ id: 'bad', trackType: 'unknown' }] },
+    }
+    expect(parseAutosaveEnvelope(JSON.stringify(envelope), 'proj-a')).toBeNull()
+    const badFlags = {
+      ...envelope,
+      state: { ...makeState(), extraTracks: [{ id: 'bad', trackType: 'video', muted: 'yes' }] },
+    }
+    expect(parseAutosaveEnvelope(JSON.stringify(badFlags), 'proj-a')).toBeNull()
   })
 
   it('UI 长尾：书签 note 往返保留，旧书签无 note 兼容', () => {

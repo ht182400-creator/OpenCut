@@ -6,7 +6,7 @@
 use ocx_domain::{
     ElementAnimations, ProjectView, format_linear_rgba, get_element_keyframes,
     get_keyframe_at_time, get_keyframe_by_id, has_keyframes_for_path, is_animation_path,
-    is_animation_storage_key, read_classic_project, write_classic_project,
+    is_animation_storage_key, read_classic_project, write_classic_project_with_options, WriteOptions,
 };
 use serde_json::{Value, json};
 use wasm_bindgen::JsValue;
@@ -91,7 +91,8 @@ pub fn read_classic_project_wasm(project_json: &str) -> Result<String, JsValue> 
 }
 
 /// W-05 第五批：把编辑后的归一化视图按 id 合并回原始项目 JSON。
-/// 请求 `{ "original": "<项目 JSON>", "view": ProjectView }`，
+/// U-06：请求新增可选 `allowNewTracks`（默认 false 保持 additive-only）。
+/// 请求 `{ "original": "<项目 JSON>", "view": ProjectView, "allowNewTracks"?: boolean }`，
 /// 返回 `{"ok":true,"project":"<JSON>"}` 或 `{"ok":false,"error":"CODE"}`。
 pub fn write_classic_project_wasm(request_json: &str) -> Result<String, JsValue> {
     let request: Value =
@@ -101,7 +102,11 @@ pub fn write_classic_project_wasm(request_json: &str) -> Result<String, JsValue>
         .ok_or_else(|| js_error("解析字段 original", "缺少字符串"))?;
     let view: ProjectView = serde_json::from_value(request["view"].clone())
         .map_err(|error| js_error("解析字段 view", error))?;
-    let value = match write_classic_project(original, &view) {
+    // U-06：开关缺省或类型不对时按 false 处理（宽容读取，错误码语义不变）。
+    let options = WriteOptions {
+        allow_new_tracks: request["allowNewTracks"].as_bool().unwrap_or(false),
+    };
+    let value = match write_classic_project_with_options(original, &view, options) {
         Ok(project) => json!({ "ok": true, "project": project }),
         Err(error) => json!({ "ok": false, "error": error.code() }),
     };

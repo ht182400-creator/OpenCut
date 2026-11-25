@@ -3,7 +3,10 @@
 //! 用真实 v31 fixture 验证「读 → 改 → 写 → 再读」闭环、未知字段保留、
 //! 幂等性、版本/实体异常分支。
 
-use ocx_domain::{CompatError, read_classic_project, write_classic_project};
+use ocx_domain::{
+    CompatError, ElementView, TrackView, WriteOptions, read_classic_project, write_classic_project,
+    write_classic_project_with_options,
+};
 use serde_json::{Value, json};
 
 const FIXTURE: &str = include_str!("../../../../apps/web/public/fixtures/classic-project-v31.json");
@@ -278,4 +281,111 @@ fn ui_edited_element_fields_roundtrip() {
         .find(|element| element.name.as_deref() == Some("UI 重命名标题"))
         .unwrap();
     assert_eq!(reread_title.content.as_deref(), Some("UI 编辑的正文"));
+}
+
+/// U-06：默认 additive-only 下新增轨仍被拒绝（守住兼容性底线）。
+#[test]
+fn new_track_rejected_by_default() {
+    let mut view = read_classic_project(FIXTURE).unwrap();
+    view.scenes[0].tracks.push(TrackView {
+        id: "overlay-new-default".to_owned(),
+        track_type: "text".to_owned(),
+        element_count: 0,
+        elements: vec![],
+        muted: None,
+        hidden: None,
+    });
+    assert_eq!(
+        write_classic_project(FIXTURE, &view).unwrap_err(),
+        CompatError::EntityNotFound
+    );
+}
+
+/// U-06：显式 allow_new_tracks 时新增轨写回后再读仍保真。
+#[test]
+fn new_track_survives_writeback_when_allowed() {
+    let mut view = read_classic_project(FIXTURE).unwrap();
+    view.scenes[0].tracks.push(TrackView {
+        id: "overlay-new".to_owned(),
+        track_type: "text".to_owned(),
+        element_count: 0,
+        elements: vec![],
+        muted: None,
+        hidden: None,
+    });
+    let options = WriteOptions { allow_new_tracks: true };
+    let written = write_classic_project_with_options(FIXTURE, &view, options).unwrap();
+    let root: Value = serde_json::from_str(&written).unwrap();
+    let overlay = root["scenes"][0]["tracks"]["overlay"].as_array().unwrap();
+    assert!(overlay.iter().any(|track| track["id"] == "overlay-new"));
+    // 未知字段未被写回破坏。
+    assert!(root.get("timelineViewState").is_some());
+    let reread = read_classic_project(&written).unwrap();
+    assert!(reread.scenes[0].tracks.iter().any(|track| track.id == "overlay-new"));
+}
+
+/// U-06：audio 类型新增轨进 audio 数组；带元素与可选字段完整保真。
+#[test]
+fn new_audio_track_with_elements_roundtrip() {
+    let mut view = read_classic_project(FIXTURE).unwrap();
+    view.scenes[0].tracks.push(TrackView {
+        id: "audio-new".to_owned(),
+        track_type: "audio".to_owned(),
+        element_count: 1,
+        elements: vec![ElementView {
+            id: "audio-new-clip".to_owned(),
+            element_type: "audio".to_owned(),
+            start_time: 120000,
+            duration: 60000,
+            trim_start: 0,
+            trim_end: 60000,
+            name: Some("新增旁白".to_owned()),
+            media_id: Some("media-narration".to_owned()),
+            content: None,
+            params: None,
+        }],
+        muted: Some(true),
+        hidden: None,
+    });
+    let written = write_classic_project_with_options(
+        FIXTURE,
+        &view,
+        WriteOptions { allow_new_tracks: true },
+    ).unwrap();
+    let root: Value = serde_json::from_str(&written).unwrap();
+    let audio = root["scenes"][0]["tracks"]["audio"].as_array().unwrap();
+    let new_track = audio.iter().find(|track| track["id"] == "audio-new").unwrap();
+    assert_eq!(new_track["type"], "audio");
+    assert_eq!(new_track["muted"], true);
+    assert_eq!(new_track["elements"][0]["name"], "新增旁白");
+    assert_eq!(new_track["elements"][0]["mediaId"], "media-narration");
+    let reread = read_classic_project(&written).unwrap();
+    let reread_track = reread.scenes[0].tracks.iter()
+        .find(|track| track.id == "audio-new").unwrap();
+    assert_eq!(reread_track.elements[0].name.as_deref(), Some("新增旁白"));
+}
+
+/// U-06：新轨缺省类型兜底为 video，不产生空 type 或 null 字段。
+#[test]
+fn new_track_defaults_to_video_type() {
+    let mut view = read_classic_project(FIXTURE).unwrap();
+    view.scenes[0].tracks.push(TrackView {
+        id: "overlay-untyped".to_owned(),
+        track_type: String::new(),
+        element_count: 0,
+        elements: vec![],
+        muted: None,
+        hidden: None,
+    });
+    let written = write_classic_project_with_options(
+        FIXTURE,
+        &view,
+        WriteOptions { allow_new_tracks: true },
+    ).unwrap();
+    let root: Value = serde_json::from_str(&written).unwrap();
+    let overlay = root["scenes"][0]["tracks"]["overlay"].as_array().unwrap();
+    let new_track = overlay.iter().find(|track| track["id"] == "overlay-untyped").unwrap();
+    assert_eq!(new_track["type"], "video");
+    assert!(new_track.get("muted").is_none());
+    assert!(new_track.get("hidden").is_none());
 }

@@ -366,8 +366,12 @@ export interface EditorAdapter {
   makeThumbnail(pixels: Uint8Array, request: CoreThumbnailRequest): Uint8Array;
   /** 读取经典版项目 JSON（只读）。 */
   readClassicProject(projectJson: string): ProjectResult;
-  /** 写回经典版项目 JSON（按 id 合并、保留未知字段）。 */
-  writeClassicProject(originalJson: string, view: ProjectView): ProjectWriteResult;
+  /** 写回经典版项目 JSON（按 id 合并、保留未知字段；U-06 可选允许新增轨）。 */
+  writeClassicProject(
+    originalJson: string,
+    view: ProjectView,
+    allowNewTracks?: boolean,
+  ): ProjectWriteResult;
   /** 导入 OTIO JSON 为内部时间轴（W-10）。 */
   otioImport(otioJson: string): OtioResult;
   /** 导出内部时间轴为 OTIO JSON 文本（W-10）。 */
@@ -429,9 +433,17 @@ export async function createEditorAdapter(): Promise<EditorAdapter> {
         },
         readClassicProject: (projectJson: string): ProjectResult =>
           JSON.parse(glue.read_classic_project(projectJson)) as ProjectResult,
-        writeClassicProject: (originalJson: string, view: ProjectView): ProjectWriteResult => {
+        writeClassicProject: (
+          originalJson: string,
+          view: ProjectView,
+          allowNewTracks?: boolean,
+        ): ProjectWriteResult => {
           if (typeof originalJson !== 'string' || !originalJson.trim()) throw new Error('原始项目 JSON 必须是非空字符串');
-          return JSON.parse(glue.write_classic_project(JSON.stringify({ original: originalJson, view }))) as ProjectWriteResult;
+          return JSON.parse(glue.write_classic_project(JSON.stringify({
+            original: originalJson,
+            view,
+            ...(allowNewTracks === true ? { allowNewTracks: true } : {}),
+          }))) as ProjectWriteResult;
         },
         otioImport: (otioJson: string): OtioResult => {
           validateOtioText(otioJson, 'OTIO 文档');

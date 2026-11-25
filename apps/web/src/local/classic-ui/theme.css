@@ -384,6 +384,19 @@
 .classic-timeline-tool-button:disabled { opacity: 0.4; cursor: not-allowed; }
 .classic-timeline-tool-button.is-active { color: var(--secondary-foreground); background: var(--secondary); }
 .classic-timeline-divider { width: 1px; height: 1.5rem; margin: 0 0.25rem; background: var(--border); flex: 0 0 auto; }
+/* U-06：新增轨道类型下拉（复用主题变量，尺寸与工具按钮对齐）。 */
+.classic-timeline-track-type {
+  height: 1.75rem;
+  padding: 0 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.classic-timeline-track-type:disabled { opacity: 0.4; cursor: not-allowed; }
 .classic-timeline-scene {
   display: flex;
   align-items: center;

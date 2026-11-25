@@ -60,6 +60,8 @@ export interface EditorActionsDeps {
   trackFlags: { muted: string[]; hidden: string[] }
   /** 第一档：场景书签，写回经典版 JSON 用（note 可选备注）。 */
   bookmarks: Array<{ id: string; ticks: number; name: string; note?: string }>
+  /** U-06：用户新增轨道，写回时经 allowNewTracks 落到经典版 JSON。 */
+  extraTracks: Array<{ id: string; trackType: string; muted?: boolean; hidden?: boolean }>
   proxyUrl: string | null
   otioUrl: string | null
   sourceName: string
@@ -108,7 +110,7 @@ export interface EditorActions {
 export function createEditorActions(deps: EditorActionsDeps): EditorActions {
   const {
     session, elements, media, frameCount, resolution, exportSettings, exportState,
-    trackFlags, bookmarks,
+    trackFlags, bookmarks, extraTracks,
     proxyUrl, otioUrl, sourceName,
     setExportState, setErrorText, setProxyUrl, setOtioUrl, setBenchmarkInfo,
     setElements, setSelectedId, setAdjustments, setFrameIndex, setPlaying,
@@ -274,10 +276,11 @@ export function createEditorActions(deps: EditorActionsDeps): EditorActions {
   const handleSaveProject = () => {
     if (!session) return
     try {
-      const view = buildWriteView(session.project, elements, resolution, trackFlags, bookmarks)
+      const view = buildWriteView(session.project, elements, resolution, trackFlags, bookmarks, extraTracks)
       const result = saveProjectJson(
         session.adapter, session.originalJson, view,
         `${session.project.name || 'project'}-v31.json`,
+        extraTracks.length > 0,
       )
       if (result.ok) setErrorText(null)
       else setErrorText(result.message)

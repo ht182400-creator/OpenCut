@@ -20,6 +20,8 @@ export const AUTOSAVE_STORAGE_KEY = 'opencut-autosave-v1';
 export const AUTOSAVE_SCHEMA_VERSION = 1;
 /** 防抖时长（毫秒）：每次编辑后等待多久落盘。 */
 export const AUTOSAVE_DEBOUNCE_MS = 800;
+/** U-06：经典版合法轨道类型（与 core `TrackType` 一致，用于新增轨校验与 UI 选项）。 */
+export const CLASSIC_TRACK_TYPES = ['video', 'text', 'graphic', 'effect', 'audio'] as const;
 
 /** 可注入的同步存储后端（与 HistoryStorage 同构，保留用于单测与旧数据迁移）。 */
 export interface AutosaveStorage {
@@ -50,6 +52,18 @@ export interface BookmarkState {
   note?: string
 }
 
+/** U-06：用户新增的轨道（会话内与 autosave 持久化，写回时经 allowNewTracks 落到经典版 JSON）。 */
+export interface ExtraTrackState {
+  /** 轨道唯一 id（前缀 new-track- + 时间戳）。 */
+  id: string
+  /** 经典版轨道类型（video/text/graphic/effect/audio）。 */
+  trackType: string
+  /** 经典版可选静音标志。 */
+  muted?: boolean
+  /** 经典版可选隐藏标志。 */
+  hidden?: boolean
+}
+
 export interface AutosaveState {
   elements: CoreElement[];
   frameIndex: number;
@@ -61,6 +75,8 @@ export interface AutosaveState {
   trackFlags?: TrackFlagsState
   /** P4 批 6：书签（可选）。 */
   bookmarks?: BookmarkState[]
+  /** U-06：用户新增轨道（可选，旧 autosave 无此字段也能读）。 */
+  extraTracks?: ExtraTrackState[]
 }
 
 /** 持久化信封：schema 版本 + 项目标识 + 状态。 */
@@ -120,6 +136,14 @@ export function parseAutosaveEnvelope(raw: string | null, projectKey: string): P
       if (!Array.isArray(state.bookmarks) || !state.bookmarks.every((b) =>
         b && typeof b.id === 'string' && Number.isFinite(b.ticks) && typeof b.name === 'string'
         && (b.note === undefined || typeof b.note === 'string'))) return null;
+    }
+    // U-06：新增轨可选字段若存在必须结构合法，否则整体作废（防止损坏数据污染）。
+    if (state.extraTracks !== undefined) {
+      if (!Array.isArray(state.extraTracks) || !state.extraTracks.every((track) =>
+        track && typeof track.id === 'string' && typeof track.trackType === 'string'
+        && (CLASSIC_TRACK_TYPES as readonly string[]).includes(track.trackType)
+        && (track.muted === undefined || typeof track.muted === 'boolean')
+        && (track.hidden === undefined || typeof track.hidden === 'boolean'))) return null;
     }
     return parsed;
   } catch {

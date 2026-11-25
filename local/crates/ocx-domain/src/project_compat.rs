@@ -7,6 +7,9 @@
 //! - 写回：`write_classic_project` 把编辑后的视图**按 id 合并回原始文档**，只更新
 //!   已知字段，未知字段原样保留，不新增/删除场景/轨道/元素；派生字段
 //!   （`version` / `sceneCount` / `warnings`）不写回。形成「读 → 改 → 写 → 再读」闭环。
+//! - U-06：`write_classic_project_with_options` 在显式 `allow_new_tracks = true` 时，
+//!   允许把视图里原始文档不存在的轨道**新增**到 overlay/audio 数组（main 仍单条不新增）；
+//!   默认关闭，保持上方 additive-only 契约不变。
 
 use std::fmt;
 
@@ -15,6 +18,10 @@ use serde_json::{Value, json};
 
 /// 经典版当前项目版本号。
 pub const CLASSIC_PROJECT_VERSION: u32 = 31;
+/// 允许新增轨道的 trackType 分组：写入 overlay 数组（除 audio 与 main）。
+pub const OVERLAY_TRACK_TYPES: [&str; 4] = ["video", "text", "graphic", "effect"];
+/// 新增轨道的默认类型（视图给空类型时兜底，保持经典版可读）。
+pub const DEFAULT_NEW_TRACK_TYPE: &str = "video";
 /// 缺省帧率与画布尺寸（仅在字段缺失时使用，并写入 warnings）。
 pub const DEFAULT_FPS_NUMERATOR: u32 = 30;
 pub const DEFAULT_FPS_DENOMINATOR: u32 = 1;
@@ -385,19 +392,84 @@ fn merge_track(target: &mut Value, view: &TrackView) -> Result<(), CompatError> 
     Ok(())
 }
 
+/// 写回选项：`allow_new_tracks` 为 true 时允许新增 overlay/audio 轨（main 仍单条）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteOptions {
+    /// 是否允许写回时新增轨道实体；默认 false 保持 additive-only。
+    #[serde(default)]
+    pub allow_new_tracks: bool,
+}
+
+/// 从元素视图构造经典版轨道元素对象（新增轨时使用）。
+///
+/// 只写入经典版必需字段与视图显式携带的可选字段，避免产生 null 污染。
+fn build_element_value(view: &ElementView) -> Value {
+    let mut object = serde_json::Map::new();
+    object.insert("id".to_owned(), json!(view.id));
+    object.insert("type".to_owned(), json!(view.element_type));
+    object.insert("startTime".to_owned(), json!(view.start_time));
+    object.insert("duration".to_owned(), json!(view.duration));
+    object.insert("trimStart".to_owned(), json!(view.trim_start));
+    object.insert("trimEnd".to_owned(), json!(view.trim_end));
+    if let Some(name) = &view.name {
+        object.insert("name".to_owned(), json!(name));
+    }
+    if let Some(media_id) = &view.media_id {
+        object.insert("mediaId".to_owned(), json!(media_id));
+    }
+    if let Some(content) = &view.content {
+        object.insert("content".to_owned(), json!(content));
+    }
+    if let Some(params) = &view.params {
+        object.insert("params".to_owned(), params.clone());
+    }
+    Value::Object(object)
+}
+
+/// 从轨道视图构造经典版轨道对象（新增轨时使用）。
+///
+/// 生成一个空/带元素的标准轨道，字段为 id/name/type/elements，可选静音/隐藏。
+fn build_track_value(view: &TrackView) -> Value {
+    let track_type = if view.track_type.is_empty() {
+        DEFAULT_NEW_TRACK_TYPE
+    } else {
+        view.track_type.as_str()
+    };
+    let mut object = serde_json::Map::new();
+    object.insert("id".to_owned(), json!(view.id));
+    object.insert("name".to_owned(), json!(view.id));
+    object.insert("type".to_owned(), json!(track_type));
+    object.insert(
+        "elements".to_owned(),
+        Value::Array(view.elements.iter().map(build_element_value).collect()),
+    );
+    if let Some(muted) = view.muted {
+        object.insert("muted".to_owned(), json!(muted));
+    }
+    if let Some(hidden) = view.hidden {
+        object.insert("hidden".to_owned(), json!(hidden));
+    }
+    Value::Object(object)
+}
+
 /**
- * 把编辑后的 `ProjectView` 写回经典版项目 JSON。
+ * 把编辑后的 `ProjectView` 写回经典版项目 JSON（可带选项）。
  *
- * 只按 id 更新原始文档中已存在的实体的已知字段；不新增/删除场景、轨道、元素，
+ * 默认只按 id 更新原始文档中已存在的实体的已知字段；不新增/删除场景、轨道、元素，
  * 未知字段（含 `metadata` 扩展、`timelineViewState`、元素自定义字段）原样保留。
  * 派生字段 `version` / `sceneCount` / `warnings` 不写回。
+ * `allow_new_tracks = true` 时，视图里原始文档不存在的轨道会被新增到对应分组：
+ * audio 类型进 audio 数组，其余进 overlay 数组；main 仍保持单条不新增。
  * @param original_json 原始经典版项目 JSON（v31 或更低）
  * @param view 编辑后的归一化视图
+ * @param options 写回选项（默认 additive-only）
  * @returns {Result<String, CompatError>} 写回后的 JSON 文本
  */
-pub fn write_classic_project(
+pub fn write_classic_project_with_options(
     original_json: &str,
     view: &ProjectView,
+    options: WriteOptions,
 ) -> Result<String, CompatError> {
     let mut root: Value =
         serde_json::from_str(original_json).map_err(|_| CompatError::InvalidJson)?;
@@ -489,9 +561,36 @@ pub fn write_classic_project(
                 found = true;
             }
             if !found {
-                return Err(CompatError::EntityNotFound);
+                if options.allow_new_tracks {
+                    // U-06：audio 类型进 audio 数组，其余进 overlay；main 保持单条不新增。
+                    let key = if track_view.track_type == "audio" { "audio" } else { "overlay" };
+                    if tracks.get_mut(key).and_then(Value::as_array_mut).is_none() {
+                        tracks.insert(key.to_owned(), json!([]));
+                    }
+                    if let Some(list) = tracks.get_mut(key).and_then(Value::as_array_mut) {
+                        list.push(build_track_value(track_view));
+                    }
+                } else {
+                    return Err(CompatError::EntityNotFound);
+                }
             }
         }
     }
     serde_json::to_string_pretty(&root).map_err(|_| CompatError::InvalidJson)
+}
+
+/**
+ * 把编辑后的 `ProjectView` 按默认 additive-only 契约写回经典版项目 JSON。
+ *
+ * 等价于 `write_classic_project_with_options(original_json, view, WriteOptions::default())`，
+ * 保留此签名供既有调用方使用。
+ * @param original_json 原始经典版项目 JSON
+ * @param view 编辑后的归一化视图
+ * @returns {Result<String, CompatError>} 写回后的 JSON 文本
+ */
+pub fn write_classic_project(
+    original_json: &str,
+    view: &ProjectView,
+) -> Result<String, CompatError> {
+    write_classic_project_with_options(original_json, view, WriteOptions::default())
 }

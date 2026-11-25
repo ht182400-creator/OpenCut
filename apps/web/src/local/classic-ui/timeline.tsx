@@ -12,6 +12,7 @@ import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from 
 
 import { formatTimecode, snapTicks } from '../editor-ui'
 import type { CoreElement, RippleAdjustment } from '../editor-ui'
+import { CLASSIC_TRACK_TYPES } from '../project-autosave'
 import type { AssetDragPayload } from './assets-panel'
 import { TIMELINE_DRAG_MIME } from './assets-tokens'
 import {
@@ -123,6 +124,7 @@ const ICON_PATHS: Record<string, string> = {
   trash: 'M3 6h18 M8 6V4h8v2 M6 6l1 15h10l1-15',
   bookmark: 'M6 3h12v18l-6-4-6 4z',
   layers: 'M12 3l9 5-9 5-9-5z M3 13l9 5 9-5',
+  plus: 'M12 4v16 M4 12h16',
 }
 
 /** 本地图标：按经典版同位置形状绘制的 SVG path。 */
@@ -219,6 +221,8 @@ export function ClassicTimeline(props: {
   hiddenTrackIds?: readonly string[]
   /** P4 批 6：轨道标志变更回调（autosave 持久化）。 */
   onToggleTrackFlag?: (trackId: string, flag: 'muted' | 'hidden') => void
+  /** U-06：新增轨道回调（trackType 为经典版轨道类型）。 */
+  onAddTrack?: (trackType: string) => void
   /** 外部持久化的书签（note 为可选备注）。 */
   bookmarks?: ReadonlyArray<{ id: string; ticks: number; name: string; note?: string }>
   /**
@@ -236,6 +240,8 @@ export function ClassicTimeline(props: {
 }) {
   const [zoomLevel, setZoomLevel] = useState(1)
   const [localSnapping, setLocalSnapping] = useState(true)
+  /** U-06：新增轨道类型选择（默认 text，经典版合法类型常量驱动）。 */
+  const [newTrackType, setNewTrackType] = useState<string>(CLASSIC_TRACK_TYPES[1])
   const snapping = props.snapping ?? localSnapping
   const [preview, setPreview] = useState<ClipPreview | null>(null)
   const [snapLine, setSnapLine] = useState<number | null>(null)
@@ -725,6 +731,20 @@ export function ClassicTimeline(props: {
               props.onBookmarksChange?.(next)
             }}>
             <TimelineIcon name="bookmark" />
+          </button>
+          <span className="classic-timeline-divider" />
+          <select className="classic-timeline-track-type" aria-label="新增轨道类型"
+            data-testid="timeline-new-track-type" value={newTrackType}
+            disabled={!props.onAddTrack}
+            onChange={(event) => setNewTrackType(event.target.value)}>
+            {CLASSIC_TRACK_TYPES.map((type) => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
+          <button type="button" className="classic-timeline-tool-button" title="新增轨道"
+            data-testid="timeline-add-track" disabled={!props.onAddTrack}
+            onClick={() => props.onAddTrack?.(newTrackType)}>
+            <TimelineIcon name="plus" />
           </button>
         </div>
         <div className="classic-timeline-scene">

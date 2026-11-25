@@ -50,6 +50,7 @@ import {
   persistAutosaveAsync,
   readAutosaveAsync,
   type AsyncAutosaveStorage,
+  type ExtraTrackState,
 } from './project-autosave'
 import { defaultAutosaveBackend, migrateLegacyAutosave } from './autosave-idb'
 import {
@@ -272,6 +273,8 @@ export function Editor() {
   const [trackFlags, setTrackFlags] = useState<{ muted: string[]; hidden: string[] }>({ muted: [], hidden: [] })
   /** P4 批 6 + UI 长尾：书签（autosave 持久化，note 可选备注）。 */
   const [bookmarks, setBookmarks] = useState<Array<{ id: string; ticks: number; name: string; note?: string }>>([])
+  /** U-06：用户新增轨道（autosave 持久化，写回时经 allowNewTracks 落到经典版 JSON）。 */
+  const [extraTracks, setExtraTracks] = useState<ExtraTrackState[]>([])
   /** U-02：历史快照的编辑器侧状态引用，供 record 读取，避免改动所有调用方签名。 */
   const historyPartsRef = useRef<HistoryParts>(EMPTY_HISTORY_PARTS)
   historyPartsRef.current = { bookmarks, trackFlags, selectedId, adjustments }
@@ -376,6 +379,8 @@ export function Editor() {
       // 优先级：autosave > 历史快照 > 项目 JSON 的 muted/hidden/bookmarks。
       setTrackFlags(saved?.state.trackFlags ?? historySnapshot?.trackFlags ?? trackFlagsFromProject(project))
       setBookmarks(saved?.state.bookmarks ?? historySnapshot?.bookmarks ?? bookmarksFromProject(project))
+      // U-06：新增轨只从 autosave 恢复（旧数据无此字段则为空）。
+      setExtraTracks(saved?.state.extraTracks ?? [])
     } catch (error) {
       setErrorText(formatCoreError(error))
       setSession(null)
@@ -414,8 +419,8 @@ export function Editor() {
    */
   /** U-03：异步自动保存后端句柄，项目加载时初始化（IndexedDB 优先）。 */
   const autosaveBackendRef = useRef<AsyncAutosaveStorage | null>(null)
-  const autosaveStateRef = useRef({ elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks })
-  autosaveStateRef.current = { elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks }
+  const autosaveStateRef = useRef({ elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks, extraTracks })
+  autosaveStateRef.current = { elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks, extraTracks }
   useEffect(() => {
     if (!session) return
     const timer = window.setTimeout(() => {
@@ -423,7 +428,7 @@ export function Editor() {
       void persistAutosaveAsync(autosaveStateRef.current, sourceName, autosaveBackendRef.current)
     }, AUTOSAVE_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
-  }, [session, elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks])
+  }, [session, elements, frameIndex, selectedId, adjustments, resolution, sourceName, trackFlags, bookmarks, extraTracks])
 
   /** 删除选中片段，由 core 计算并应用 ripple。 */
   const deleteSelected = () => {
@@ -802,7 +807,7 @@ export function Editor() {
     handleSaveSnapshot, handleSaveProject, handleLoadSnapshot,
   } = createEditorActions({
     session, elements, media, frameCount, resolution, exportSettings, exportState,
-    trackFlags, bookmarks,
+    trackFlags, bookmarks, extraTracks,
     proxyUrl, otioUrl, sourceName,
     setExportState, setErrorText, setMediaStatus, setProxyUrl, setOtioUrl, setBenchmarkInfo,
     setElements, setSelectedId, setAdjustments, setFrameIndex, setPlaying,
@@ -998,7 +1003,7 @@ export function Editor() {
    * overlay/audio 轨为只读展示（core 编辑 API 仍只覆盖主轨，见 UI_REPLICA_PLAN 边界）。
    */
   // U-05：可编辑元素按 trackId 分配到对应轨；main 用缺省 trackId 表达，兼容旧数据。
-  const timelineTracks: ClassicTimelineTrack[] = projectTracks.length > 0
+  const baseTracks: ClassicTimelineTrack[] = projectTracks.length > 0
     ? projectTracks.map((track) => ({
         ...track,
         elements: track.id === 'main'
@@ -1007,6 +1012,16 @@ export function Editor() {
       }))
     : [{ id: 'main', trackType: 'video', label: '主轨',
       elements: elements.filter((element) => !element.trackId || element.trackId === 'main') }]
+  // U-06：用户新增轨追加到时间轴末尾，可接收跨轨拖放（elements 来自 trackId 匹配）。
+  const timelineTracks: ClassicTimelineTrack[] = [
+    ...baseTracks,
+    ...extraTracks.map((track) => ({
+      id: track.id,
+      trackType: track.trackType,
+      label: track.trackType === 'audio' ? '音频' : track.id,
+      elements: elements.filter((element) => element.trackId === track.id),
+    })),
+  ]
 
   const timelineActions: TimelineAction[] = [
     { label: '删除选中片段', icon: 'trash', disabled: !selectedId || elements.length < 2, onClick: deleteSelected },
@@ -1033,7 +1048,7 @@ export function Editor() {
         projectName={session?.project.name ?? '未加载'}
         projectVersion={session?.project.version ?? 0}
         sceneCount={session?.project.sceneCount ?? 0}
-        trackCount={session?.projectTrackCount ?? 0}
+        trackCount={(session?.projectTrackCount ?? 0) + extraTracks.length}
         actions={[
           { label: '撤销', disabled: !clipHistory.canUndo, onClick: clipHistory.undo },
           { label: '重做', disabled: !clipHistory.canRedo, onClick: clipHistory.redo },
@@ -1135,6 +1150,14 @@ export function Editor() {
               const nextFlags = { ...trackFlags, [flag]: [...nextSet] }
               setTrackFlags(nextFlags)
               clipHistory.record(elements, '切换轨道标志', { trackFlags: nextFlags })
+            }}
+            onAddTrack={(trackType) => {
+              const next: ExtraTrackState = {
+                id: `new-track-${Date.now()}`,
+                trackType,
+              }
+              setExtraTracks((current) => [...current, next])
+              setMediaStatus(`已新增轨道：${trackType}（写回经典版 JSON 后保存）`)
             }}
             bookmarks={bookmarks}
             onBookmarksChange={(next, commit = true) => {

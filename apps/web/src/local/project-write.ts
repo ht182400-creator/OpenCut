@@ -6,8 +6,9 @@
  * core 负责 additive-only 保真（未知字段保留、不新增/删除实体），本模块不直接碰 wasm glue。
  */
 
-import type { EditorAdapter, ProjectView, ProjectWriteResult } from './editor-adapter';
+import type { EditorAdapter, ProjectView, ProjectTrackView, ProjectWriteResult } from './editor-adapter';
 import type { CoreElement } from './editor-ui';
+import type { ExtraTrackState } from './project-autosave';
 
 /** 写回时的画布尺寸来源（批 7.2 resolution）。 */
 export interface WriteCanvasSize {
@@ -27,6 +28,18 @@ export interface WriteBookmark {
   ticks: number;
   name: string;
   note?: string;
+}
+
+/** U-06：把 autosave 新增轨转成写回视图轨道（追加到目标场景）。 */
+function toWriteTrackView(track: ExtraTrackState): ProjectTrackView {
+  return {
+    id: track.id,
+    trackType: track.trackType,
+    elementCount: 0,
+    elements: [],
+    ...(track.muted !== undefined ? { muted: track.muted } : {}),
+    ...(track.hidden !== undefined ? { hidden: track.hidden } : {}),
+  };
 }
 
 /**
@@ -83,6 +96,7 @@ export function bookmarksFromProject(project: ProjectView): WriteBookmark[] {
  * @param canvas 可选画布尺寸覆盖（分辨率切换后写回）
  * @param trackFlags 可选轨道静音/隐藏状态（第一档）
  * @param bookmarks 可选场景书签（第一档）
+ * @param extraTracks 可选新增轨道（U-06，追加到第一个场景）
  * @returns 合并后的新 ProjectView
  */
 export function buildWriteView(
@@ -91,6 +105,7 @@ export function buildWriteView(
   canvas?: WriteCanvasSize,
   trackFlags?: WriteTrackFlags,
   bookmarks?: readonly WriteBookmark[],
+  extraTracks?: readonly ExtraTrackState[],
 ): ProjectView {
   const edits = new Map(elements.map((element) => [element.id, element]));
   const muted = trackFlags ? new Set(trackFlags.muted) : null;
@@ -98,10 +113,9 @@ export function buildWriteView(
   return {
     ...project,
     ...(canvas ? { canvas: { width: canvas.width, height: canvas.height } } : {}),
-    scenes: project.scenes.map((scene) => ({
-      ...scene,
-      ...(bookmarks !== undefined ? { bookmarks: bookmarks.map((item) => ({ ...item })) } : {}),
-      tracks: scene.tracks.map((track) => ({
+    scenes: project.scenes.map((scene, index) => {
+      // U-06：先合并已有轨的编辑，再把新增轨追加到第一个场景。
+      const merged: ProjectTrackView[] = scene.tracks.map((track) => ({
         ...track,
         // additive-only：仅在视图原本带该字段时才写回，不新增字段。
         ...(muted && track.muted !== undefined ? { muted: muted.has(track.id) } : {}),
@@ -122,8 +136,16 @@ export function buildWriteView(
             ...(edit.params !== undefined ? { params: edit.params } : {}),
           };
         }),
-      })),
-    })),
+      }));
+      if (index === 0 && extraTracks && extraTracks.length > 0) {
+        merged.push(...extraTracks.map(toWriteTrackView));
+      }
+      return {
+        ...scene,
+        ...(bookmarks !== undefined ? { bookmarks: bookmarks.map((item) => ({ ...item })) } : {}),
+        tracks: merged,
+      };
+    }),
   };
 }
 
@@ -139,6 +161,7 @@ export interface SaveProjectResult {
  * @param originalJson 原始项目 JSON 文本（core 据此保留未知字段）
  * @param view 合并编辑后的项目视图
  * @param filename 下载文件名
+ * @param allowNewTracks U-06：是否允许写回新增轨（默认 false 保持 additive-only）
  * @returns 写回结果与中文提示
  */
 export function saveProjectJson(
@@ -146,9 +169,12 @@ export function saveProjectJson(
   originalJson: string,
   view: ProjectView,
   filename: string,
+  allowNewTracks = false,
 ): SaveProjectResult {
   try {
-    const result: ProjectWriteResult = adapter.writeClassicProject(originalJson, view);
+    const result: ProjectWriteResult = adapter.writeClassicProject(
+      originalJson, view, allowNewTracks,
+    );
     if (!result.ok || !result.project) {
       return { ok: false, message: `项目写回失败：${result.error ?? '未知错误'}` };
     }
