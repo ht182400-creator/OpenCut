@@ -1,0 +1,469 @@
+{
+  "version": 1,
+  "sounds": [
+    {
+      "id": "click",
+      "name": "Click",
+      "src": "/assets/sounds/click_001.ogg",
+      "durationMs": 120,
+      "tags": [
+        "ui",
+        "click"
+      ],
+      "category": "ui"
+    },
+    {
+      "id": "confirm",
+      "name": "Confirm",
+      "src": "/assets/sounds/confirmation_001.ogg",
+      "durationMs": 260,
+      "tags": [
+        "ui",
+        "confirm",
+        "success"
+      ],
+      "category": "ui"
+    },
+    {
+      "id": "error",
+      "name": "Error",
+      "src": "/assets/sounds/error_001.ogg",
+      "durationMs": 210,
+      "tags": [
+        "ui",
+        "error",
+        "alert"
+      ],
+      "category": "ui"
+    },
+    {
+      "id": "drop",
+      "name": "Drop",
+      "src": "/assets/sounds/drop_001.ogg",
+      "durationMs": 160,
+      "tags": [
+        "ui",
+        "drop"
+      ],
+      "category": "ui"
+    },
+    {
+      "id": "open",
+      "name": "Open",
+      "src": "/assets/sounds/open_001.ogg",
+      "durationMs": 280,
+      "tags": [
+        "ui",
+        "open"
+      ],
+      "category": "ui"
+    },
+    {
+      "id": "close",
+      "name": "Close",
+      "src": "/assets/sounds/close_001.ogg",
+      "durationMs": 260,
+      "tags": [
+        "ui",
+        "close"
+      ],
+      "category": "ui"
+    },
+    {
+      "id": "back",
+      "name": "Back",
+      "src": "/assets/sounds/back_001.ogg",
+      "durationMs": 200,
+      "tags": [
+        "ui",
+        "back",
+        "navigation"
+      ],
+      "category": "ui"
+    },
+    {
+      "id": "switch",
+      "name": "Switch",
+      "src": "/assets/sounds/switch_001.ogg",
+      "durationMs": 180,
+      "tags": [
+        "ui",
+        "switch",
+        "toggle"
+      ],
+      "category": "ui"
+    },
+    {
+      "id": "select",
+      "name": "Select",
+      "src": "/assets/sounds/select_001.ogg",
+      "durationMs": 150,
+      "tags": [
+        "ui",
+        "select",
+        "menu"
+      ],
+      "category": "ui"
+    },
+    {
+      "id": "pluck",
+      "name": "Pluck",
+      "src": "/assets/sounds/pluck_001.ogg",
+      "durationMs": 190,
+      "tags": [
+        "musical",
+        "pluck"
+      ],
+      "category": "musical"
+    },
+    {
+      "id": "glass",
+      "name": "Glass",
+      "src": "/assets/sounds/glass_001.ogg",
+      "durationMs": 170,
+      "tags": [
+        "foley",
+        "glass"
+      ],
+      "category": "foley"
+    },
+    {
+      "id": "bong",
+      "name": "Bong",
+      "src": "/assets/sounds/bong_001.ogg",
+      "durationMs": 140,
+      "tags": [
+        "musical",
+        "bong",
+        "bell"
+      ],
+      "category": "musical"
+    }
+  ],
+  "stickers": [
+    {
+      "id": "grin",
+      "name": "Grin",
+      "src": "/assets/stickers/1f600.svg",
+      "width": 128,
+      "height": 128,
+      "category": "face",
+      "tags": [
+        "smile",
+        "happy"
+      ],
+      "char": "😀"
+    },
+    {
+      "id": "joy",
+      "name": "Joy",
+      "src": "/assets/stickers/1f602.svg",
+      "width": 128,
+      "height": 128,
+      "category": "face",
+      "tags": [
+        "laugh",
+        "tears"
+      ],
+      "char": "😂"
+    },
+    {
+      "id": "heart",
+      "name": "Heart",
+      "src": "/assets/stickers/2764.svg",
+      "width": 128,
+      "height": 128,
+      "category": "symbol",
+      "tags": [
+        "love"
+      ],
+      "char": "❤️"
+    },
+    {
+      "id": "thumbsup",
+      "name": "Thumbs Up",
+      "src": "/assets/stickers/1f44d.svg",
+      "width": 128,
+      "height": 128,
+      "category": "gesture",
+      "tags": [
+        "like",
+        "ok"
+      ],
+      "char": "👍"
+    },
+    {
+      "id": "tada",
+      "name": "Tada",
+      "src": "/assets/stickers/1f389.svg",
+      "width": 128,
+      "height": 128,
+      "category": "symbol",
+      "tags": [
+        "party",
+        "celebrate"
+      ],
+      "char": "🎉"
+    },
+    {
+      "id": "rocket",
+      "name": "Rocket",
+      "src": "/assets/stickers/1f680.svg",
+      "width": 128,
+      "height": 128,
+      "category": "object",
+      "tags": [
+        "launch",
+        "space"
+      ],
+      "char": "🚀"
+    },
+    {
+      "id": "star",
+      "name": "Star",
+      "src": "/assets/stickers/2b50.svg",
+      "width": 128,
+      "height": 128,
+      "category": "symbol",
+      "tags": [
+        "gold",
+        "favorite"
+      ],
+      "char": "⭐"
+    },
+    {
+      "id": "glowing-star",
+      "name": "Glowing Star",
+      "src": "/assets/stickers/1f31f.svg",
+      "width": 128,
+      "height": 128,
+      "category": "symbol",
+      "tags": [
+        "shine",
+        "spark"
+      ],
+      "char": "🌟"
+    },
+    {
+      "id": "collision",
+      "name": "Collision",
+      "src": "/assets/stickers/1f4a5.svg",
+      "width": 128,
+      "height": 128,
+      "category": "symbol",
+      "tags": [
+        "impact",
+        "bang"
+      ],
+      "char": "💥"
+    },
+    {
+      "id": "fire",
+      "name": "Fire",
+      "src": "/assets/stickers/1f525.svg",
+      "width": 128,
+      "height": 128,
+      "category": "object",
+      "tags": [
+        "hot",
+        "flame"
+      ],
+      "char": "🔥"
+    },
+    {
+      "id": "cat",
+      "name": "Cat",
+      "src": "/assets/stickers/1f408.svg",
+      "width": 128,
+      "height": 128,
+      "category": "animal",
+      "tags": [
+        "pet",
+        "kitty"
+      ],
+      "char": "🐱"
+    },
+    {
+      "id": "raise-hand",
+      "name": "Raise Hand",
+      "src": "/assets/stickers/1f64c.svg",
+      "width": 128,
+      "height": 128,
+      "category": "gesture",
+      "tags": [
+        "cheer",
+        "hand"
+      ],
+      "char": "🙌"
+    }
+  ],
+  "effects": [
+    {
+      "id": "original",
+      "name": "原始",
+      "category": "basic",
+      "params": {
+        "effects.brightness": 1,
+        "effects.contrast": 1,
+        "effects.saturate": 1
+      },
+      "preview": {
+        "kind": "gradient",
+        "colors": [
+          "#888888",
+          "#444444"
+        ]
+      }
+    },
+    {
+      "id": "vivid",
+      "name": "鲜明",
+      "category": "color",
+      "params": {
+        "effects.brightness": 1.05,
+        "effects.contrast": 1.25,
+        "effects.saturate": 1.3
+      },
+      "preview": {
+        "kind": "gradient",
+        "colors": [
+          "#ff7a18",
+          "#af002d"
+        ]
+      }
+    },
+    {
+      "id": "muted",
+      "name": "柔和",
+      "category": "color",
+      "params": {
+        "effects.brightness": 1.08,
+        "effects.contrast": 0.85,
+        "effects.saturate": 0.7
+      },
+      "preview": {
+        "kind": "gradient",
+        "colors": [
+          "#a8c0b5",
+          "#6b8e7f"
+        ]
+      }
+    },
+    {
+      "id": "noir",
+      "name": "黑白",
+      "category": "color",
+      "params": {
+        "effects.brightness": 0.95,
+        "effects.contrast": 1.4,
+        "effects.saturate": 0
+      },
+      "preview": {
+        "kind": "gradient",
+        "colors": [
+          "#dddddd",
+          "#222222"
+        ]
+      }
+    },
+    {
+      "id": "warm",
+      "name": "暖调",
+      "category": "color",
+      "params": {
+        "effects.brightness": 1.06,
+        "effects.contrast": 1.1,
+        "effects.saturate": 1.15
+      },
+      "preview": {
+        "kind": "gradient",
+        "colors": [
+          "#ffb347",
+          "#cc5500"
+        ]
+      }
+    },
+    {
+      "id": "cool",
+      "name": "冷调",
+      "category": "color",
+      "params": {
+        "effects.brightness": 1.02,
+        "effects.contrast": 1.12,
+        "effects.saturate": 1.1
+      },
+      "preview": {
+        "kind": "gradient",
+        "colors": [
+          "#4a90d9",
+          "#1a3a5c"
+        ]
+      }
+    },
+    {
+      "id": "fade",
+      "name": "褪色",
+      "category": "color",
+      "params": {
+        "effects.brightness": 1.12,
+        "effects.contrast": 0.75,
+        "effects.saturate": 0.5
+      },
+      "preview": {
+        "kind": "gradient",
+        "colors": [
+          "#d9d0c7",
+          "#9e8f80"
+        ]
+      }
+    },
+    {
+      "id": "punch",
+      "name": "冲击",
+      "category": "color",
+      "params": {
+        "effects.brightness": 1,
+        "effects.contrast": 1.6,
+        "effects.saturate": 1.45
+      },
+      "preview": {
+        "kind": "gradient",
+        "colors": [
+          "#ff2e2e",
+          "#2e2eff"
+        ]
+      }
+    }
+  ],
+  "settings": {
+    "fpsOptions": [
+      24,
+      25,
+      30,
+      60
+    ],
+    "aspectRatios": [
+      "16:9",
+      "4:3",
+      "1:1",
+      "9:16"
+    ],
+    "backgrounds": [
+      {
+        "id": "black",
+        "label": "黑",
+        "value": "#000000"
+      },
+      {
+        "id": "white",
+        "label": "白",
+        "value": "#ffffff"
+      },
+      {
+        "id": "transparent",
+        "label": "透明",
+        "value": "transparent"
+      }
+    ]
+  }
+}

@@ -74,7 +74,8 @@ import {
 } from './editor-ui'
 import type { ProjectView } from './editor-adapter'
 import { bookmarksFromProject, trackFlagsFromProject } from './project-write'
-import { DEFAULT_RESOLUTION, resolutionLabel } from './resolution'
+import { DEFAULT_RESOLUTION, resolutionLabel, PROXY_WIDTH } from './resolution'
+import { ProjectSettingsPanel, type AspectRatioOption, type BackgroundOption } from './classic-ui/project-settings-panel'
 import type { ResolutionPreset } from './resolution'
 import {
   DEFAULT_EXPORT_SETTINGS,
@@ -95,6 +96,7 @@ import { ClassicTimeline } from './classic-ui/timeline'
 import type { ClassicTimelineTrack, TimelineAction } from './classic-ui/timeline'
 import { AssetsPanel } from './classic-ui/assets-panel'
 import type { AssetDragPayload, AssetItem } from './classic-ui/assets-panel'
+import { loadAssetCatalog, type AssetCatalog, type CatalogEffect } from './asset-catalog'
 import { PropertiesPanel } from './classic-ui/properties-panel'
 import { PreviewSection } from './classic-ui/preview-section'
 import { ShortcutsDialog } from './classic-ui/shortcuts-dialog'
@@ -261,6 +263,10 @@ export function Editor() {
   }, [session, media])
   /** 批 3：素材面板网格数据；导入视频后追加，供 112px 卡片网格展示。 */
   const [assets, setAssets] = useState<AssetItem[]>([])
+  /** D 档：本地素材目录（异步加载，失败降级空态）。 */
+  const [catalog, setCatalog] = useState<AssetCatalog | null>(null)
+  /** D 档：音效收藏（会话内持久化由 autosave 扩展承载，本批先内存态）。 */
+  const [soundFavorites, setSoundFavorites] = useState<Set<string>>(new Set())
   const [cacheInfo, setCacheInfo] = useState('代理缓存 0 份')
   const [proxyUrl, setProxyUrl] = useState<string | null>(null)
   const [otioUrl, setOtioUrl] = useState<string | null>(null)
@@ -396,6 +402,11 @@ export function Editor() {
       setSession(null)
     }
   }
+
+  /** D 档：挂载时异步加载本地素材目录（CC0 音效 / CC BY 贴纸 / 效果预设 / 设置枚举）。 */
+  useEffect(() => {
+    void loadAssetCatalog().then(setCatalog)
+  }, [])
 
   useEffect(() => {
     const load = async () => {
@@ -883,6 +894,48 @@ export function Editor() {
     }
   }
 
+  /** D 档：切换 FPS——同步 session 帧率与 ticksPerFrame，清空帧缓存并提示重新导入。 */
+  const handleFpsChange = (fps: number) => {
+    if (!session || fps <= 0) return
+    try {
+      const ticksPerFrame = Math.round(MODEL_TICKS_PER_SECOND / fps)
+      setSession({ ...session, fps, ticksPerFrame })
+      setMedia(null)
+      setPlaying(false)
+      setFrameIndex(0)
+      setMediaStatus(`帧率已切换为 ${fps} fps，请重新导入素材以按新帧率抽帧`)
+    } catch (error) {
+      setErrorText(`切换帧率失败：${formatCoreError(error)}`)
+    }
+  }
+
+  /** D 档：切换宽高比——按基准宽度换算偶数高度，复用分辨率切换链路。 */
+  const handleAspectChange = (ratio: AspectRatioOption) => {
+    const rawHeight = PROXY_WIDTH * ratio.height / ratio.width
+    const evenHeight = Math.max(2, Math.round(rawHeight / 2) * 2)
+    const preset = {
+      label: `${PROXY_WIDTH} × ${evenHeight}（${ratio.label}）`,
+      width: PROXY_WIDTH,
+      height: evenHeight,
+    }
+    handleResolutionChange(preset)
+  }
+
+  /** D 档：切换背景色——写入 core profile（additive-only 字段），驱动空帧与导出。 */
+  const handleBackgroundChange = (background: BackgroundOption) => {
+    if (!session) return
+    try {
+      const hex = background.value.replace('#', '')
+      const rgba = hex.length === 6
+        ? [Number.parseInt(hex.slice(0, 2), 16), Number.parseInt(hex.slice(2, 4), 16), Number.parseInt(hex.slice(4, 6), 16), 255]
+        : [0, 0, 0, 0]
+      setSession({ ...session, profile: { ...session.profile, backgroundRgba: rgba } })
+      setMediaStatus(`背景已切换为：${background.label}`)
+    } catch (error) {
+      setErrorText(`切换背景失败：${formatCoreError(error)}`)
+    }
+  }
+
   /** 生成并导入一段演示音视频，便于无素材时体验完整链路。 */
   const handleDemoClip = async () => {
     setErrorText(null)
@@ -926,6 +979,18 @@ export function Editor() {
           startTime: desiredStart,
           ticksPerSecond: MODEL_TICKS_PER_SECOND,
         })
+      } else if (payload.kind === 'audio') {
+        // D 档：音效素材（静态 OGG）加入时间轴，作为 audio 元素记录路径，
+        // 写回经典版 JSON 保真；预览播放受 core 解码链路限制（见台账边界）。
+        element = buildMediaElement({
+          id: makeElementId(MEDIA_ID_PREFIX),
+          name: payload.name,
+          elementType: 'audio',
+          startTime: desiredStart,
+          durationSeconds: DEFAULT_MEDIA_DURATION_SECONDS,
+          ticksPerSecond: MODEL_TICKS_PER_SECOND,
+          mediaId: payload.soundSrc ?? payload.id,
+        })
       } else {
         const asset = assets.find((item) => item.id === payload.id)
         const durationSeconds = asset?.duration ?? DEFAULT_MEDIA_DURATION_SECONDS
@@ -960,12 +1025,32 @@ export function Editor() {
 
   /** U-05：时间轴拖放落点由组件换算 ticks 与目标轨，这里只做类型校验并插入。 */
   const handleTimelineDrop = (payload: AssetDragPayload, atTicks: number, targetTrackId: string) => {
-    if (payload.kind !== 'text' && payload.kind !== 'media' && payload.kind !== 'graphic') return
+    if (payload.kind !== 'text' && payload.kind !== 'media' && payload.kind !== 'graphic' && payload.kind !== 'audio') return
     handleAddAsset(payload, atTicks, targetTrackId)
   }
 
   const activeClip = clipAtTime(elements, frameIndex * (session?.ticksPerFrame ?? 0))?.id ?? (session ? '空档' : '—')
   const selectedElement = elements.find((element) => element.id === selectedId) ?? null
+
+  /** D 档：把效果预设的参数写入选中元素（复用统一命令层，可撤销）。 */
+  const handleApplyEffect = (effect: CatalogEffect) => {
+    if (!selectedId) {
+      setMediaStatus('请先选中一个片段，再应用效果')
+      return
+    }
+    applyPropertyPatch({ params: effect.params as ClipPatch['params'] })
+    setMediaStatus(`已应用效果：${effect.name}`)
+  }
+
+  /** D 档：切换音效收藏（会话内状态，后续可接入 autosave 持久化）。 */
+  const handleToggleFavorite = (soundId: string) => {
+    setSoundFavorites((current) => {
+      const next = new Set(current)
+      if (next.has(soundId)) next.delete(soundId)
+      else next.add(soundId)
+      return next
+    })
+  }
 
   /** P4 批 5：预览遮罩手柄变更写回元素 mask.* 参数（驱动预览与导出）。 */
   const handleMaskChange = (mask: RectMask) => {
@@ -1003,8 +1088,34 @@ export function Editor() {
     { label: '兼容提示', value: `${session.project.warnings.length} 条` },
   ] : []
   /** 批 1：诊断与导出设置收进素材面板的 settings tab，主框架不再有额外区块。 */
+  /** D 档：把目录里的「16:9」字符串解析为宽高比选项（非法值跳过）。 */
+  const aspectOptions: AspectRatioOption[] = (catalog?.settings.aspectRatios ?? []).flatMap((text) => {
+    const match = /^(\d+):(\d+)$/.exec(text)
+    return match ? [{ label: text, width: Number(match[1]), height: Number(match[2]) }] : []
+  })
+  const currentAspectLabel = `${resolution.width}:${resolution.height}`
+  const currentBackgroundId = (() => {
+    const rgba = session?.profile?.backgroundRgba
+    if (!Array.isArray(rgba)) return 'black'
+    const hex = `#${(rgba as number[]).slice(0, 3).map((v) => Number(v).toString(16).padStart(2, '0')).join('')}`
+    return catalog?.settings.backgrounds.find((b) => b.value.toLowerCase() === hex.toLowerCase())?.id ?? 'custom'
+  })()
+
   const settingsContent = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8 }}>
+      {catalog && (catalog.settings.fpsOptions.length > 0 || aspectOptions.length > 0) && (
+        <ProjectSettingsPanel
+          fpsOptions={catalog.settings.fpsOptions.length > 0 ? catalog.settings.fpsOptions : [30]}
+          currentFps={session?.fps ?? 30}
+          onFpsChange={handleFpsChange}
+          aspectRatios={aspectOptions.length > 0 ? aspectOptions : [{ label: '16:9', width: 16, height: 9 }]}
+          currentAspect={aspectOptions.some((r) => r.label === currentAspectLabel) ? currentAspectLabel : (aspectOptions[0]?.label ?? '16:9')}
+          onAspectChange={handleAspectChange}
+          backgrounds={catalog.settings.backgrounds}
+          currentBackground={currentBackgroundId}
+          onBackgroundChange={handleBackgroundChange}
+        />
+      )}
       <ExportSettingsPanel
         open
         settings={exportSettings}
@@ -1127,6 +1238,10 @@ export function Editor() {
                     mediaStatus={mediaStatus}
                     settingsContent={settingsContent}
                     onAddToTimeline={handleAddAsset}
+                    catalog={catalog ?? undefined}
+                    onApplyEffect={handleApplyEffect}
+                    favorites={soundFavorites}
+                    onToggleFavorite={handleToggleFavorite}
                   />
                 </ResizablePanel>
                 <ResizableHandle withHandle />

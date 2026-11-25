@@ -10,7 +10,7 @@
  * 尺寸来自 assets-tokens.ts；图标为按经典版同位置形状本地绘制的 SVG。
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, ReactNode, RefObject } from 'react';
 
 import {
@@ -47,6 +47,16 @@ import {
   type AssetSort,
   type AssetSortKey,
 } from '../asset-sort';
+import {
+  collectCategories,
+  filterEffects,
+  filterSounds,
+  filterStickers,
+  type AssetCatalog,
+  type CatalogEffect,
+  type CatalogSound,
+  type CatalogSticker,
+} from '../asset-catalog';
 
 /** 素材条目（对应经典版 MediaAssetData 的最小可视子集）。 */
 export interface AssetItem {
@@ -62,13 +72,17 @@ export interface AssetItem {
 
 /** 拖入时间轴的载荷（与经典版 TimelineDragData 的 key 对齐；内容为本工程最小子集）。 */
 export interface AssetDragPayload {
-  kind: 'media' | 'text' | 'graphic'
+  kind: 'media' | 'text' | 'graphic' | 'audio'
   id: string
   name: string
   mediaType?: AssetItem['type']
   content?: string
   /** 第二档项 2：图形形状（rectangle/ellipse/triangle/line）。 */
   shape?: string
+  /** D 档：音效静态文件路径（kind=audio）。 */
+  soundSrc?: string
+  /** D 档：贴纸 SVG 路径（kind=graphic）。 */
+  stickerSrc?: string
 }
 
 export interface AssetsPanelProps {
@@ -87,6 +101,14 @@ export interface AssetsPanelProps {
   settingsContent?: ReactNode
   /** 素材卡「加到时间轴」回调；core 暂无新增元素能力时由调用方标注占位。 */
   onAddToTimeline?: (payload: AssetDragPayload) => void
+  /** D 档：本地素材目录（音效/贴纸/效果预设）。 */
+  catalog?: AssetCatalog
+  /** D 档：点击效果预设应用到选中元素。 */
+  onApplyEffect?: (effect: CatalogEffect) => void
+  /** D 档：音效收藏切换（持久化由调用方负责）。 */
+  onToggleFavorite?: (soundId: string) => void
+  /** D 档：已收藏音效 id 集合。 */
+  favorites?: ReadonlySet<string>
 }
 
 /** 经典版同位置图标 path（本地绘制，避免图标包版本差异）。 */
@@ -420,43 +442,179 @@ function TextView({ onAdd }: { onAdd?: (payload: AssetDragPayload) => void }) {
   )
 }
 
-/** Stickers 视图：搜索 + 分类占位 + 网格（数据源属批 7，当前为空态）。 */
-function StickersView() {
+/** 分类按钮行（共用样式，D 档）。 */
+function CategoryRow({ categories, active, onSelect, testId }: {
+  categories: readonly string[]
+  active: string
+  onSelect: (category: string) => void
+  testId: string
+}) {
+  return (
+    <div className={testId} style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+      {categories.map((category) => (
+        <button key={category} type="button" className="classic-button"
+          data-active={category === active} data-testid={`${testId}-${category}`}
+          onClick={() => onSelect(category)}
+          style={{ padding: '2px 8px', fontSize: 'var(--text-xs)', opacity: category === active ? 1 : 0.65 }}>
+          {category}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Stickers 视图：搜索 + 分类 + 真实 SVG 贴纸网格（可拖入时间轴/点击添加）。 */
+function StickersView({ stickers, onAdd }: {
+  stickers: readonly CatalogSticker[]
+  onAdd?: (payload: AssetDragPayload) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [category, setCategory] = useState('all')
+  const categories = useMemo(() => collectCategories(stickers), [stickers])
+  const visible = useMemo(() => filterStickers(stickers, query, category), [stickers, query, category])
   return (
     <PanelView title="Stickers">
       <input type="search" placeholder="Search..." aria-label="Search stickers"
+        data-testid="sticker-search" value={query} onChange={(e) => setQuery(e.target.value)}
         style={{ width: '100%', marginBottom: 8, padding: '4px 8px', background: 'var(--input)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--foreground)', fontSize: 'var(--text-sm)' }} />
-      <div style={{ display: 'flex', gap: 6, marginBottom: 8, fontSize: 'var(--text-xs)', color: 'var(--muted-foreground)' }}>Sticker categories</div>
-      <div style={{
+      <CategoryRow categories={categories} active={category} onSelect={setCategory} testId="sticker-categories" />
+      <div data-testid="sticker-grid" style={{
         display: 'grid', gap: 8,
         gridTemplateColumns: `repeat(auto-fill, minmax(${ASSETS_STICKERS_GRID_MIN_PX}px, ${ASSETS_STICKERS_GRID_MAX_PX}px))`,
       }}>
-        <p style={{ color: 'var(--muted-foreground)', fontSize: 'var(--text-sm)' }}>No stickers available yet.</p>
+        {visible.length === 0 && <p style={{ color: 'var(--muted-foreground)', fontSize: 'var(--text-sm)' }}>No stickers available yet.</p>}
+        {visible.map((sticker) => {
+          const payload: AssetDragPayload = {
+            kind: 'text', id: `sticker-${sticker.id}`, name: sticker.name,
+            content: sticker.char, stickerSrc: sticker.src,
+          }
+          return (
+            <div key={sticker.id} data-testid={`sticker-${sticker.id}`}
+              draggable onDragStart={(event) => {
+                event.dataTransfer.setData(TIMELINE_DRAG_MIME, JSON.stringify(payload))
+                event.dataTransfer.effectAllowed = 'copy'
+              }} onClick={() => onAdd?.(payload)}
+              title={`${sticker.name}（点击加入时间轴 / 拖入轨道）`}
+              className="classic-asset-card" style={{ cursor: 'pointer', textAlign: 'center' }}>
+              <img src={sticker.src} alt={sticker.name} width={48} height={48}
+                style={{ display: 'block', margin: '0 auto', imageRendering: 'auto' }} />
+              <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'var(--text-xs)' }}>{sticker.name}</span>
+            </div>
+          )
+        })}
       </div>
     </PanelView>
   )
 }
 
-/** Sounds 视图：搜索 + 筛选占位 + 空态（真实音频源属批 7）。 */
-function SoundsView() {
+/** Sounds 视图：搜索 + 分类 + 试听 + 收藏 + 拖入时间轴。 */
+function SoundsView({ sounds, favorites, onToggleFavorite, onAdd }: {
+  sounds: readonly CatalogSound[]
+  favorites?: ReadonlySet<string>
+  onToggleFavorite?: (soundId: string) => void
+  onAdd?: (payload: AssetDragPayload) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [category, setCategory] = useState('all')
+  const [playingId, setPlayingId] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const categories = useMemo(() => collectCategories(sounds), [sounds])
+  const visible = useMemo(() => filterSounds(sounds, query, category), [sounds, query, category])
+
+  /** 点击卡片试听/停止；同一音效再次点击停止。 */
+  const togglePreview = (sound: CatalogSound) => {
+    if (playingId === sound.id) {
+      audioRef.current?.pause()
+      setPlayingId(null)
+      return
+    }
+    try {
+      if (!audioRef.current) audioRef.current = new Audio()
+      audioRef.current.src = sound.src
+      void audioRef.current.play()
+      setPlayingId(sound.id)
+    } catch {
+      setPlayingId(null)
+    }
+  }
+
   return (
     <PanelView title="Sounds">
       <input type="search" placeholder="Search sound effects" aria-label="Search sound effects"
+        data-testid="sound-search" value={query} onChange={(e) => setQuery(e.target.value)}
         style={{ width: '100%', marginBottom: 8, padding: '4px 8px', background: 'var(--input)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--foreground)', fontSize: 'var(--text-sm)' }} />
-      <p style={{ color: 'var(--muted-foreground)', fontSize: 'var(--text-sm)' }}>No sounds available</p>
+      <CategoryRow categories={categories} active={category} onSelect={setCategory} testId="sound-categories" />
+      <div data-testid="sound-grid" style={{ display: 'grid', gap: 6 }}>
+        {visible.length === 0 && <p style={{ color: 'var(--muted-foreground)', fontSize: 'var(--text-sm)' }}>No sounds available</p>}
+        {visible.map((sound) => {
+          const payload: AssetDragPayload = {
+            kind: 'audio', id: `sound-${sound.id}`, name: sound.name,
+            mediaType: 'audio', soundSrc: sound.src,
+          }
+          const favorite = favorites?.has(sound.id) ?? false
+          return (
+            <div key={sound.id} data-testid={`sound-${sound.id}`}
+              draggable onDragStart={(event) => {
+                event.dataTransfer.setData(TIMELINE_DRAG_MIME, JSON.stringify(payload))
+                event.dataTransfer.effectAllowed = 'copy'
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+              <button type="button" data-testid={`sound-play-${sound.id}`}
+                onClick={() => togglePreview(sound)}
+                aria-label={playingId === sound.id ? `停止 ${sound.name}` : `试听 ${sound.name}`}
+                style={{ background: 'none', border: 'none', color: 'var(--foreground)', cursor: 'pointer' }}>
+                {playingId === sound.id ? '■' : '▶'}
+              </button>
+              <span style={{ flex: 1, fontSize: 'var(--text-sm)' }}>{sound.name}</span>
+              <span style={{ color: 'var(--muted-foreground)', fontSize: 'var(--text-xs)' }}>{(sound.durationMs / 1000).toFixed(1)}s</span>
+              <button type="button" data-testid={`sound-fav-${sound.id}`}
+                onClick={() => onToggleFavorite?.(sound.id)}
+                aria-label={favorite ? `取消收藏 ${sound.name}` : `收藏 ${sound.name}`}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: favorite ? 'var(--primary)' : 'var(--muted-foreground)' }}>
+                {favorite ? '★' : '☆'}
+              </button>
+              <button type="button" data-testid={`sound-add-${sound.id}`}
+                onClick={() => onAdd?.(payload)} title={`加入时间轴：${sound.name}`}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--foreground)' }}>+</button>
+            </div>
+          )
+        })}
+      </div>
     </PanelView>
   )
 }
 
-/** Effects 视图：96px 网格骨架（effect 注册数据属批 7）。 */
-function EffectsView() {
+/** Effects 视图：真实预设网格（CSS 渐变预览 + 点击应用到选中元素）。 */
+function EffectsView({ effects, onApply }: {
+  effects: readonly CatalogEffect[]
+  onApply?: (effect: CatalogEffect) => void
+}) {
+  const [category, setCategory] = useState('all')
+  const categories = useMemo(() => collectCategories(effects), [effects])
+  const visible = useMemo(() => filterEffects(effects, category), [effects, category])
   return (
     <PanelView title="Effects">
-      <div style={{
+      <CategoryRow categories={categories} active={category} onSelect={setCategory} testId="effect-categories" />
+      <div data-testid="effect-grid" style={{
         display: 'grid', gap: 8,
         gridTemplateColumns: `repeat(auto-fill, minmax(${ASSETS_EFFECTS_GRID_MIN_PX}px, 1fr))`,
       }}>
-        <p style={{ color: 'var(--muted-foreground)', fontSize: 'var(--text-sm)' }}>No effects available.</p>
+        {visible.length === 0 && <p style={{ color: 'var(--muted-foreground)', fontSize: 'var(--text-sm)' }}>No effects available.</p>}
+        {visible.map((effect) => {
+          const gradient = effect.preview.kind === 'gradient'
+            ? `linear-gradient(135deg, ${effect.preview.colors.join(', ')})`
+            : 'var(--muted)'
+          return (
+            <button key={effect.id} type="button" data-testid={`effect-${effect.id}`}
+              onClick={() => onApply?.(effect)}
+              title={`应用效果：${effect.name}`}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'center' }}>
+              <div data-testid={`effect-preview-${effect.id}`}
+                style={{ height: 64, background: gradient, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }} />
+              <span style={{ display: 'block', marginTop: 4, fontSize: 'var(--text-xs)' }}>{effect.name}</span>
+            </button>
+          )
+        })}
       </div>
     </PanelView>
   )
@@ -507,13 +665,15 @@ export function AssetsPanel(props: AssetsPanelProps) {
       content = <TextView onAdd={props.onAddToTimeline} />
       break
     case 'stickers':
-      content = <StickersView />
+      content = <StickersView stickers={props.catalog?.stickers ?? []} onAdd={props.onAddToTimeline} />
       break
     case 'sounds':
-      content = <SoundsView />
+      content = <SoundsView sounds={props.catalog?.sounds ?? []}
+        favorites={props.favorites} onToggleFavorite={props.onToggleFavorite}
+        onAdd={props.onAddToTimeline} />
       break
     case 'effects':
-      content = <EffectsView />
+      content = <EffectsView effects={props.catalog?.effects ?? []} onApply={props.onApplyEffect} />
       break
     case 'captions':
       content = <CaptionsView />
