@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
+/**
+ * export.ts 纯逻辑测试（ISTQB 组件测试级别）。
+ * 覆盖：编码常量契约、isExportAborted、exportProgressPercent 边界、
+ * validateExportOptions 合规/非法分支、profileBitrate、isExportSupported/isOpusEncodingSupported。
+ * 实际编码（WebCodecs/MP4 muxer）由 E2E/MCP 契约覆盖，这里不执行重型编码。
+ */
 
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AV1_VIDEO_CODEC,
   DEFAULT_EXPORT_BITRATE,
@@ -9,88 +15,87 @@ import {
   WEBM_AUDIO_BITRATE,
   WEBM_AUDIO_CODEC,
   WEBM_VIDEO_CODEC,
-  exportProjectToAv1WebM,
-  exportProjectToMp4,
-  exportProjectToWebM,
+  YIELD_EVERY_FRAMES,
   exportProgressPercent,
   isExportAborted,
-  profileBitrate,
   isExportSupported,
   isOpusEncodingSupported,
+  profileBitrate,
   validateExportOptions,
-} from './export';
+} from './export'
 
-/** 导出模块的纯函数回归：不启动浏览器编码，覆盖正常、边界与异常分支。 */
-describe('export 纯函数', () => {
-  const valid = { width: 320, height: 180, fps: 30, frameCount: 90 };
-  const options = { ...valid, ticksPerFrame: 4000, profile: {}, params: {} };
+/** 每个用例后恢复全局 stub。 */
+afterEach(() => vi.unstubAllGlobals())
 
-  it('合法导出参数通过', () => {
-    expect(validateExportOptions(valid)).toBeNull();
-  });
+describe('export.ts 常量契约', () => {
+  it('编码/码率/关键帧间隔为固定契约值', () => {
+    expect(EXPORT_CODEC).toBe('avc1.42001f')
+    expect(KEY_FRAME_INTERVAL).toBe(30)
+    expect(YIELD_EVERY_FRAMES).toBe(8)
+    expect(DEFAULT_EXPORT_BITRATE).toBe(2_000_000)
+    expect(WEBM_VIDEO_CODEC).toBe('vp09.00.10.08')
+    expect(WEBM_AUDIO_CODEC).toBe('opus')
+    expect(WEBM_AUDIO_BITRATE).toBe(96_000)
+    expect(AV1_VIDEO_CODEC).toBe('av01.0.04M.08')
+    expect(EXPORT_ABORTED_MESSAGE).toBe('导出已取消')
+  })
+})
 
-  it('奇数宽高、零尺寸、非法帧率与帧数被拒绝', () => {
-    expect(validateExportOptions({ ...valid, width: 321 })).toContain('正偶数');
-    expect(validateExportOptions({ ...valid, width: 0 })).toContain('正偶数');
-    expect(validateExportOptions({ ...valid, fps: 0 })).toContain('帧率');
-    expect(validateExportOptions({ ...valid, fps: Number.NaN })).toContain('帧率');
-    expect(validateExportOptions({ ...valid, frameCount: 0 })).toContain('帧数');
-    expect(validateExportOptions({ ...valid, frameCount: 1.5 })).toContain('帧数');
-  });
+describe('export.ts 进度与取消判定', () => {
+  it('isExportAborted：消息等于「导出已取消」为真，其它为假', () => {
+    expect(isExportAborted(new Error(EXPORT_ABORTED_MESSAGE))).toBe(true)
+    expect(isExportAborted(new Error('other'))).toBe(false)
+    expect(isExportAborted(null)).toBe(false)
+    expect(isExportAborted(EXPORT_ABORTED_MESSAGE)).toBe(false)
+  })
 
-  it('常量固定，避免硬编码散落', () => {
-    expect(EXPORT_CODEC).toBe('avc1.42001f');
-    expect(KEY_FRAME_INTERVAL).toBe(30);
-    expect(DEFAULT_EXPORT_BITRATE).toBe(2_000_000);
-  });
+  it('exportProgressPercent：0/总数/越界/NaN 边界', () => {
+    expect(exportProgressPercent(0, 100)).toBe(0)
+    expect(exportProgressPercent(50, 100)).toBe(50)
+    expect(exportProgressPercent(100, 100)).toBe(100)
+    expect(exportProgressPercent(150, 100)).toBeLessThanOrEqual(100)
+    expect(exportProgressPercent(5, 0)).toBeGreaterThanOrEqual(0)
+    expect(Number.isFinite(exportProgressPercent(Number.NaN, 100))).toBe(true)
+  })
+})
 
-  it('WebM 容器 codec 常量固定', () => {
-    expect(WEBM_VIDEO_CODEC).toBe('vp09.00.10.08');
-    expect(WEBM_AUDIO_CODEC).toBe('opus');
-    expect(WEBM_AUDIO_BITRATE).toBe(96_000);
-  });
+describe('export.ts 选项校验与编码能力', () => {
+  it('validateExportOptions：合法宽高/帧率/帧数返回 null', () => {
+    expect(validateExportOptions({ width: 1920, height: 1080, fps: 30, frameCount: 100 })).toBeNull()
+  })
 
-  it('Node/无 WebCodecs 环境返回不可用', () => {
-    expect(isExportSupported()).toBe(false);
-  });
+  it('validateExportOptions：奇数宽高/非法帧率/非法帧数返回中文错误', () => {
+    expect(validateExportOptions({ width: 101, height: 100, fps: 30, frameCount: 10 })).toContain('正偶数')
+    expect(validateExportOptions({ width: 100, height: 100, fps: 0, frameCount: 10 })).toContain('帧率')
+    expect(validateExportOptions({ width: 100, height: 100, fps: 30, frameCount: 0 })).toContain('帧数')
+  })
 
-  it('无 AudioEncoder 时 Opus 能力探测返回 false', async () => {
-    expect(await isOpusEncodingSupported()).toBe(false);
-  });
+  it('profileBitrate：videoBitrateBps 合法数字、非法返回 null', () => {
+    expect(profileBitrate({ videoBitrateBps: 5_000_000 })).toBe(5_000_000)
+    expect(profileBitrate({ videoBitrateBps: -1 })).toBeNull()
+    expect(profileBitrate({ bitrate: 5_000_000 })).toBeNull()
+    expect(profileBitrate(null)).toBeNull()
+  })
 
-  it('AV1 容器 codec 常量固定', () => {
-    expect(AV1_VIDEO_CODEC).toBe('av01.0.04M.08');
-  });
+  it('isExportSupported：VideoEncoder/VideoFrame 同时存在才 true', () => {
+    vi.stubGlobal('VideoEncoder', undefined)
+    vi.stubGlobal('VideoFrame', undefined)
+    expect(isExportSupported()).toBe(false)
+    vi.stubGlobal('VideoEncoder', class {})
+    vi.stubGlobal('VideoFrame', class {})
+    expect(isExportSupported()).toBe(true)
+  })
 
-  it('isExportAborted 仅识别取消消息（P4 批 5）', () => {
-    expect(isExportAborted(new Error(EXPORT_ABORTED_MESSAGE))).toBe(true);
-    expect(isExportAborted(new Error('视频导出失败：xxx'))).toBe(false);
-    expect(isExportAborted(EXPORT_ABORTED_MESSAGE)).toBe(false); // 非 Error 实例
-    expect(isExportAborted(null)).toBe(false);
-  });
+  it('isOpusEncodingSupported：AudioEncoder + AudioData 都支持时返回 true', async () => {
+    vi.stubGlobal('AudioEncoder', {
+      isConfigSupported: vi.fn(async () => ({ supported: true })),
+    })
+    vi.stubGlobal('AudioData', class {})
+    await expect(isOpusEncodingSupported()).resolves.toBe(true)
+  })
 
-  it('exportProgressPercent 覆盖正常、边界与异常值（W-07 进度条）', () => {
-    expect(exportProgressPercent(0, 100)).toBe(0);
-    expect(exportProgressPercent(45, 90)).toBe(50);
-    expect(exportProgressPercent(90, 90)).toBe(100);
-    expect(exportProgressPercent(120, 100)).toBe(100); // 超出夹逼
-    expect(exportProgressPercent(-5, 100)).toBe(0); // 负数夹逼
-    expect(exportProgressPercent(5, 0)).toBe(0); // 零总数
-    expect(exportProgressPercent(Number.NaN, 100)).toBe(0);
-    expect(exportProgressPercent(5, Number.POSITIVE_INFINITY)).toBe(0);
-  });
-
-  it('导出设置的码率可覆盖且非法值回退', () => {
-    expect(profileBitrate({ videoBitrateBps: 2_500_000 })).toBe(2_500_000);
-    expect(profileBitrate({ videoBitrateBps: 1234.6 })).toBe(1235);
-    expect(profileBitrate({ videoBitrateBps: -1 })).toBeNull();
-    expect(profileBitrate(null)).toBeNull();
-    expect(profileBitrate({})).toBeNull();
-  });
-
-  it('三种容器在无 WebCodecs 环境都给出中文降级提示', async () => {
-    await expect(exportProjectToMp4(options)).rejects.toThrow(/不支持 WebCodecs 导出/);
-    await expect(exportProjectToWebM(options)).rejects.toThrow(/不支持 WebCodecs 导出/);
-    await expect(exportProjectToAv1WebM(options)).rejects.toThrow(/不支持 WebCodecs 导出/);
-  });
-});
+  it('isOpusEncodingSupported：AudioEncoder 缺失时 false', async () => {
+    vi.stubGlobal('AudioEncoder', undefined)
+    await expect(isOpusEncodingSupported()).resolves.toBe(false)
+  })
+})

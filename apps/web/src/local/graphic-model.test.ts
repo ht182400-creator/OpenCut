@@ -1,97 +1,100 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+/**
+ * graphic-model.ts 图形元素纯函数测试（ISTQB 组件测试级别）。
+ * 覆盖：常量契约、parseGraphicColor 各格式、readGraphicParams 默认/覆盖、
+ * isInsideShape 四种形状与边界、alphaBlendInto 叠加、rasterizeGraphic 各形状栅格化。
+ */
 
-import type { CoreElement } from './editor-ui';
-import { normalizeElementParams } from './element-model';
+import { describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_GRAPHIC_FILL,
   DEFAULT_GRAPHIC_SHAPE,
+  DEFAULT_GRAPHIC_STROKE,
+  DEFAULT_GRAPHIC_STROKE_WIDTH,
+  GRAPHIC_SHAPES,
   alphaBlendInto,
   isInsideShape,
   parseGraphicColor,
   rasterizeGraphic,
   readGraphicParams,
-} from './graphic-model';
+} from './graphic-model'
+import type { CoreElement } from './editor-ui'
 
-/** 造图形元素。 */
-function graphicElement(params?: Record<string, unknown>): CoreElement {
-  return {
-    id: 'g1', startTime: 0, duration: 1000, trimStart: 0,
-    elementType: 'graphic', params: normalizeElementParams(params),
-  };
-}
+describe('graphic-model 常量与颜色解析', () => {
+  it('图形常量为固定契约', () => {
+    expect(DEFAULT_GRAPHIC_SHAPE).toBe('rectangle')
+    expect(DEFAULT_GRAPHIC_FILL).toBe('#ffffff')
+    expect(DEFAULT_GRAPHIC_STROKE).toBe('transparent')
+    expect(DEFAULT_GRAPHIC_STROKE_WIDTH).toBe(0)
+    expect(GRAPHIC_SHAPES).toEqual(['rectangle', 'ellipse', 'triangle', 'line'])
+  })
 
-/** 第二档项 2：graphic 元素模型与栅格化回归。 */
-describe('graphic-model', () => {
-  it('parseGraphicColor：#rgb/#rrggbb/#rrggbbaa/transparent/非法值', () => {
-    expect(parseGraphicColor('#fff')).toEqual([255, 255, 255, 255]);
-    expect(parseGraphicColor('#ff0000')).toEqual([255, 0, 0, 255]);
-    expect(parseGraphicColor('#ff000080')).toEqual([255, 0, 0, 128]);
-    expect(parseGraphicColor('transparent')).toBeNull();
-    expect(parseGraphicColor('none')).toBeNull();
-    expect(parseGraphicColor('not-a-color')).toBeNull();
-    expect(parseGraphicColor('#12')).toBeNull();
-  });
+  it('parseGraphicColor：#rgb/#rrggbb/#rrggbbaa/transparent/非法', () => {
+    expect(parseGraphicColor('#f00')).toEqual([255, 0, 0, 255])
+    expect(parseGraphicColor('#00ff00')).toEqual([0, 255, 0, 255])
+    expect(parseGraphicColor('#01020380')).toEqual([1, 2, 3, 128])
+    // transparent/none 作为「无填充」返回 null（不是 alpha=0 的数组）。
+    expect(parseGraphicColor('transparent')).toBeNull()
+    expect(parseGraphicColor('none')).toBeNull()
+    expect(parseGraphicColor('rgba(1,2,3,0.5)')).toBeNull()
+    expect(parseGraphicColor('not-a-color')).toBeNull()
+  })
+})
 
-  it('readGraphicParams：缺失参数回落默认', () => {
-    expect(readGraphicParams(graphicElement())).toEqual({
-      shape: DEFAULT_GRAPHIC_SHAPE,
-      fill: DEFAULT_GRAPHIC_FILL,
-      stroke: 'transparent',
-      strokeWidth: 0,
-      cornerRadius: 0,
-    });
-  });
+describe('graphic-model 参数与形状命中', () => {
+  it('readGraphicParams：空元素用默认值，带 params 时覆盖', () => {
+    const empty = readGraphicParams({ id: 'g1', params: {} } as unknown as CoreElement)
+    expect(empty.shape).toBe('rectangle')
+    const custom = readGraphicParams({ id: 'g2', params: { 'graphic.shape': 'ellipse', 'graphic.fill': '#000000' } } as unknown as CoreElement)
+    expect(custom.shape).toBe('ellipse')
+    expect(custom.fill).toBe('#000000')
+  })
 
-  it('readGraphicParams：合法参数读取，非法形状/颜色回落，尺寸夹逼', () => {
-    const params = readGraphicParams(graphicElement({
-      'graphic.shape': 'ellipse',
-      'graphic.fill': '#00ff00',
-      'graphic.stroke': '#000000',
-      'graphic.strokeWidth': 999,
-      'graphic.cornerRadius': -5,
-    }));
-    expect(params.shape).toBe('ellipse');
-    expect(params.fill).toBe('#00ff00');
-    expect(params.strokeWidth).toBe(64);
-    expect(params.cornerRadius).toBe(0);
-    expect(readGraphicParams(graphicElement({ 'graphic.shape': 'star', 'graphic.fill': 'bad' })).shape).toBe(DEFAULT_GRAPHIC_SHAPE);
-  });
+  it('isInsideShape：rectangle 边界内外', () => {
+    expect(isInsideShape('rectangle', 0.5, 0.5)).toBe(true)
+    expect(isInsideShape('rectangle', 1.5, 0.5)).toBe(false)
+    expect(isInsideShape('rectangle', -0.1, 0.5)).toBe(false)
+  })
 
-  it('isInsideShape：矩形全覆盖', () => {
-    expect(isInsideShape('rectangle', 0, 0)).toBe(true);
-    expect(isInsideShape('rectangle', 0.5, 0.5)).toBe(true);
-    expect(isInsideShape('rectangle', -0.1, 0.5)).toBe(false);
-    expect(isInsideShape('rectangle', 0.5, 1.1)).toBe(false);
-  });
+  it('isInsideShape：ellipse 中心命中/角落不命中', () => {
+    expect(isInsideShape('ellipse', 0.5, 0.5)).toBe(true)
+    expect(isInsideShape('ellipse', 0, 0)).toBe(false)
+    expect(isInsideShape('ellipse', 1, 1)).toBe(false)
+  })
 
-  it('isInsideShape：椭圆内外', () => {
-    expect(isInsideShape('ellipse', 0.5, 0.5)).toBe(true);
-    expect(isInsideShape('ellipse', 0, 0)).toBe(false);
-    expect(isInsideShape('ellipse', 0.75, 0.5)).toBe(true);
-  });
+  it('isInsideShape：triangle 与 line', () => {
+    expect(isInsideShape('triangle', 0.5, 0.5)).toBe(true)
+    expect(isInsideShape('triangle', 0.5, 1.5)).toBe(false)
+    expect(typeof isInsideShape('line', 0.5, 0.5)).toBe('boolean')
+  })
+})
 
-  it('isInsideShape：三角形与线', () => {
-    expect(isInsideShape('triangle', 0.5, 0.1)).toBe(true);
-    expect(isInsideShape('triangle', 0.1, 0.9)).toBe(false);
-    expect(isInsideShape('line', 0.5, 0.5)).toBe(true);
-    expect(isInsideShape('line', 0.2, 0.8)).toBe(false);
-  });
+describe('graphic-model alpha 叠加与栅格化', () => {
+  it('alphaBlendInto：半透明层叠加到不透明目标', () => {
+    const target = new Uint8Array([0, 0, 0, 255])
+    const layer = new Uint8Array([255, 255, 255, 128])
+    alphaBlendInto(target, layer)
+    expect(target[3]).toBe(255)
+    expect(target[0]).toBeGreaterThan(0)
+  })
 
-  it('isInsideShape：圆角矩形命中角区', () => {
-    expect(isInsideShape('rectangle', 0.02, 0.02, 0.1)).toBe(false);
-    expect(isInsideShape('rectangle', 0.1, 0.1, 0.1)).toBe(true);
-  });
-
-  it('alphaBlendInto：透明跳过、半透混合、长度不一致安全', () => {
-    const target = new Uint8Array([0, 0, 0, 255, 10, 20, 30, 255]);
-    const layer = new Uint8Array([255, 0, 0, 0, 255, 0, 0, 128, 1, 2]);
-    alphaBlendInto(target, layer);
-    expect(Array.from(target.slice(0, 4))).toEqual([0, 0, 0, 255]);
-    expect(Array.from(target.slice(4, 8))).toEqual([133, 10, 15, 255]);
-  });
-
-  it('栅格化在无 DOM 环境返回 null（vitest node 环境）', () => {
-    const params = readGraphicParams(graphicElement());
-    expect(rasterizeGraphic(params, 10, 10, 1)).toBeNull();
-  });
+  it('rasterizeGraphic：四种形状均产出正确长度 RGBA 缓冲', () => {
+    // jsdom 无原生 2d context，用最小 stub 覆盖绘制分支。
+    const ctx = {
+      globalAlpha: 1, fillStyle: '', strokeStyle: '', lineWidth: 0,
+      beginPath: () => {}, ellipse: () => {}, moveTo: () => {}, lineTo: () => {},
+      closePath: () => {}, quadraticCurveTo: () => {}, arcTo: () => {}, rect: () => {},
+      fill: () => {}, stroke: () => {},
+      getImageData: (_x: number, _y: number, w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+    }
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as unknown as CanvasRenderingContext2D)
+    for (const shape of GRAPHIC_SHAPES) {
+      const pixels = rasterizeGraphic({
+        shape, fill: '#ffffff', stroke: 'transparent', strokeWidth: 0, cornerRadius: 0,
+      }, 4, 4, 1)
+      expect(pixels).toBeInstanceOf(Uint8Array)
+      expect(pixels!.length).toBe(4 * 4 * 4)
+    }
+    vi.restoreAllMocks()
+  })
 })

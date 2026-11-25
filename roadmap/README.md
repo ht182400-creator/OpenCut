@@ -26,6 +26,8 @@
 | [`dashboard.test.cjs`](dashboard.test.cjs) | 看板回归测试（`node dashboard.test.cjs`，零依赖 DOM 桩，含正常/边界/异常用例） | 每次看板改动后 |
 | [`TEST_STANDARD.md`](TEST_STANDARD.md) | **第三方测试规范**：ISTQB 测试级别 / ISO/IEC 29119 测试过程与文档 / 测试金字塔与奖盃 / FIRST 原则；含各标准到本仓库的映射 | 测试策略变化时 |
 | [`TEST_REPORT_2026-11-25.md`](TEST_REPORT_2026-11-25.md) | **全面测试报告**：五层测试方案、环境搭建、逐模块逐语言案例与结果（1041 项通过）、覆盖率基线、缺陷记录 | 每次全量测试后 |
+| [`TEST_REPORT_2026-11-26_覆盖率达标与遗留清理.md`](TEST_REPORT_2026-11-26_覆盖率达标与遗留清理.md) | **测试优化报告**：ISTQB 分层覆盖率口径、单测 80% 硬门禁（89.68%）、Rust 覆盖率 72.79%、7 项遗留清理 | 覆盖率/遗留状态变化时 |
+| [`e2e/caption-import.e2e.mjs`](e2e/caption-import.e2e.mjs) | **E2E 验收脚本**：自启动 preview + 真实 SRT 上传 + autosave 校验（需 ego-browser CLI） | 字幕导入改动后 |
 | [`../run-tests.ps1`](../run-tests.ps1) | **统一测试入口**：一键执行 7 套件（Web/API/Rust/契约），分层日志带毫秒时间戳、FAIL 标红 | 测试套件增减时 |
 | [`H03-toolchain-bootstrap.md`](H03-toolchain-bootstrap.md) | **H03 完全关闭**：proto/moon 官方包的 API 通道下载与 SHA-256 校验、二进制交叉校验、无旁路验证记录与复现命令 | 工具链变更时 |
 | [`../apps/web/src/local/editor-api.contract.json`](../apps/web/src/local/editor-api.contract.json) | Rust Editor API ↔ Web 的机器可读契约；校验脚本 `editor-api.contract.test.mjs` | 接口变更时 |

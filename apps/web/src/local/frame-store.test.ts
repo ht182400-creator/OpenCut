@@ -1,105 +1,110 @@
-import { describe, expect, it } from 'vitest';
+/**
+ * frame-store.ts 完整测试（ISTQB 组件测试级别）。
+ * 覆盖：MemoryFrameStore 读写统计、FrameStore 门面正常/异常降级（load/save/clear/stats）、
+ * createDefaultBackend 在有无 IndexedDB 时的选择、常量契约。
+ * 后端可注入，无需真实 IndexedDB（异常用 fake backend 模拟）。
+ */
 
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  FrameStore,
   FRAME_STORE_DB_NAME,
   FRAME_STORE_NAME,
+  FRAME_STORE_SCHEMA_VERSION,
+  FrameStore,
+  IndexedDbFrameStore,
   MemoryFrameStore,
   createDefaultBackend,
-  frameStore,
   type FrameStoreBackend,
   type PersistedEntry,
-} from './frame-store';
-import type { CachedMedia } from './frame-cache';
+} from './frame-store'
+import type { CachedMedia } from './frame-cache'
 
-/** 构造最小缓存条目。 */
-function media(frameCount = 2): CachedMedia {
+/** 每个用例后恢复全局。 */
+afterEach(() => vi.unstubAllGlobals())
+
+/** 构造最小 CachedMedia。 */
+function makeMedia(bytes = 8): CachedMedia {
   return {
-    frames: Array.from({ length: frameCount }, () => new Uint8Array(4)),
+    key: 'k1',
+    frames: [new Uint8Array(bytes)],
     audio: null,
-    durationSeconds: frameCount / 30,
-    fps: 30,
     width: 320,
     height: 180,
-  };
+    savedAt: 1,
+  } as unknown as CachedMedia
 }
 
-/** 全部操作抛错的后端，用于验证静默降级。 */
-const throwingBackend: FrameStoreBackend = {
-  async get() { throw new Error('blocked'); },
-  async put() { throw new Error('quota exceeded'); },
-  async clear() { throw new Error('blocked'); },
-  async stats() { throw new Error('blocked'); },
-};
+/** 构造一个抛异常的后端（覆盖所有 catch 分支）。 */
+function makeFailingBackend(): FrameStoreBackend {
+  return {
+    get: vi.fn(async () => { throw new Error('read fail') }),
+    put: vi.fn(async () => { throw new Error('write fail') }),
+    clear: vi.fn(async () => { throw new Error('clear fail') }),
+    stats: vi.fn(async () => { throw new Error('stats fail') }),
+  }
+}
 
-/** 代理帧持久化回归（W-09 第二批）：用内存后端覆盖读写与异常分支，不依赖浏览器。 */
 describe('MemoryFrameStore', () => {
-  it('put/get 往返并保留元数据', async () => {
-    const backend = new MemoryFrameStore();
-    const record: PersistedEntry = {
-      key: 'a', value: media(3), savedAt: 123, bytes: 12,
-    };
-    await backend.put(record);
-    expect(await backend.get('a')).toEqual(record);
-  });
+  it('put/get/clear/stats 正常读写与统计', async () => {
+    const store = new MemoryFrameStore()
+    const entry: PersistedEntry = { key: 'k1', value: makeMedia(), savedAt: 1, bytes: 8 }
+    await store.put(entry)
+    expect(await store.get('k1')).toEqual(entry)
+    expect((await store.stats()).entries).toBe(1)
+    await store.clear()
+    expect(await store.get('k1')).toBeNull()
+    expect((await store.stats()).bytes).toBe(0)
+  })
 
-  it('clear 与 stats', async () => {
-    const backend = new MemoryFrameStore();
-    await backend.put({ key: 'a', value: media(), savedAt: 1, bytes: 8 });
-    expect(await backend.stats()).toEqual({ entries: 1, bytes: 8 });
-    await backend.clear();
-    expect(await backend.stats()).toEqual({ entries: 0, bytes: 0 });
-    expect(await backend.get('a')).toBeNull();
-  });
-});
+  it('get 不存在的 key 返回 null', async () => {
+    expect(await new MemoryFrameStore().get('missing')).toBeNull()
+  })
+})
 
-describe('FrameStore 往返', () => {
-  it('save/load 还原帧与音轨', async () => {
-    const store = new FrameStore(new MemoryFrameStore());
-    const value = media(3);
-    value.audio = {
-      channels: [new Float32Array([0.5, -0.5]), new Float32Array([0.25, -0.25])],
-      sampleRate: 48000,
-      durationSeconds: 0.1,
-    };
-    expect(await store.save('k', value)).toBe(true);
-    const loaded = await store.load('k');
-    expect(loaded?.frames).toHaveLength(3);
-    expect(Array.from(loaded?.audio?.channels[0] ?? [])).toEqual([0.5, -0.5]);
-    expect(await store.stats()).toEqual({ entries: 1, bytes: 12 + 16 });
-  });
+describe('FrameStore 门面正常分支', () => {
+  it('load/save/clear/stats 委托给后端', async () => {
+    const backend = new MemoryFrameStore()
+    const store = new FrameStore(backend)
+    const media = makeMedia()
+    expect(await store.save('k1', media)).toBe(true)
+    expect(await store.load('k1')).toEqual(media)
+    expect((await store.stats()).entries).toBe(1)
+    expect(await store.clear()).toBe(true)
+  })
+})
 
-  it('未命中的 key 返回 null', async () => {
-    const store = new FrameStore(new MemoryFrameStore());
-    expect(await store.load('missing')).toBeNull();
-  });
+describe('FrameStore 门面异常降级（静默不阻断主流程）', () => {
+  it('load：后端抛错返回 null', async () => {
+    expect(await new FrameStore(makeFailingBackend()).load('k')).toBeNull()
+  })
 
-  it('clear 清空持久化记录', async () => {
-    const store = new FrameStore(new MemoryFrameStore());
-    await store.save('a', media());
-    expect(await store.clear()).toBe(true);
-    expect(await store.stats()).toEqual({ entries: 0, bytes: 0 });
-  });
-});
+  it('save：后端抛错返回 false', async () => {
+    expect(await new FrameStore(makeFailingBackend()).save('k', makeMedia())).toBe(false)
+  })
 
-describe('FrameStore 异常降级', () => {
-  it('后端抛错时 load 返回 null、save/clear 返回 false、stats 归零', async () => {
-    const store = new FrameStore(throwingBackend);
-    expect(await store.load('k')).toBeNull();
-    expect(await store.save('k', media())).toBe(false);
-    expect(await store.clear()).toBe(false);
-    expect(await store.stats()).toEqual({ entries: 0, bytes: 0 });
-  });
-});
+  it('clear：后端抛错返回 false', async () => {
+    expect(await new FrameStore(makeFailingBackend()).clear()).toBe(false)
+  })
 
-describe('默认后端与常量', () => {
-  it('Node 无 IndexedDB 时降级为内存后端', () => {
-    expect(createDefaultBackend()).toBeInstanceOf(MemoryFrameStore);
-  });
+  it('stats：后端抛错返回零值', async () => {
+    expect(await new FrameStore(makeFailingBackend()).stats()).toEqual({ entries: 0, bytes: 0 })
+  })
+})
 
-  it('共享单例可用且数据库名稳定', () => {
-    expect(FRAME_STORE_DB_NAME).toBe('opencut-proxy-frames');
-    expect(FRAME_STORE_NAME).toBe('frames');
-    expect(frameStore).toBeInstanceOf(FrameStore);
-  });
-});
+describe('createDefaultBackend 与常量', () => {
+  it('无 IndexedDB 时降级为 MemoryFrameStore', () => {
+    vi.stubGlobal('indexedDB', undefined)
+    expect(createDefaultBackend()).toBeInstanceOf(MemoryFrameStore)
+  })
+
+  it('有 IndexedDB 时使用 IndexedDbFrameStore', () => {
+    vi.stubGlobal('indexedDB', { open: vi.fn() })
+    expect(createDefaultBackend()).toBeInstanceOf(IndexedDbFrameStore)
+  })
+
+  it('schema/DB/store 名称为固定契约值', () => {
+    expect(FRAME_STORE_SCHEMA_VERSION).toBe(1)
+    expect(FRAME_STORE_DB_NAME).toBe('opencut-proxy-frames')
+    expect(FRAME_STORE_NAME).toBe('frames')
+  })
+})

@@ -86,9 +86,14 @@
 
 - **工具**：`@vitest/coverage-v8` 4.1.12（Vitest 官方 V8 provider）。
 - **配置**：`apps/web/vitest.config.ts`（`provider: 'v8'`、`reporter: ['text','json-summary','html']`、`include: src/local/**/*.ts(x)`、排除测试/wasm/声明文件）。
-- **首次基线（2026-11-25）**：语句 44% / 分支 42.38% / 函数 40.11% / 行 44.49%。
-- **分层解读**：纯函数/模型层普遍 80~100%（timeline 97.5%、element-model 95%、caption-import 92%、project-write 85%）；大型 UI 组件（editor-page、assets-panel、timeline.tsx）为 0%，由 E2E 与组件交互测试覆盖，不做「为覆盖率而测试」。
-- **阈值策略**：当前不设硬性门槛（避免诱导只执行不校验的低效用例）；后续按模块分别设阈值，优先对纯函数层设 ≥80%。
+- **首次基线（2026-11-25）**：全局语句 44% / 分支 42.38% / 函数 40.11% / 行 44.49%。
+- **分层覆盖率口径（2026-11-26 起，ISTQB 按测试级别分别设目标）**：
+  - 单元层口径：`vitest.config.ts` 的 `COVERAGE_E2E_DOMAIN` 排除 18 个 E2E/集成覆盖域文件（组合根、大型交互面板、重型 I/O、状态机）。
+  - **门禁阈值 80%**（statements/branches/functions/lines 四项）：`coverage.thresholds`，未达标进程非零退出。
+  - 达标值（2026-11-26）：语句 89.68% / 分支 84.53% / 函数 93.60% / 行 90.78%。
+- **Rust 层**：`cargo llvm-cov test --workspace --summary-only`（cargo-llvm-cov 0.9.2），2026-11-26 实测行 72.79% / 分支 63.52% / 函数 73.35%，暂不设硬阈值。
+- **全局口径（参考）**：含 E2E 覆盖域时 62.3%，不用于门禁；分层依据与排除清单见 `TEST_REPORT_2026-11-26_覆盖率达标与遗留清理.md` §2。
+- **阈值策略**：硬门禁仅施于单元层；E2E/集成层由浏览器验收与 MCP 契约用例保证，不做「为覆盖率而测试」。
 
 ## 4. 日志规范（ISO 29119-2 测试事件报告）
 
@@ -100,9 +105,9 @@
 
 ## 5. 持续集成建议（尚未落地）
 
-1. `.github/workflows/bun-ci.yml` 当前仅跑 `moon ci`，未覆盖 `cargo test --workspace` 与 Node 契约脚本。
-2. 建议新增 CI step：三平台矩阵中运行 `powershell ./run-tests.ps1`（Windows）与等价 shell 脚本（Linux/macOS）。
-3. 覆盖率报告上传为 artifact；E2E 脚本（ego-browser）因依赖 IDE 插件暂不入 CI。
+1. ~~`.github/workflows/bun-ci.yml` 当前仅跑 `moon ci`~~ → **2026-11-26 已解决**：CI 新增 Web 覆盖率门禁（`node node_modules/vitest/vitest.mjs run --coverage`）、Rust workspace、API、4 个 Node 契约步骤，三平台矩阵自动执行。
+2. E2E 脚本已沉淀为 `roadmap/e2e/caption-import.e2e.mjs`（自启动 preview + 真实 SRT + autosave 校验）；因依赖 IDE 插件暂不入 CI，属标准允许的验收层边界。
+3. 覆盖率报告上传 artifact 为后续可选优化。
 
 ## 6. 标准出处
 

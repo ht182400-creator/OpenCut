@@ -35,3 +35,28 @@ jobs:
 
       - name: Run CI
         run: moon ci
+
+      # ISTQB 分层测试：moon ci 只覆盖声明了 moon.yml 的包，
+      # 以下补齐 Web 单测（含 80% 覆盖率门禁）、Rust workspace、Node 跨语言契约。
+      - name: Install Web dependencies
+        working-directory: apps/web
+        run: bun install --frozen-lockfile
+
+      - name: Web unit tests (80% coverage gate)
+        working-directory: apps/web
+        # 用本地 vitest CLI：bun x 会重新解析依赖并丢失 @vitest/coverage-v8。
+        run: node node_modules/vitest/vitest.mjs run --coverage
+
+      - name: Rust workspace tests
+        run: cargo test --workspace
+
+      - name: Node cross-language contract tests
+        run: |
+          node apps/web/src/local/editor-api.contract.test.mjs
+          node apps/local-mcp/server.test.mjs
+          node roadmap/compat.test.cjs
+          node roadmap/dashboard.test.cjs
+
+      - name: API route tests
+        working-directory: apps/api
+        run: bun test src/index.test.mjs

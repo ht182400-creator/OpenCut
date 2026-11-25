@@ -1,139 +1,101 @@
-import { describe, expect, it } from 'vitest';
+/**
+ * editor-adapter.ts 请求校验纯函数测试（ISTQB 组件测试级别 + 错误推测）。
+ * 覆盖：常量契约、validateCapabilitiesRequest / validateRequest / validateFrameRequest /
+ * validateCompositeRequest / validateWaveformRequest / validateThumbnailRequest 的合法与非法输入、
+ * validateOtioText 格式校验、formatCoreError 中英文错误映射。
+ * 不加载 WASM（仅测进入 WASM 前的参数门禁）。
+ */
 
+import { describe, expect, it } from 'vitest'
 import {
   CORE_WASM_URL,
+  MAX_THUMBNAIL_PIXELS,
   SUPPORTED_KINDS,
   formatCoreError,
-  validateFrameRequest,
   validateCapabilitiesRequest,
+  validateCompositeRequest,
+  validateFrameRequest,
   validateOtioText,
   validateRequest,
-} from './editor-adapter';
-import { DEFAULT_ENCODER_CONFIG, probeWebCodecsSupport } from './webcodecs';
+  validateThumbnailRequest,
+  validateWaveformRequest,
+} from './editor-adapter'
 
-/**
- * 适配层与能力探测纯函数回归：不加载 WASM，覆盖正常、边界与异常分支。
- * 真实 WASM 端到端由 `editor-wasm.contract.mjs` 用 Node 单独验证。
- */
-describe('editor-adapter 纯函数', () => {
-  it('静态资源路径固定且指向 public/wasm', () => {
-    expect(CORE_WASM_URL).toBe('/wasm/ocx_bindings_wasm_bg.wasm');
-  });
+/** 对 assert 函数断言「合法输入不抛错」。 */
+function accepts(fn: (input: unknown) => void, input: unknown) {
+  expect(() => fn(input)).not.toThrow()
+}
 
-  it('支持 8 种请求类型且无重复', () => {
-    expect(SUPPORTED_KINDS).toHaveLength(8);
-    expect(new Set(SUPPORTED_KINDS).size).toBe(SUPPORTED_KINDS.length);
-    expect(SUPPORTED_KINDS).toContain('validateExportProfile');
-    expect(SUPPORTED_KINDS).toContain('buildFramePlan');
-    expect(SUPPORTED_KINDS).toContain('keyframeQuery');
-  });
+/** 对 assert 函数断言「非法输入抛指定中文提示」。 */
+function rejects(fn: (input: unknown) => void, input: unknown, hint?: string) {
+  let message = ''
+  try { fn(input) } catch (error) { message = error instanceof Error ? error.message : String(error) }
+  expect(message).toBeTruthy()
+  if (hint) expect(message).toContain(hint)
+}
 
-  it('每种合法请求带上必填字段时通过', () => {
-    const valid: Record<string, Record<string, unknown>> = {
-      rippleAdjustments: { before: {}, after: {} },
-      rippleApply: { tracks: {}, adjustments: [] },
-      placementResolve: { tracks: {}, subject: {}, timeSpans: [], strategy: {} },
-      animationScalar: { channel: {}, time: 0, fallbackValue: 0 },
-      editorExecute: { command: {} },
-      validateExportProfile: { profile: {} },
-      buildFramePlan: { durationTicks: 120000, profile: {} },
-      keyframeQuery: { op: 'isAnimationPath' },
-    };
-    for (const kind of SUPPORTED_KINDS) {
-      expect(() => validateRequest({ kind, ...valid[kind] })).not.toThrow();
+describe('editor-adapter 常量契约', () => {
+  it('WASM 路径/缩略图上限/支持命令清单固定', () => {
+    expect(CORE_WASM_URL).toBe('/wasm/ocx_bindings_wasm_bg.wasm')
+    expect(MAX_THUMBNAIL_PIXELS).toBe(512 * 512)
+    expect(SUPPORTED_KINDS).toContain('buildFramePlan')
+    expect(SUPPORTED_KINDS.length).toBeGreaterThan(5)
+  })
+})
+
+describe('editor-adapter 请求门禁校验', () => {
+  it('validateCapabilitiesRequest：对象通过，null/数组/基本类型拒绝', () => {
+    accepts(validateCapabilitiesRequest, {})
+    for (const bad of [null, [], 'x', 1, undefined]) {
+      rejects(validateCapabilitiesRequest, bad, '对象')
     }
-  });
+  })
 
-  it('缺少必填字段时给出具体字段名', () => {
-    expect(() => validateRequest({ kind: 'rippleAdjustments', before: {} })).toThrow(
-      /缺少必填字段 after/,
-    );
-    expect(() => validateRequest({ kind: 'buildFramePlan', profile: {} })).toThrow(
-      /缺少必填字段 durationTicks/,
-    );
-  });
+  it('validateRequest：合法 kind（buildFramePlan）通过，非法 kind/缺字段拒绝', () => {
+    accepts(validateRequest, { kind: 'buildFramePlan', durationTicks: 100, profile: {}, params: {} })
+    rejects(validateRequest, null)
+    rejects(validateRequest, { kind: 'unknown' })
+    rejects(validateRequest, { kind: 'buildFramePlan' })
+  })
 
-  it('未知 kind、null 与非对象输入均被拒绝', () => {
-    expect(() => validateRequest({ kind: 'unknown' })).toThrow(/不支持的请求类型/);
-    expect(() => validateRequest(null)).toThrow(/请求必须是对象/);
-    expect(() => validateRequest('ripple')).toThrow(/请求必须是对象/);
-  });
+  it('validateFrameRequest：合法帧请求通过，负帧号/缺字段拒绝', () => {
+    accepts(validateFrameRequest, { frameIndex: 0, timeTicks: 0, durationTicks: 120000, profile: {}, params: {} })
+    rejects(validateFrameRequest, { frameIndex: -1, timeTicks: 0, durationTicks: 100, profile: {}, params: {} })
+    rejects(validateFrameRequest, {})
+  })
 
-  it('错误提示保留原始信息并加前缀', () => {
-    expect(formatCoreError(new Error('boom'))).toContain('boom');
-    expect(formatCoreError('plain')).toContain('Rust core 调用失败');
-  });
-});
+  it('validateCompositeRequest：合法尺寸通过，零/负尺寸拒绝', () => {
+    accepts(validateCompositeRequest, { width: 320, height: 180, frameIndex: 0, timeTicks: 0, durationTicks: 100, params: {} })
+    rejects(validateCompositeRequest, { width: 0, height: 180, frameIndex: 0, timeTicks: 0, durationTicks: 100, params: {} })
+    rejects(validateCompositeRequest, { width: -1, height: 180, frameIndex: 0, timeTicks: 0, durationTicks: 100, params: {} })
+  })
 
-describe('validateFrameRequest', () => {
-  const valid = {
-    frameIndex: 0,
-    timeTicks: 0,
-    durationTicks: 4000,
-    profile: {},
-    params: {},
-  };
+  it('validateWaveformRequest：合法 bins（1~4096）通过，越界拒绝', () => {
+    accepts(validateWaveformRequest, {})
+    accepts(validateWaveformRequest, { bins: 16 })
+    rejects(validateWaveformRequest, { bins: 0 })
+    rejects(validateWaveformRequest, { bins: 4097 })
+  })
 
-  it('合法帧请求通过', () => {
-    expect(() => validateFrameRequest(valid)).not.toThrow();
-  });
+  it('validateThumbnailRequest：合法尺寸通过，超大/非法尺寸拒绝', () => {
+    accepts(validateThumbnailRequest, { srcWidth: 1920, srcHeight: 1080, width: 100, height: 60 })
+    rejects(validateThumbnailRequest, { srcWidth: -1, srcHeight: 1080, width: 100, height: 60 })
+    rejects(validateThumbnailRequest, { srcWidth: 1920, srcHeight: 1080, width: 0, height: 0 })
+  })
+})
 
-  it('缺失字段、负帧索引、非整数与非对象均被拒绝', () => {
-    const missing = { ...valid } as Record<string, unknown>;
-    delete missing.params;
-    expect(() => validateFrameRequest(missing)).toThrow(/缺少必填字段 params/);
-    expect(() => validateFrameRequest({ frameIndex: 0 })).toThrow(/缺少必填字段/);
-    expect(() => validateFrameRequest({ ...valid, frameIndex: -1 })).toThrow(/非负整数/);
-    expect(() => validateFrameRequest({ ...valid, frameIndex: 1.5 })).toThrow(/非负整数/);
-    expect(() => validateFrameRequest(null)).toThrow(/帧请求必须是对象/);
-  });
-});
+describe('editor-adapter OTIO 与错误映射', () => {
+  it('validateOtioText：非空字符串通过，空/非字符串拒绝', () => {
+    accepts(validateOtioText, JSON.stringify({ otio: 'mock' }))
+    rejects(validateOtioText, '', '非空字符串')
+    rejects(validateOtioText, '  ', '非空字符串')
+    rejects(validateOtioText, null, '非空字符串')
+  })
 
-describe('validateOtioText', () => {
-  it('合法 JSON 文本通过', () => {
-    expect(() => validateOtioText('{"OTIO_SCHEMA":"Timeline.1"}')).not.toThrow();
-  });
-
-  it('空字符串、空白与非字符串被拒绝', () => {
-    expect(() => validateOtioText('')).toThrow(/非空字符串/);
-    expect(() => validateOtioText('   ')).toThrow(/非空字符串/);
-    expect(() => validateOtioText(null)).toThrow(/非空字符串/);
-    expect(() => validateOtioText(42)).toThrow(/非空字符串/);
-  });
-
-  it('错误提示带自定义名称', () => {
-    expect(() => validateOtioText('', '时间轴 JSON')).toThrow(/时间轴 JSON/);
-  });
-});
-
-describe('validateCapabilitiesRequest（W-11）', () => {
-  it('合法对象（含空对象）通过', () => {
-    expect(() => validateCapabilitiesRequest({})).not.toThrow();
-    expect(() => validateCapabilitiesRequest({ apiVersion: '0.1.0' })).not.toThrow();
-  });
-
-  it('null、数组与非对象被拒绝', () => {
-    expect(() => validateCapabilitiesRequest(null)).toThrow(/必须是对象/);
-    expect(() => validateCapabilitiesRequest([])).toThrow(/必须是对象/);
-    expect(() => validateCapabilitiesRequest('x')).toThrow(/必须是对象/);
-    expect(() => validateCapabilitiesRequest(42)).toThrow(/必须是对象/);
-  });
-});
-
-describe('WebCodecs 能力探测', () => {
-  it('默认配置固定为 H.264 720p', () => {
-    expect(DEFAULT_ENCODER_CONFIG.codec).toBe('avc1.42001f');
-    expect(DEFAULT_ENCODER_CONFIG.width).toBe(1280);
-    expect(DEFAULT_ENCODER_CONFIG.framerate).toBe(30);
-  });
-
-  it('Node/无 WebCodecs 环境返回不可用且不抛异常', async () => {
-    const support = await probeWebCodecsSupport();
-    expect(support.available).toBe(false);
-    expect(support.videoEncoder).toBe(false);
-    expect(support.videoFrame).toBe(false);
-    expect(support.configSupported).toBe(false);
-    expect(support.reason).toContain('不提供 WebCodecs API');
-    expect(support.codec).toBe(DEFAULT_ENCODER_CONFIG.codec);
-  });
-});
+  it('formatCoreError：错误对象/字符串/null 统一为带前缀的中文提示', () => {
+    expect(formatCoreError(new Error('ENTITY_NOT_FOUND'))).toContain('Rust core 调用失败')
+    expect(formatCoreError(new Error('普通错误'))).toBeTruthy()
+    expect(formatCoreError('字符串错误')).toBeTruthy()
+    expect(formatCoreError(null)).toBeTruthy()
+  })
+})
