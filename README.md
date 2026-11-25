@@ -61,6 +61,8 @@ moon run api:dev       # localhost:8787
 moon run desktop:dev   # see apps/desktop/README.md
 ```
 
+On Windows you can also double-click `start-web.bat` in the repo root. It kills any leftover Vite processes from this project before starting a single server on `localhost:5173`, so repeated launches never pile up on 5174/5175. The cleanup is delegated to `clean-vite.ps1` (matches the project's `vite.js` path in the command line, port-independent). Keep the window open while the server runs; pressing Ctrl+C stops it.
+
 ## Contributing
 
 We're not set up to take outside contributions yet while the architecture is being designed. If you want to follow along, ask questions, or just hang out, [join the Discord](https://discord.gg/zmR9N35cjK) or [open an issue](https://github.com/opencut-app/opencut/issues).
