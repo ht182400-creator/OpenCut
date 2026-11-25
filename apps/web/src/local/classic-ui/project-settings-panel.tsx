@@ -50,7 +50,11 @@ export function ProjectSettingsPanel(props: ProjectSettingsPanelProps): React.Re
       <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>项目设置</div>
       <div style={rowStyle}>
         <label htmlFor="project-fps" style={{ width: 72 }}>FPS</label>
-        <select id="project-fps" data-testid="project-fps" value={props.currentFps} onChange={(e) => props.onFpsChange(Number(e.target.value))} style={selectStyle}>
+        <select id="project-fps" data-testid="project-fps" value={props.currentFps} onChange={(e) => {
+          // 与宽高比/背景一致：只接受枚举内的合法值，非法/空枚举输入不触发回调。
+          const fps = Number(e.target.value);
+          if (props.fpsOptions.includes(fps)) props.onFpsChange(fps);
+        }} style={selectStyle}>
           {props.fpsOptions.map((fps) => <option key={fps} value={fps}>{fps}</option>)}
         </select>
       </div>

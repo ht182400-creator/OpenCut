@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "suite": "caption-parse-golden-master",
+  "module": "caption-import.ts",
+  "language": "TypeScript",
+  "unit": "milliseconds",
+  "note": "SRT/ASS 时间戳解析与正文归一化的 golden master。时间单位为毫秒；ASS 小数位为百分秒（.5=50ms）。",
+  "requiredCategories": ["正常", "边界", "异常"],
+  "cases": [
+    {
+      "id": "CP01",
+      "category": "正常",
+      "fn": "parseSrtTime",
+      "input": "00:00:01,500",
+      "expected": 1500,
+      "summary": "SRT 标准 HH:MM:SS,mmm"
+    },
+    {
+      "id": "CP02",
+      "category": "正常",
+      "fn": "parseSrtTime",
+      "input": "01:02:03,004",
+      "expected": 3723004,
+      "summary": "时分秒毫秒全非零"
+    },
+    {
+      "id": "CP03",
+      "category": "边界",
+      "fn": "parseSrtTime",
+      "input": "00:00:01.5",
+      "expected": 1500,
+      "summary": "毫秒点号 + 1 位补零"
+    },
+    {
+      "id": "CP04",
+      "category": "边界",
+      "fn": "parseSrtTime",
+      "input": "00:00:01.05",
+      "expected": 1050,
+      "summary": "毫秒点号 + 2 位补零"
+    },
+    {
+      "id": "CP05",
+      "category": "边界",
+      "fn": "parseSrtTime",
+      "input": "01:30,250",
+      "expected": 90250,
+      "summary": "短时间格式 MM:SS,mmm"
+    },
+    {
+      "id": "CP06",
+      "category": "异常",
+      "fn": "parseSrtTime",
+      "input": "00:60:00,000",
+      "expected": null,
+      "summary": "分钟越界拒绝"
+    },
+    {
+      "id": "CP07",
+      "category": "异常",
+      "fn": "parseSrtTime",
+      "input": "00:00:00,0000",
+      "expected": null,
+      "summary": "毫秒 4 位非法"
+    },
+    {
+      "id": "CP08",
+      "category": "正常",
+      "fn": "parseAssTime",
+      "input": "0:00:01.00",
+      "expected": 1000,
+      "summary": "ASS H:MM:SS.cc 百分秒"
+    },
+    {
+      "id": "CP09",
+      "category": "边界",
+      "fn": "parseAssTime",
+      "input": "0:01:30.25",
+      "expected": 90250,
+      "summary": "ASS 百分秒两位"
+    },
+    {
+      "id": "CP10",
+      "category": "边界",
+      "fn": "parseAssTime",
+      "input": "1:02:03.5",
+      "expected": 3723050,
+      "summary": "ASS 百分秒一位按字面值（.5=50ms）"
+    },
+    {
+      "id": "CP11",
+      "category": "异常",
+      "fn": "parseAssTime",
+      "input": "00:00:01.000",
+      "expected": null,
+      "summary": "ASS 毫秒三位非法"
+    },
+    {
+      "id": "CP12",
+      "category": "正常",
+      "fn": "normalizeCaptionText",
+      "input": "你好\\N世界",
+      "expected": "你好 世界",
+      "summary": "ASS 换行标记压平为空格"
+    },
+    {
+      "id": "CP13",
+      "category": "边界",
+      "fn": "normalizeCaptionText",
+      "input": "{\\i1} 多行  空白\\n合并",
+      "expected": "多行 空白 合并",
+      "summary": "样式块剥离 + 多空白压缩"
+    },
+    {
+      "id": "CP14",
+      "category": "异常",
+      "fn": "normalizeCaptionText",
+      "input": "   {\\an8}  ",
+      "expected": "",
+      "summary": "仅样式块与空白返回空串"
+    }
+  ]
+}

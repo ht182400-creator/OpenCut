@@ -296,7 +296,7 @@ describe('C 档字幕元素写回', () => {
       id: 'caption-1', elementType: 'caption', content: '欢迎来到 OpenCut',
       startTime: 240000, duration: 180000,
     });
-    expect(textTrack?.elements[0].params?.fontSize).toBe(24);
+    expect(textTrack?.elements[0].params).toMatchObject({ fontSize: 24 });
     // 新 id 触发 allowNewTracks 开关（U-07 契约）。
     expect(hasNewElements(project, [caption])).toBe(true);
   });

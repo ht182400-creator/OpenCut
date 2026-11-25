@@ -1,6 +1,8 @@
 node_modules/
 dist/
 target/
+# Vitest V8 覆盖率报告（生成物，不入库）
+coverage/
 .env
 .env.*
 !.env.example
