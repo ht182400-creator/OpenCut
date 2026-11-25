@@ -72,6 +72,7 @@ import {
   type RippleResponse,
   type Session,
 } from './editor-ui'
+import type { ProjectView } from './editor-adapter'
 import { bookmarksFromProject, trackFlagsFromProject } from './project-write'
 import { DEFAULT_RESOLUTION, resolutionLabel } from './resolution'
 import type { ResolutionPreset } from './resolution'
@@ -321,7 +322,8 @@ export function Editor() {
       if ('error' in project) throw new Error(`项目不兼容：${project.error}`)
       const tracks = project.scenes.flatMap((scene) => scene.tracks)
       const mainTrack = tracks.find((track) => track.trackType === 'video' && track.id === 'main')
-      const mainElements: CoreElement[] = (mainTrack?.elements ?? []).map((element) => ({
+      /** U-07：把元素视图转成编辑器片段，非 main 轨带 trackId 以保留轨归属。 */
+      const toCoreElement = (element: ProjectView['scenes'][number]['tracks'][number]['elements'][number], trackId?: string): CoreElement => ({
         id: element.id,
         startTime: element.startTime,
         duration: element.duration,
@@ -333,7 +335,15 @@ export function Editor() {
         elementType: element.elementType,
         // P0：读取可视参数（不透明度/位置/缩放等），供预览与属性面板使用。
         params: (element.params ?? undefined) as CoreElement['params'],
-      }))
+        // U-07：非 main 轨元素带轨道归属，供分轨渲染与写回路由。
+        ...(trackId && trackId !== 'main' ? { trackId } : {}),
+      })
+      const mainElements: CoreElement[] = (mainTrack?.elements ?? []).map((element) => toCoreElement(element))
+      // U-07：overlay/audio 轨元素也纳入可编辑集合（带 trackId），否则无法编辑与写回。
+      const otherElements: CoreElement[] = tracks
+        .filter((track) => track.id !== 'main')
+        .flatMap((track) => track.elements.map((element) => toCoreElement(element, track.id)))
+      const allElements = [...mainElements, ...otherElements]
       if (mainElements.length === 0) throw new Error('项目中没有可编辑的主轨片段')
 
       const fps = project.fps.numerator / project.fps.denominator
@@ -341,8 +351,8 @@ export function Editor() {
       const profile = {
         ...BASE_PROFILE, width: resolution.width, height: resolution.height, frameRate: project.fps,
       }
-      const historySnapshot = clipHistory.reset(mainElements, '导入项目', name)
-      const historyClips = historySnapshot?.clips ?? mainElements
+      const historySnapshot = clipHistory.reset(allElements, '导入项目', name)
+      const historyClips = historySnapshot?.clips ?? allElements
       const plan = adapter.evaluate<FramePlanView>({
         kind: 'buildFramePlan', durationTicks: timelineDuration(historyClips), profile,
       })
@@ -368,7 +378,7 @@ export function Editor() {
       setProjectTracks(buildTimelineTracks(project))
       setMediaStatus(saved
         ? `已恢复自动保存的编辑现场（${saved.state.elements.length} 个片段）`
-        : restored === mainElements ? '未加载素材' : '已恢复上次编辑会话（可撤销）')
+        : restored === historyClips ? '未加载素材' : '已恢复上次编辑会话（可撤销）')
       setAdjustments(saved?.state.adjustments ?? historySnapshot?.adjustments ?? [])
       setSelectedId(saved?.state.selectedId ?? historySnapshot?.selectedId ?? null)
       selection.resetSelection()
@@ -434,21 +444,40 @@ export function Editor() {
   const deleteSelected = () => {
     if (!session || !selectedId || elements.length < 2) return
     try {
-      const after = elements.filter((item) => item.id !== selectedId)
-      const before = { overlay: [], main: { id: 'main', elements }, audio: [] }
-      const ripple = session.adapter.evaluate<RippleResponse>({
-        kind: 'rippleAdjustments', before,
-        after: { overlay: [], main: { id: 'main', elements: after }, audio: [] },
-      })
-      const applied = session.adapter.evaluate<ApplyResponse>({
-        kind: 'rippleApply', tracks: before, adjustments: ripple.adjustments,
-      })
-      const remainingIds = new Set(after.map((item) => item.id))
-      const trimById = new Map(elements.map((item) => [item.id, item.trimStart]))
-      const next = applied.tracks.main.elements
-        .filter((item) => remainingIds.has(item.id))
-        .map((item) => ({ ...item, trimStart: trimById.get(item.id) ?? 0 }))
-      setAdjustments(ripple.adjustments)
+      // U-07：ripple 按轨分组——不同轨时间独立，禁止把跨轨片段当邻居。
+      const trackIds = [...new Set(elements.map((item) => item.trackId ?? 'main'))]
+      const allAdjustments: RippleAdjustment[] = []
+      const built: CoreElement[] = []
+      for (const trackId of trackIds) {
+        const trackElements = elements.filter((item) => (item.trackId ?? 'main') === trackId)
+        const after = trackElements.filter((item) => item.id !== selectedId)
+        if (after.length === trackElements.length) {
+          // 被删片段不在此轨，该轨无需 ripple，原样保留。
+          built.push(...trackElements)
+          continue
+        }
+        const before = { overlay: [], main: { id: 'main', elements: trackElements }, audio: [] }
+        const ripple = session.adapter.evaluate<RippleResponse>({
+          kind: 'rippleAdjustments', before,
+          after: { overlay: [], main: { id: 'main', elements: after }, audio: [] },
+        })
+        const applied = session.adapter.evaluate<ApplyResponse>({
+          kind: 'rippleApply', tracks: before, adjustments: ripple.adjustments,
+        })
+        const remainingIds = new Set(after.map((item) => item.id))
+        const trimById = new Map(trackElements.map((item) => [item.id, item.trimStart]))
+        const adjusted = applied.tracks.main.elements
+          .filter((item) => remainingIds.has(item.id))
+          .map((item) => ({
+            ...item,
+            trimStart: trimById.get(item.id) ?? 0,
+            ...(trackId !== 'main' ? { trackId } : {}),
+          }))
+        built.push(...adjusted)
+        allAdjustments.push(...ripple.adjustments)
+      }
+      const next = built
+      setAdjustments(allAdjustments)
       setElements(next)
       clipHistory.record(next, '删除片段', { selectedId: null })
       setSelectedId(null)
@@ -1008,7 +1037,8 @@ export function Editor() {
         ...track,
         elements: track.id === 'main'
           ? elements.filter((element) => !element.trackId || element.trackId === 'main')
-          : [...track.elements, ...elements.filter((element) => element.trackId === track.id)],
+          // U-07：非 main 轨完全由可编辑 elements 派生，避免与 projectTracks 副本重复。
+          : elements.filter((element) => element.trackId === track.id),
       }))
     : [{ id: 'main', trackType: 'video', label: '主轨',
       elements: elements.filter((element) => !element.trackId || element.trackId === 'main') }]

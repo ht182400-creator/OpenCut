@@ -18,6 +18,17 @@ export interface TimelineClip {
   startTime: number;
   duration: number;
   trimStart: number;
+  /** U-07：所在轨道 id（缺省为 main）；仅用于同轨邻居约束，不参与帧映射。 */
+  trackId?: string;
+}
+
+/**
+ * 归一化轨道 id：main 与缺省视为同一轨。
+ * @param clip 片段
+ * @returns 轨道 id
+ */
+function trackKey(clip: TimelineClip): string {
+  return clip.trackId && clip.trackId !== 'main' ? clip.trackId : 'main';
 }
 
 /** 项目帧到素材帧的映射结果；无片段覆盖时为空档。 */
@@ -90,6 +101,8 @@ export function splitClipAt(
     startTime: splitTicks,
     duration: target.duration - elapsed,
     trimStart: target.trimStart + elapsed,
+    // U-07：继承原片段轨道，避免分割后半段掉回 main 轨。
+    ...(target.trackId !== undefined ? { trackId: target.trackId } : {}),
   };
   return clips.flatMap((clip) => (clip.id === clipId ? [first, second] : [clip]));
 }
@@ -327,7 +340,9 @@ export function moveClipClamped(
 ): TimelineClip[] {
   const target = clips.find((clip) => clip.id === clipId);
   if (!target) return clips;
-  const sorted = [...clips].sort((a, b) => a.startTime - b.startTime);
+  // U-07：只取同轨邻居，跨轨片段不参与夹取。
+  const sorted = clips.filter((clip) => trackKey(clip) === trackKey(target))
+    .sort((a, b) => a.startTime - b.startTime);
   const index = sorted.findIndex((clip) => clip.id === clipId);
   const previous = index > 0 ? sorted[index - 1] : null;
   const next = index < sorted.length - 1 ? sorted[index + 1] : null;
@@ -363,7 +378,9 @@ export function resizeClipEdge(
 ): TimelineClip[] {
   const target = clips.find((clip) => clip.id === clipId);
   if (!target) return clips;
-  const sorted = [...clips].sort((a, b) => a.startTime - b.startTime);
+  // U-07：只取同轨邻居，跨轨片段不参与时长夹取。
+  const sorted = clips.filter((clip) => trackKey(clip) === trackKey(target))
+    .sort((a, b) => a.startTime - b.startTime);
   const index = sorted.findIndex((clip) => clip.id === clipId);
   const next = index < sorted.length - 1 ? sorted[index + 1] : null;
   const maxDuration = next ? next.startTime - target.startTime : Number.POSITIVE_INFINITY;

@@ -5,6 +5,7 @@ import type { CoreElement } from './editor-ui';
 import {
   bookmarksFromProject,
   buildWriteView,
+  hasNewElements,
   saveProjectJson,
   trackFlagsFromProject,
 } from './project-write';
@@ -172,6 +173,50 @@ describe('buildWriteView 合并编辑', () => {
   it('U-06：无新增轨时视图轨道数不变（默认 additive-only）', () => {
     expect(buildWriteView(makeProject(), [], undefined, undefined, undefined, []).scenes[0].tracks)
       .toHaveLength(1);
+  });
+
+  it('U-07：已有 main 元素按 id 覆盖，非 main 元素不误写 main', () => {
+    const project = makeProject();
+    const view = buildWriteView(project, [
+      makeElement({ id: 'c1', trackId: undefined }),
+      makeElement({ id: 'ghost', startTime: 500, trackId: 'audio-1' }),
+    ]);
+    // main 轨 c1 被覆盖；ghost 不属于 main，不应出现在 main。
+    expect(view.scenes[0].tracks[0].elements.find((e) => e.id === 'c1')!.startTime).toBe(200);
+    expect(view.scenes[0].tracks[0].elements.some((e) => e.id === 'ghost')).toBe(false);
+  });
+
+  it('U-07：新元素按 trackId 追加到对应已有轨', () => {
+    const project = makeProject();
+    project.scenes[0].tracks.push({
+      id: 'audio-1', trackType: 'audio', elementCount: 0, elements: [],
+    });
+    const view = buildWriteView(project, [
+      makeElement({ id: 'audio-a', trackId: 'audio-1', startTime: 300, duration: 100 }),
+      makeElement({ id: 'audio-b', trackId: 'audio-1', startTime: 400, duration: 100 }),
+    ]);
+    const audio = view.scenes[0].tracks.find((t) => t.id === 'audio-1')!;
+    expect(audio.elements.map((e) => e.id)).toEqual(['audio-a', 'audio-b']);
+    expect(audio.elementCount).toBe(2);
+  });
+
+  it('U-07：hasNewElements 识别分割产生的新 id，旧 id 不误判', () => {
+    const project = makeProject();
+    expect(hasNewElements(project, [makeElement({ id: 'c1' })])).toBe(false);
+    expect(hasNewElements(project, [makeElement({ id: 'c1' }), makeElement({ id: 'c1#2' })])).toBe(true);
+  });
+
+  it('U-07：新轨带上属于它的编辑元素', () => {
+    const view = buildWriteView(
+      makeProject(),
+      [makeElement({ id: 'new-clip', trackId: 'new-track-1', startTime: 100, duration: 200 })],
+      undefined, undefined, undefined,
+      [{ id: 'new-track-1', trackType: 'text' }],
+    );
+    const added = view.scenes[0].tracks.find((t) => t.id === 'new-track-1')!;
+    expect(added.elementCount).toBe(1);
+    expect(added.elements[0].id).toBe('new-clip');
+    expect(added.elements[0].startTime).toBe(100);
   });
 });
 

@@ -29,7 +29,7 @@ import {
 } from './export-settings';
 import { PRODUCTION_FRAME_PARAMS } from './frame-source';
 import { formatCoreError } from './editor-adapter';
-import { buildWriteView, saveProjectJson } from './project-write';
+import { buildWriteView, hasNewElements, saveProjectJson } from './project-write';
 import { createSnapshot, parseSnapshot, snapshotToJson } from './project-snapshot';
 import type { CoreElement, ExportState, RippleAdjustment, Session } from './editor-ui';
 import {
@@ -280,7 +280,8 @@ export function createEditorActions(deps: EditorActionsDeps): EditorActions {
       const result = saveProjectJson(
         session.adapter, session.originalJson, view,
         `${session.project.name || 'project'}-v31.json`,
-        extraTracks.length > 0,
+        // U-07：新增轨或新元素（分割/新增片段）都需显式打开写回开关。
+        extraTracks.length > 0 || hasNewElements(session.project, elements),
       )
       if (result.ok) setErrorText(null)
       else setErrorText(result.message)

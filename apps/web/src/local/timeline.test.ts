@@ -339,3 +339,41 @@ describe('裁剪与平移', () => {
     expect(plannedFrameCount([], adapter, {})).toBe(1);
   });
 });
+
+/** U-07：多轨编辑约束——邻居只取同轨，split 继承轨道归属。 */
+describe('U-07 多轨编辑约束', () => {
+  const T = TICKS_PER_SECOND;
+  const multi: TimelineClip[] = [
+    { id: 'main-a', startTime: 0, duration: T, trimStart: 0 },
+    { id: 'main-b', startTime: T, duration: T, trimStart: 0 },
+    { id: 'audio-a', startTime: 0, duration: T / 2, trimStart: 0, trackId: 'audio-1' },
+    { id: 'audio-b', startTime: T / 2, duration: T / 2, trimStart: 0, trackId: 'audio-1' },
+  ];
+
+  it('移动片段时只受同轨邻居夹取，忽略他轨片段', () => {
+    const moved = moveClipClamped(multi, 'audio-a', T * 1.5);
+    const audioA = moved.find((c) => c.id === 'audio-a')!;
+    // 同轨下一段在 T/2，audio-a 时长 T/2，故上限 0；main-b 在 T 不构成邻居。
+    expect(audioA.startTime).toBe(0);
+  });
+
+  it('右边缘裁剪只受同轨后邻居约束', () => {
+    const resized = resizeClipEdge(multi, 'audio-a', 'right', T, T / 10);
+    const audioA = resized.find((c) => c.id === 'audio-a')!;
+    // 同轨下一段从 T/2 开始，故最大时长 T/2；main 轨不影响。
+    expect(audioA.duration).toBe(T / 2);
+  });
+
+  it('分割非 main 片段后半段继承 trackId', () => {
+    const split = splitClipAt(multi, 'audio-a', T / 4);
+    const second = split.find((c) => c.id === 'audio-a#2')!;
+    expect(second.trackId).toBe('audio-1');
+    expect(second.startTime).toBe(T / 4);
+    expect(second.duration).toBe(T / 4);
+  });
+
+  it('分割 main 片段不产生 trackId 字段', () => {
+    const split = splitClipAt(multi, 'main-a', T / 2);
+    expect(split.find((c) => c.id === 'main-a#2')!.trackId).toBeUndefined();
+  });
+});

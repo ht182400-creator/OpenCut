@@ -389,3 +389,53 @@ fn new_track_defaults_to_video_type() {
     assert!(new_track.get("muted").is_none());
     assert!(new_track.get("hidden").is_none());
 }
+
+/// U-07：默认 additive-only 下已有轨里的新元素 id 被拒绝。
+#[test]
+fn new_element_rejected_by_default() {
+    let mut view = read_classic_project(FIXTURE).unwrap();
+    let main = view.scenes[0].tracks.iter_mut()
+        .find(|track| track.id == "main").unwrap();
+    main.elements.push(ElementView {
+        id: "split-part-2".to_owned(),
+        element_type: "video".to_owned(),
+        start_time: 120000,
+        duration: 60000,
+        trim_start: 0,
+        trim_end: 60000,
+        name: None, media_id: None, content: None, params: None,
+    });
+    let result = write_classic_project_with_options(FIXTURE, &view, WriteOptions::default());
+    assert!(matches!(result, Err(CompatError::EntityNotFound)));
+}
+
+/// U-07：显式开关允许已有轨里新增元素（分割后半段），往返保真。
+#[test]
+fn new_element_survives_writeback_when_allowed() {
+    let mut view = read_classic_project(FIXTURE).unwrap();
+    let main = view.scenes[0].tracks.iter_mut()
+        .find(|track| track.id == "main").unwrap();
+    main.elements.push(ElementView {
+        id: "split-part-2".to_owned(),
+        element_type: "video".to_owned(),
+        start_time: 120000,
+        duration: 60000,
+        trim_start: 30000,
+        trim_end: 90000,
+        name: Some("分割后半段".to_owned()),
+        media_id: None, content: None, params: None,
+    });
+    let written = write_classic_project_with_options(
+        FIXTURE, &view, WriteOptions { allow_new_tracks: true },
+    ).unwrap();
+    let root: Value = serde_json::from_str(&written).unwrap();
+    let elements = root["scenes"][0]["tracks"]["main"]["elements"].as_array().unwrap();
+    let added = elements.iter().find(|e| e["id"] == "split-part-2").unwrap();
+    assert_eq!(added["startTime"], 120000);
+    assert_eq!(added["duration"], 60000);
+    assert_eq!(added["trimStart"], 30000);
+    assert_eq!(added["name"], "分割后半段");
+    let reread = read_classic_project(&written).unwrap();
+    let reread_main = reread.scenes[0].tracks.iter().find(|t| t.id == "main").unwrap();
+    assert!(reread_main.elements.iter().any(|e| e.id == "split-part-2"));
+}

@@ -57,7 +57,7 @@
 | 轨道头静音/隐藏 | 真实 | 点击生效 + autosave 刷新恢复 + 写回经典版 JSON（additive-only） | ✅ | P4 批 6 autosave + `fad92d49` 第一档 A：`buildWriteView` 传 trackFlags → core `project_compat.rs` `muted`/`hidden` 按 id 写回原 JSON；`project_write.rs` 往返测试含「原 JSON 无字段不新增」保护 |
 | 片段选中/点击联动属性 | 真实 | 真实 | ✅ | 批 4 浏览器验收 |
 | 片段移动/resize/trim（main 轨） | 真实 | 真实（core 契约） | ✅ | `moveClipClamped`/`resizeClipEdge` |
-| overlay/audio 轨编辑 | 真实（全轨） | 只读展示（点击可选中，不能编辑） | 🔴 | core 编辑契约只覆盖 main |
+| overlay/audio 轨编辑 | 真实（全轨） | 真实（非 main 轨可移动/裁剪/分割/删除，索引与邻居约束按轨隔离，写回 JSON 保真） | ✅ | U-07：`loadProject` 纳入全部轨元素并带 `trackId`；`timeline.ts` 约束函数按轨过滤邻居、split 继承轨归属；删除 ripple 逐轨计算互不干扰；`buildWriteView` 按 `trackId` 路由新元素；core `merge_track` 在 `allowNewTracks` 开关下允许已有轨新元素。浏览器验收 audio-bed 分割后 `audio-bed#2` 仍在 audio 轨、删除后 main 两片段不变、写回 JSON 未知字段保留，`oc-u07-writeback.json` |
 | Split / Split left / right | 真实 | 真实（main 轨，工具栏） | ✅ | — |
 | Duplicate / Delete | 真实 | Delete 真实；Duplicate 真实（Ctrl+D / 工具栏） | ✅ | P1：`element-operations.ts` `duplicateElements`，浏览器验收 4→6 片段 |
 | 多选 / 框选 / Shift 加选 | 真实 | Cmd/Ctrl 加选 + Shift 区间 + Ctrl+A 全选 + 空白拖框选（Shift 加框） | ✅ | P1：`use-selection.ts` 多选 + P2 长尾批：`timeline.tsx` 框选橡皮筋（`selectFromBox`/`normalizeTimelineRect`/`rectsIntersect`），浏览器验收框选 clip-intro+clip-body 高亮，`oc-p3-marquee.png` |
@@ -138,12 +138,12 @@
 
 | 状态 | 数量 | 分布（§） | 主要条目 |
 | --- | --- | --- | --- |
-| ✅ 已实现 | 47 | §1:5 §2:5 §3:14 §4:7 §5:5 §6:7 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、**素材排序**、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、**选框/手柄/参考线吸附闭环**、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）**、**撤销/重做全覆盖**、**自动保存 IndexedDB + 迁移**、**动态新增轨道 + 写回保真** |
+| ✅ 已实现 | 48 | §1:5 §2:5 §3:15 §4:7 §5:5 §6:7 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、**素材排序**、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、**选框/手柄/参考线吸附闭环**、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）**、**撤销/重做全覆盖**、**自动保存 IndexedDB + 迁移**、**动态新增轨道 + 写回保真**、**overlay/audio 轨编辑写回** |
 | 🟡 部分闭环 | 0 | — | 无 |
-| 🔴 占位 | 5 | §2:4 §3:1 | Sounds/Stickers/Effects/Settings 数据源、overlay/audio 轨编辑 |
+| 🔴 占位 | 4 | §2:4 | Sounds/Stickers/Effects/Settings 数据源 |
 | ⚪ 未覆盖 | 15 | §1:5 §2:5 §3:2 §4:1 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、双击文字就地编辑、素材右键 Export clips、剪贴板直接贴媒体 |
 
-> 合计 67 项（47+0+5+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后核算为 41/6/5/15，UI 长尾 U-01 素材排序闭环后核算为 42/5/5/15，U-02 撤销重做全覆盖后核算为 43/4/5/15，U-03 自动保存介质升级后核算为 44/3/5/15；2026-11-25 U-04 选框/手柄/参考线吸附闭环后核算为 45/2/5/15，U-05 跨轨拖拽后核算为 46/1/5/15，U-06 动态新增轨道后核算为 47/0/5/15）。
+> 合计 67 项（48+0+4+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后核算为 41/6/5/15，UI 长尾 U-01 素材排序闭环后核算为 42/5/5/15，U-02 撤销重做全覆盖后核算为 43/4/5/15，U-03 自动保存介质升级后核算为 44/3/5/15；2026-11-25 U-04 选框/手柄/参考线吸附闭环后核算为 45/2/5/15，U-05 跨轨拖拽后核算为 46/1/5/15，U-06 动态新增轨道后核算为 47/0/5/15，U-07 overlay/audio 轨编辑写回后核算为 48/0/4/15）。
 > **2026-11-17 P0 完成后变化**：✅ 20→23（Text/Media 加轨、落轨拖放），🟡 7→9（参数编辑、自动保存由 🔴 升级），🔴 19→14。详见 `UI_REPLICA_PLAN.md` §8「P0 闭环实现」。
 > **2026-11-17 P1 完成后变化**：✅ 23→25（Duplicate、复制/粘贴），🟡 9→11（多选、快捷键分发升级），🔴 14→13（Duplicate 出占位），⚪ 20→17（多选/复制粘贴出未覆盖）。数据源接入（Sounds/Stickers/Effects）依赖服务端素材库，本仓库无此后端且超出 UI 闭环范围，记 🔴 并写入 `UI_REPLICA_PLAN.md` §7 差异台账；不伪造数据。
 > **2026-11-17 P2 完成后变化**：新增 GPU 项（总 66→67）；✅ 25→28（Transform/Text 参数修复 key 映射升 ✅、GPU 提示、WebM 文档更正），🟡 11→13（遮罩/效果基础参数、关键帧真实数据模型），🔴 13→11（参数/关键帧出占位），⚪ 17→15（WebM/GPU 出未覆盖）。AI 字幕、项目管理页无后端，保持 ⚪ 并写入台账；曲线编辑器、GPU 效果、框选橡皮筋归长尾。

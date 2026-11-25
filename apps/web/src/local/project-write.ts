@@ -30,16 +30,80 @@ export interface WriteBookmark {
   note?: string;
 }
 
-/** U-06：把 autosave 新增轨转成写回视图轨道（追加到目标场景）。 */
-function toWriteTrackView(track: ExtraTrackState): ProjectTrackView {
+/**
+ * U-06/U-07：把 autosave 新增轨转成写回视图轨道（追加到目标场景）。
+ * @param track 新增轨状态
+ * @param elements 属于该轨的编辑元素（U-07：分割/拖拽新增片段）
+ * @returns 写回视图轨道
+ */
+function toWriteTrackView(
+  track: ExtraTrackState,
+  elements: readonly CoreElement[] = [],
+): ProjectTrackView {
+  const owned = elements.filter((element) => element.trackId === track.id);
   return {
     id: track.id,
     trackType: track.trackType,
-    elementCount: 0,
-    elements: [],
+    elementCount: owned.length,
+    elements: owned.map((element) => ({
+      id: element.id,
+      elementType: element.elementType ?? 'video',
+      startTime: element.startTime,
+      duration: element.duration,
+      trimStart: element.trimStart,
+      trimEnd: element.trimEnd ?? element.duration,
+      ...(element.name !== undefined ? { name: element.name } : {}),
+      ...(element.content !== undefined ? { content: element.content } : {}),
+      ...(element.params !== undefined ? { params: element.params } : {}),
+    })),
     ...(track.muted !== undefined ? { muted: track.muted } : {}),
     ...(track.hidden !== undefined ? { hidden: track.hidden } : {}),
   };
+}
+
+/**
+ * 判断编辑集合中是否存在原项目视图里不存在的新元素 id（分割/新增产生）。
+ * U-07：新元素写回需显式打开 allowNewTracks 开关（与新增轨同一契约）。
+ * @param project 原始项目视图
+ * @param elements UI 编辑元素
+ * @returns 存在新元素返回 true
+ */
+export function hasNewElements(
+  project: ProjectView,
+  elements: readonly CoreElement[],
+): boolean {
+  const originalIds = new Set(
+    project.scenes.flatMap((scene) => scene.tracks.flatMap((track) => track.elements.map((element) => element.id))),
+  );
+  return elements.some((element) => !originalIds.has(element.id));
+}
+
+/**
+ * 把编辑元素转成写回视图元素（已有轨的新增元素 U-07 用）。
+ * @param element 编辑元素
+ * @returns 写回视图元素
+ */
+function toWriteElement(element: CoreElement) {
+  return {
+    id: element.id,
+    elementType: element.elementType ?? 'video',
+    startTime: element.startTime,
+    duration: element.duration,
+    trimStart: element.trimStart,
+    trimEnd: element.trimEnd ?? element.duration,
+    ...(element.name !== undefined ? { name: element.name } : {}),
+    ...(element.content !== undefined ? { content: element.content } : {}),
+    ...(element.params !== undefined ? { params: element.params } : {}),
+  };
+}
+
+/**
+ * 归一化元素所属轨道 id（main 与缺省同轨）。
+ * @param element 编辑元素
+ * @returns 轨道 id
+ */
+function elementTrackId(element: CoreElement): string {
+  return element.trackId && element.trackId !== 'main' ? element.trackId : 'main';
 }
 
 /**
@@ -108,21 +172,19 @@ export function buildWriteView(
   extraTracks?: readonly ExtraTrackState[],
 ): ProjectView {
   const edits = new Map(elements.map((element) => [element.id, element]));
+  const consumed = new Set<string>();
   const muted = trackFlags ? new Set(trackFlags.muted) : null;
   const hidden = trackFlags ? new Set(trackFlags.hidden) : null;
   return {
     ...project,
     ...(canvas ? { canvas: { width: canvas.width, height: canvas.height } } : {}),
     scenes: project.scenes.map((scene, index) => {
-      // U-06：先合并已有轨的编辑，再把新增轨追加到第一个场景。
-      const merged: ProjectTrackView[] = scene.tracks.map((track) => ({
-        ...track,
-        // additive-only：仅在视图原本带该字段时才写回，不新增字段。
-        ...(muted && track.muted !== undefined ? { muted: muted.has(track.id) } : {}),
-        ...(hidden && track.hidden !== undefined ? { hidden: hidden.has(track.id) } : {}),
-        elements: track.elements.map((element) => {
+      // U-07：已有轨按 id 覆盖，且编辑元素的 trackId 必须属于该轨。
+      const merged: ProjectTrackView[] = scene.tracks.map((track) => {
+        const written = track.elements.map((element) => {
           const edit = edits.get(element.id);
-          if (!edit) return element;
+          if (!edit || elementTrackId(edit) !== track.id) return element;
+          consumed.add(edit.id);
           return {
             ...element,
             startTime: edit.startTime,
@@ -135,10 +197,22 @@ export function buildWriteView(
             // P0：可视参数写回（含 opacity/position/scale/rotate 与文字字段）。
             ...(edit.params !== undefined ? { params: edit.params } : {}),
           };
-        }),
-      }));
+        });
+        // U-07：分割/新增产生的元素 id 在 view 中不存在，按 trackId 追加到对应轨。
+        const added = elements
+          .filter((element) => !consumed.has(element.id) && elementTrackId(element) === track.id)
+          .map((element) => { consumed.add(element.id); return toWriteElement(element); });
+        return {
+          ...track,
+          ...(muted && track.muted !== undefined ? { muted: muted.has(track.id) } : {}),
+          ...(hidden && track.hidden !== undefined ? { hidden: hidden.has(track.id) } : {}),
+          elements: [...written, ...added],
+          elementCount: written.length + added.length,
+        };
+      });
+      // U-06：新增轨追加到第一个场景，U-07：带上其编辑元素。
       if (index === 0 && extraTracks && extraTracks.length > 0) {
-        merged.push(...extraTracks.map(toWriteTrackView));
+        merged.push(...extraTracks.map((track) => toWriteTrackView(track, elements)));
       }
       return {
         ...scene,

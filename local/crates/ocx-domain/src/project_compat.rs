@@ -348,11 +348,21 @@ pub fn read_classic_project(project_json: &str) -> Result<ProjectView, CompatErr
 
 /**
  * 把单条轨道视图的已知字段合并回原始轨道；元素按 id 匹配，未知字段原样保留。
+ *
+ * U-07：原文档不存在的新元素 id，在 `options.allow_new_tracks` 为真时构造并追加
+ * （该开关语义为「允许写回新增实体」，同时覆盖新轨与新元素）；默认仍返回
+ * ENTITY_NOT_FOUND 保持 additive-only。
+ *
  * @param target 原始轨道 JSON（可变）
  * @param view 归一化轨道视图
- * @returns {Result<(), CompatError>} 找不到元素时返回 ENTITY_NOT_FOUND
+ * @param options 写回选项
+ * @returns {Result<(), CompatError>} 新元素被拒或结构损坏时返回 ENTITY_NOT_FOUND
  */
-fn merge_track(target: &mut Value, view: &TrackView) -> Result<(), CompatError> {
+fn merge_track(
+    target: &mut Value,
+    view: &TrackView,
+    options: WriteOptions,
+) -> Result<(), CompatError> {
     let object = target.as_object_mut().ok_or(CompatError::EntityNotFound)?;
     object.insert("type".to_owned(), json!(view.track_type));
     // additive-only：仅视图显式带值才写回，缺失字段不在原文档中新增 null。
@@ -365,11 +375,21 @@ fn merge_track(target: &mut Value, view: &TrackView) -> Result<(), CompatError> 
     let elements = object.entry("elements").or_insert_with(|| json!([]));
     let list = elements.as_array_mut().ok_or(CompatError::EntityNotFound)?;
     for element_view in &view.elements {
-        let item = list
+        let existing = list
             .iter_mut()
-            .find(|item| item["id"].as_str() == Some(element_view.id.as_str()))
+            .find(|item| item["id"].as_str() == Some(element_view.id.as_str()));
+        if existing.is_none() {
+            // U-07：显式开关允许时才新增元素；默认 additive-only 拒绝。
+            if options.allow_new_tracks {
+                list.push(build_element_value(element_view));
+                continue;
+            }
+            return Err(CompatError::EntityNotFound);
+        }
+        let entry = existing
+            .ok_or(CompatError::EntityNotFound)?
+            .as_object_mut()
             .ok_or(CompatError::EntityNotFound)?;
-        let entry = item.as_object_mut().ok_or(CompatError::EntityNotFound)?;
         entry.insert("type".to_owned(), json!(element_view.element_type));
         entry.insert("startTime".to_owned(), json!(element_view.start_time));
         entry.insert("duration".to_owned(), json!(element_view.duration));
@@ -392,11 +412,11 @@ fn merge_track(target: &mut Value, view: &TrackView) -> Result<(), CompatError> 
     Ok(())
 }
 
-/// 写回选项：`allow_new_tracks` 为 true 时允许新增 overlay/audio 轨（main 仍单条）。
+/// 写回选项：`allow_new_tracks` 为 true 时允许新增 overlay/audio 轨与轨道内新元素（main 仍单条）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WriteOptions {
-    /// 是否允许写回时新增轨道实体；默认 false 保持 additive-only。
+    /// 是否允许写回时新增实体（轨道与元素）；默认 false 保持 additive-only。
     #[serde(default)]
     pub allow_new_tracks: bool,
 }
@@ -545,7 +565,7 @@ pub fn write_classic_project_with_options(
                         .iter_mut()
                         .find(|item| item["id"].as_str() == Some(track_view.id.as_str()))
                 {
-                    merge_track(target, track_view)?;
+                    merge_track(target, track_view, options)?;
                     found = true;
                     break;
                 }
@@ -557,7 +577,7 @@ pub fn write_classic_project_with_options(
                 && let Some(main) = tracks.get_mut("main")
                 && main["id"].as_str() == Some(track_view.id.as_str())
             {
-                merge_track(main, track_view)?;
+                merge_track(main, track_view, options)?;
                 found = true;
             }
             if !found {
