@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MIN_BOX_SIZE_PERCENT,
+  NO_SNAP_GUIDES,
   boxFromTransform,
   pointerAngleDeg,
   rotateByPointer,
+  snapBoxToCanvas,
   transformFromBox,
   type SelectionBox,
 } from './preview-transform-model';
@@ -100,5 +102,84 @@ describe('preview-transform-model', () => {
   it('rotateByPointer：结果始终夹逼到 [-360,360]', () => {
     expect(rotateByPointer(0, 10, 720)).toBe(360);
     expect(rotateByPointer(0, -10, -720)).toBe(-360);
+  });
+})
+
+/** U-04：画布三锚点吸附（左/中/右、上/中/下）与参考线位置回归。 */
+describe('snapBoxToCanvas', () => {
+  /** 构造选框；默认中心偏左/偏上，避免误触吸附。 */
+  const box = (overrides: Partial<SelectionBox> = {}): SelectionBox => ({
+    left: 30, top: 25, width: 40, height: 30, rotation: 0, ...overrides,
+  });
+
+  it('中心吸附：中心接近 50% 时归位，参考线画在 50%', () => {
+    const result = snapBoxToCanvas(box({ left: 31, top: 36 }), 3);
+    expect(result.box.left).toBe(30);
+    expect(result.box.top).toBe(35);
+    expect(result.guides).toEqual({ vertical: true, horizontal: true, verticalAt: 50, horizontalAt: 50 });
+  });
+
+  it('左边吸附：left 接近 0 时归零，参考线画在 0%', () => {
+    const result = snapBoxToCanvas(box({ left: 2, top: 25 }), 3);
+    expect(result.box.left).toBe(0);
+    expect(result.guides.verticalAt).toBe(0);
+    expect(result.guides.horizontal).toBe(false);
+  });
+
+  it('右边吸附：right 接近 100% 时右边缘归位，参考线画在 100%', () => {
+    const result = snapBoxToCanvas(box({ left: 57, top: 25 }), 3);
+    expect(result.box.left).toBe(60);
+    expect(result.guides.verticalAt).toBe(100);
+  });
+
+  it('顶边与底边吸附分别归位', () => {
+    const top = snapBoxToCanvas(box({ top: 2 }), 3);
+    expect(top.box.top).toBe(0);
+    expect(top.guides.horizontalAt).toBe(0);
+    const bottom = snapBoxToCanvas(box({ top: 68 }), 3);
+    expect(bottom.box.top).toBe(70);
+    expect(bottom.guides.horizontalAt).toBe(100);
+  });
+
+  it('阈值外不吸附，返回原 box 与空参考线', () => {
+    // 中心取 40/35，离 0/50/100 三个锚点都超过阈值，避免默认中心恰好命中 50%。
+    const original = box({ left: 20, top: 20 });
+    const result = snapBoxToCanvas(original, 1);
+    expect(result.box).toEqual(original);
+    expect(result.guides).toEqual(NO_SNAP_GUIDES);
+  });
+
+  it('距离等于阈值时吸附（闭区间）', () => {
+    expect(snapBoxToCanvas(box({ left: 3 }), 3).box.left).toBe(0);
+  });
+
+  it('横纵阈值分别生效', () => {
+    const result = snapBoxToCanvas(box({ left: 2, top: 47 }), 3, 0.5);
+    expect(result.box.left).toBe(0);
+    expect(result.box.top).toBe(47);
+    expect(result.guides.vertical).toBe(true);
+    expect(result.guides.horizontal).toBe(false);
+  });
+
+  it('非法阈值（NaN/负数）按 0 处理，不产生 NaN', () => {
+    for (const threshold of [Number.NaN, -5]) {
+      const result = snapBoxToCanvas(box({ left: 0, top: 0 }), threshold);
+      expect(result.box.left).toBe(0);
+      expect(Number.isFinite(result.box.top)).toBe(true);
+    }
+  });
+
+  it('吸附不改变宽高与旋转', () => {
+    const result = snapBoxToCanvas(box({ left: 2, width: 33, height: 22, rotation: 45 }), 3);
+    expect(result.box.width).toBe(33);
+    expect(result.box.height).toBe(22);
+    expect(result.box.rotation).toBe(45);
+  });
+
+  it('多个候选同时满足时取距离最近的锚点', () => {
+    // left=48（距 0 为 48，超阈值）、center=68（距 50 为 18）、right=88（距 100 为 12）→ 取 right。
+    const result = snapBoxToCanvas(box({ left: 48 }), 20);
+    expect(result.box.left).toBe(60);
+    expect(result.guides.verticalAt).toBe(100);
   });
 })

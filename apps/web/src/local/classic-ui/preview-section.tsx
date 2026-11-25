@@ -60,10 +60,13 @@ import {
 } from './commands-tokens';
 import { resizeMask, type ElementTransform, type RectMask } from '../element-composite';
 import {
+  NO_SNAP_GUIDES,
   boxFromTransform,
   pointerAngleDeg,
   rotateByPointer,
+  snapBoxToCanvas,
   transformFromBox,
+  type SnapGuides,
 } from './preview-transform-model';
 
 export interface PreviewSectionProps {
@@ -131,7 +134,8 @@ export function PreviewSection(props: PreviewSectionProps) {
   const [box, setBox] = useState<LocalBox>(() => props.transform
     ? boxFromTransform(props.transform, props.frameWidth ?? 320, props.frameHeight ?? 180)
     : INITIAL_BOX)
-  const [snapLines, setSnapLines] = useState<{ vertical: boolean; horizontal: boolean }>({ vertical: false, horizontal: false })
+  /** U-04：参考线含画布百分比位置，不再固定画在中心。 */
+  const [snapLines, setSnapLines] = useState<SnapGuides>(NO_SNAP_GUIDES)
   /** 批 4：可编辑时间码的输入草稿（回车/失焦提交）。 */
   const [timecodeDraft, setTimecodeDraft] = useState<string | null>(null)
   /** 批 4：右键菜单开关与屏幕坐标。 */
@@ -155,7 +159,7 @@ export function PreviewSection(props: PreviewSectionProps) {
     setBox(props.transform
       ? boxFromTransform(props.transform, props.frameWidth ?? 320, props.frameHeight ?? 180)
       : INITIAL_BOX)
-    setSnapLines({ vertical: false, horizontal: false })
+    setSnapLines(NO_SNAP_GUIDES)
   }, [props.selected, props.transform, props.frameWidth, props.frameHeight])
 
   // 帧号外部变化（播放/seek）时清空时间码草稿，避免显示与真实帧不一致。
@@ -233,22 +237,24 @@ export function PreviewSection(props: PreviewSectionProps) {
         const currentAngle = pointerAngleDeg(centerX, centerY, event.clientX, event.clientY)
         next.rotation = rotateByPointer(drag.startAngle, currentAngle, drag.startRotation ?? 0)
       }
-      // 中心吸附（屏幕 8px 阈值换算为百分比阈值）
-      const threshold = (SNAP_THRESHOLD_SCREEN_PIXELS / rect.width) * 100
-      const centerX = next.left + next.width / 2
-      const centerY = next.top + next.height / 2
-      const vertical = Math.abs(centerX - 50) < threshold
-      const horizontal = Math.abs(centerY - 50) < threshold
-      if (vertical) next.left = 50 - next.width / 2
-      if (horizontal) next.top = 50 - next.height / 2
-      setSnapLines({ vertical, horizontal })
+      // U-04：三锚点吸附（左/中/右、上/中/下），横纵阈值分别按视口宽高换算；
+      // 旋转模式只改角度、不移动选框，故不参与位置吸附。
+      if (drag.mode === 'rotate') {
+        setSnapLines(NO_SNAP_GUIDES)
+      } else {
+        const thresholdX = (SNAP_THRESHOLD_SCREEN_PIXELS / rect.width) * 100
+        const thresholdY = (SNAP_THRESHOLD_SCREEN_PIXELS / rect.height) * 100
+        const snapped = snapBoxToCanvas(next, thresholdX, thresholdY)
+        next = snapped.box
+        setSnapLines(snapped.guides)
+      }
       setBox(next)
     }
     const onUp = () => {
       const drag = dragRef.current
       if (!drag) return
       dragRef.current = null
-      setSnapLines({ vertical: false, horizontal: false })
+      setSnapLines(NO_SNAP_GUIDES)
       // 第二档：松手一次性写回 core，避免拖拽每帧触发快照灌满撤销栈。
       if (!transformChangeRef.current) return
       try {
@@ -468,20 +474,31 @@ export function PreviewSection(props: PreviewSectionProps) {
               {/* 4 角 + 3 边手柄 */}
               {TRANSFORM_CORNERS.map((corner) => renderHandle(corner, cornerPos(corner)))}
               {TRANSFORM_EDGES.map((edge) => renderHandle(edge, edgePos(edge)))}
-              {/* 旋转手柄：顶边中点外移 24px，直径 20px */}
+              {/* 旋转手柄：顶边中点外移 24px；框贴顶时用 max 夹在可见区内，避免被 overflow:hidden 裁掉 */}
               <div data-handle="rotate" title="Rotate" onMouseDown={(event) => startDrag(event, 'rotate')}
                 style={{
-                  position: 'absolute', left: `${box.left + box.width / 2}%`, top: `${box.top}%`,
-                  transform: 'translate(-50%, calc(-50% - ' + ROTATION_HANDLE_OFFSET + 'px))',
+                  position: 'absolute', left: `${box.left + box.width / 2}%`,
+                  top: `max(calc(${box.top}% - ${ROTATION_HANDLE_OFFSET}px), ${ICON_HANDLE_RADIUS}px)`,
+                  transform: 'translate(-50%, -50%)',
                   width: ICON_HANDLE_RADIUS * 2, height: ICON_HANDLE_RADIUS * 2,
                   borderRadius: '9999px', background: ICON_HANDLE_FILL, color: ICON_HANDLE_TEXT,
                   boxShadow: '0 1px 2px rgba(0,0,0,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   pointerEvents: 'auto',
                 }}><RotateIcon /></div>
-              {/* 对齐参考线：1px 白 70% */}
-              {snapLines.vertical && <div data-guide="vertical" style={{ position: 'absolute', left: '50%', top: -20, bottom: -20, width: SNAP_GUIDE_WIDTH, background: SNAP_GUIDE_COLOR }} />}
-              {snapLines.horizontal && <div data-guide="horizontal" style={{ position: 'absolute', top: '50%', left: -20, right: -20, height: SNAP_GUIDE_WIDTH, background: SNAP_GUIDE_COLOR }} />}
             </div>
+          )}
+          {/* U-04：参考线画在画布坐标系（stage 层），位置来自吸附锚点，不再固定画在选框中心 */}
+          {props.selected && snapLines.vertical && (
+            <div data-guide="vertical" style={{
+              position: 'absolute', left: `${snapLines.verticalAt}%`, top: 0, bottom: 0,
+              width: SNAP_GUIDE_WIDTH, background: SNAP_GUIDE_COLOR, pointerEvents: 'none',
+            }} />
+          )}
+          {props.selected && snapLines.horizontal && (
+            <div data-guide="horizontal" style={{
+              position: 'absolute', top: `${snapLines.horizontalAt}%`, left: 0, right: 0,
+              height: SNAP_GUIDE_WIDTH, background: SNAP_GUIDE_COLOR, pointerEvents: 'none',
+            }} />
           )}
         </div>
       </div>

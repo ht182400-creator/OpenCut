@@ -168,6 +168,8 @@
 
 | 2026-11-24 | U-03 自动保存介质升级 | 本次提交（见 `git log -1`） | UI 长尾 A 档第 3 批（依赖 U-02 已就绪）。`project-autosave.ts` 保留同步纯函数并提取共用校验 `parseAutosaveEnvelope`，新增 `AsyncAutosaveStorage` + 异步读/写/清除；新 `autosave-idb.ts` 提供 IndexedDB 后端（事务 complete 后 resolve）、IDB→localStorage 降级复合后端、`migrateLegacyAutosave` 一次性迁移（标记防重复、损坏数据跳过、目标失败不写标记可重试）。编辑器加载项目时先迁移再异步读取，防抖写入改异步。**验收**：tsc 0、vitest **43 文件/530 项**（+12）全绿、vite build 成功；ego(lite) 实测旧 localStorage 信封迁移到 IDB（标记写入、旧数据保留）、清除 localStorage 后新增书签→IDB 更新→刷新恢复两个书签，`roadmap/oc-autosave-idb.png`。FEATURE_PARITY §6 自动保存行 🟡→✅，统计 44/3/5/15。**边界**：OPFS 与多端同步未做；IDB 失败自动降级读旧 localStorage。 | `apps/web/src/local/project-autosave.ts` / `autosave-idb.ts` / `autosave-idb.test.ts` / `editor-page.tsx` |
 
+| 2026-11-25 | U-04 选框/手柄/对齐参考线闭环 | 本次提交（见 `git log -1`） | UI 长尾 A 档第 4 批。`preview-transform-model.ts` 新增 `snapBoxToCanvas`（左/中/右、上/中/下三锚点 + 带位置的 `SnapGuides`，10 项单测，模块共 21 项）；`preview-section.tsx` 旋转手柄用 CSS `max()` 限制在画布可见区（修复满幅贴顶时被 `overflow:hidden` 裁掉），参考线从选框内部移到 stage 画布坐标系并按锚点定位，旋转模式不再误触发位置吸附。**验收**：tsc 0、vitest **43 文件/540 项**（+10）全绿、vite build 成功；ego(lite) 实测旋转手柄完整可见且拖拽写回 `rotate=117.6°`，左移后 vertical/horizontal 参考线均在 0% 且 `positionX=-79.86/scaleX=0.50` 写回，`roadmap/oc-rotate-handle.png` / `oc-snap-guides.png`。FEATURE_PARITY §4 选框行 🟡→✅，统计 45/2/5/15。**边界**：吸附仅画布三锚点，未扩展元素间对齐；无 core 改动。 | `apps/web/src/local/classic-ui/preview-transform-model.ts` / `preview-transform-model.test.ts` / `preview-section.tsx` |
+
 ## 9. 未开展进度明细（2026-11-16 会话总结登记）
 
 > 本节是批 7 剩余项与批 8 的**统一进度落点**，由本次会话总结（见 `.codebuddy/memory/2026-11-16.md`）登记。§3 批次表给出状态概览，本节给出逐项范围、DoD、边界与当前探查结论。更新任一子项时同步 §3 行、§8 变更记录与看板。

@@ -27,6 +27,8 @@ export const MIN_BOX_SIZE_PERCENT = 5;
 const FULL_BOX_PERCENT = 100;
 /** 画布中心（百分比）。 */
 const CANVAS_CENTER_PERCENT = 50;
+/** 画布吸附锚点（百分比）：垂直左边/中心/右边，水平顶边/中心/底边共用。 */
+const CANVAS_SNAP_ANCHORS = [0, CANVAS_CENTER_PERCENT, FULL_BOX_PERCENT] as const;
 /** 半圈（角度），用于最短角差归一化。 */
 const HALF_TURN_DEG = 180;
 /** 整圈（角度）。 */
@@ -146,4 +148,83 @@ export function rotateByPointer(startAngle: number, currentAngle: number, startR
       ? raw + (ROTATION_SNAP_STEP_DEGREES - remainder)
       : raw;
   return Math.min(ROTATE_MAX_DEG, Math.max(ROTATE_MIN_DEG, snapped));
+}
+
+/** 参考线状态：verticalAt/horizontalAt 为画布百分比位置（0/50/100）。 */
+export interface SnapGuides {
+  vertical: boolean;
+  horizontal: boolean;
+  verticalAt: number;
+  horizontalAt: number;
+}
+
+/** 无参考线的初始状态（只读使用，不修改）。 */
+export const NO_SNAP_GUIDES: SnapGuides = {
+  vertical: false, horizontal: false,
+  verticalAt: CANVAS_CENTER_PERCENT, horizontalAt: CANVAS_CENTER_PERCENT,
+};
+
+/**
+ * 在最近的画布锚点上吸附选框位置（不改宽高与旋转）。
+ * 垂直轴依次尝试 left/center/right，水平轴依次尝试 top/center/bottom，
+ * 取距离最小且在阈值内的锚点。
+ * @param box 当前选框
+ * @param thresholdPercentX 水平吸附阈值（百分比）
+ * @param thresholdPercentY 垂直吸附阈值（百分比，缺省同水平）
+ * @returns 吸附后的选框与参考线状态
+ */
+export function snapBoxToCanvas(
+  box: SelectionBox,
+  thresholdPercentX: number,
+  thresholdPercentY: number = thresholdPercentX,
+): { box: SelectionBox; guides: SnapGuides } {
+  const thresholdX = Number.isFinite(thresholdPercentX) && thresholdPercentX >= 0 ? thresholdPercentX : 0;
+  const thresholdY = Number.isFinite(thresholdPercentY) && thresholdPercentY >= 0 ? thresholdPercentY : 0;
+  const vertical = nearestCanvasAnchor(
+    [box.left, box.left + box.width / 2, box.left + box.width], thresholdX,
+  );
+  const horizontal = nearestCanvasAnchor(
+    [box.top, box.top + box.height / 2, box.top + box.height], thresholdY,
+  );
+  const next = { ...box };
+  let verticalAt = CANVAS_CENTER_PERCENT;
+  let horizontalAt = CANVAS_CENTER_PERCENT;
+  if (vertical) {
+    // index 0/1/2 分别把 left/center/right 对齐到锚点。
+    next.left = vertical.index === 0 ? vertical.at
+      : vertical.index === 1 ? vertical.at - box.width / 2
+        : vertical.at - box.width;
+    verticalAt = vertical.at;
+  }
+  if (horizontal) {
+    next.top = horizontal.index === 0 ? horizontal.at
+      : horizontal.index === 1 ? horizontal.at - box.height / 2
+        : horizontal.at - box.height;
+    horizontalAt = horizontal.at;
+  }
+  return {
+    box: next,
+    guides: { vertical: vertical !== null, horizontal: horizontal !== null, verticalAt, horizontalAt },
+  };
+}
+
+/**
+ * 找距离最近的画布锚点；索引 0/1/2 对应 left-center-right 或 top-center-bottom。
+ * @param edges 选框三条边/中线的位置
+ * @param threshold 吸附阈值（百分比）
+ * @returns 最近锚点或 null
+ */
+function nearestCanvasAnchor(
+  edges: readonly number[],
+  threshold: number,
+): { index: number; at: number } | null {
+  let best: { index: number; at: number; distance: number } | null = null;
+  for (let index = 0; index < CANVAS_SNAP_ANCHORS.length; index += 1) {
+    const at = CANVAS_SNAP_ANCHORS[index];
+    const distance = Math.abs(edges[index] - at);
+    if (distance <= threshold && (best === null || distance < best.distance)) {
+      best = { index, at, distance };
+    }
+  }
+  return best === null ? null : { index: best.index, at: best.at };
 }

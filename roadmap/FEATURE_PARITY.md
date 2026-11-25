@@ -78,7 +78,7 @@
 | 播放 / 暂停 | 真实 | 真实 | ✅ | 时间码推进已验收 |
 | 时间码 HH:MM:SS:FF | 可编辑并驱动 seek | 可编辑（回车/失焦提交，越界 clamp 到末帧） | ✅ | 批 4：`preview-tokens.ts` `parseFrameTimecode`/`formatFrameTimecode`（9 项单测），浏览器输入 `00:00:01:15` 精确 seek |
 | 缩放预设 + Fit + 全屏 | 真实 | 真实 | ✅ | 批 5 验收 |
-| 选框/手柄/对齐参考线 | 真实（改 transform） | 选框由 core transform 派生，drag 松手写回 position/scale/rotate 并驱动画面（对齐参考线仍为视觉反馈） | 🟡 | 第二档：`preview-transform-model.ts` 双向映射 + `preview-section.tsx` 写回，浏览器拖 left 手柄写回 `positionX=-33.13/scaleX=0.456` 且重新选中后选框同步；旋转纯函数 11 项覆盖，但旋转手柄被顶栏遮挡未端到端验证，`oc-p4-transform-writeback.png` |
+| 选框/手柄/对齐参考线 | 真实（改 transform） | 真实（选框 + 四角/三边/旋转手柄 + 画布三锚点吸附参考线，拖拽松手统一写回 position/scale/rotate 并驱动画面） | ✅ | 第二档写回 + U-04：`preview-transform-model.ts` 新增 `snapBoxToCanvas`（左/中/右、上/中/下三锚点，10 项单测，模块共 21 项），`preview-section.tsx` 旋转手柄用 CSS `max()` 夹在画布内、参考线改画在 stage 画布坐标系；浏览器验收旋转手柄完整可见且拖拽写回 `rotate=117.6°`，边缘吸附出现 vertical/horizontal@0% 且 `positionX=-79.86/scaleX=0.50`，`oc-rotate-handle.png` / `oc-snap-guides.png` |
 | 遮罩手柄 | 真实 | 真实（预览叠加遮罩矩形 + 4 边拖拽手柄，驱动 mask.* 参数并像素裁剪生效） | ✅ | P4 批 5：`resizeMask` 纯函数 + `preview-section.tsx` 手柄，浏览器拖动 left 写回 `mask.left=0.052`，`oc-p4-mask-handle.png` |
 | 双击文字就地编辑 | 真实 | 无 | ⚪ | 依赖文字元素可编辑 |
 | 画面合成 | 真实（canvas renderer） | 真实（core `composite_frame` + 真实素材帧） | ✅ | 批 7 + 正式模式去演示色块 |
@@ -138,12 +138,12 @@
 
 | 状态 | 数量 | 分布（§） | 主要条目 |
 | --- | --- | --- | --- |
-| ✅ 已实现 | 44 | §1:5 §2:5 §3:13 §4:6 §5:5 §6:6 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、**素材排序**、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）**、**撤销/重做全覆盖**、**自动保存 IndexedDB + 迁移** |
-| 🟡 部分闭环 | 3 | §3:1 §4:1 §6:1 | 三轨结构固定、遮罩手柄（参数化无拖拽）、Masks/Effects 基础参数（无 GPU 效果）、拖拽排序、选框/手柄写回 transform（参考线仍视觉、旋转手柄被顶栏遮挡未端到端） |
+| ✅ 已实现 | 45 | §1:5 §2:5 §3:13 §4:7 §5:5 §6:6 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、**素材排序**、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、**选框/手柄/参考线吸附闭环**、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）**、**撤销/重做全覆盖**、**自动保存 IndexedDB + 迁移** |
+| 🟡 部分闭环 | 2 | §3:1 §6:1 | 三轨结构固定、Masks/Effects 基础参数（无 GPU 效果）、拖拽排序 |
 | 🔴 占位 | 5 | §2:4 §3:1 | Sounds/Stickers/Effects/Settings 数据源、overlay/audio 编辑、时间码编辑、右键菜单 |
 | ⚪ 未覆盖 | 15 | §1:5 §2:5 §3:2 §4:1 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、双击文字就地编辑、素材右键 Export clips、剪贴板直接贴媒体 |
 
-> 合计 67 项（44+3+5+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后核算为 41/6/5/15，UI 长尾 U-01 素材排序闭环后核算为 42/5/5/15，U-02 撤销重做全覆盖后核算为 43/4/5/15，U-03 自动保存介质升级后核算为 44/3/5/15）。
+> 合计 67 项（45+2+5+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后核算为 41/6/5/15，UI 长尾 U-01 素材排序闭环后核算为 42/5/5/15，U-02 撤销重做全覆盖后核算为 43/4/5/15，U-03 自动保存介质升级后核算为 44/3/5/15；2026-11-25 U-04 选框/手柄/参考线吸附闭环后核算为 45/2/5/15）。
 > **2026-11-17 P0 完成后变化**：✅ 20→23（Text/Media 加轨、落轨拖放），🟡 7→9（参数编辑、自动保存由 🔴 升级），🔴 19→14。详见 `UI_REPLICA_PLAN.md` §8「P0 闭环实现」。
 > **2026-11-17 P1 完成后变化**：✅ 23→25（Duplicate、复制/粘贴），🟡 9→11（多选、快捷键分发升级），🔴 14→13（Duplicate 出占位），⚪ 20→17（多选/复制粘贴出未覆盖）。数据源接入（Sounds/Stickers/Effects）依赖服务端素材库，本仓库无此后端且超出 UI 闭环范围，记 🔴 并写入 `UI_REPLICA_PLAN.md` §7 差异台账；不伪造数据。
 > **2026-11-17 P2 完成后变化**：新增 GPU 项（总 66→67）；✅ 25→28（Transform/Text 参数修复 key 映射升 ✅、GPU 提示、WebM 文档更正），🟡 11→13（遮罩/效果基础参数、关键帧真实数据模型），🔴 13→11（参数/关键帧出占位），⚪ 17→15（WebM/GPU 出未覆盖）。AI 字幕、项目管理页无后端，保持 ⚪ 并写入台账；曲线编辑器、GPU 效果、框选橡皮筋归长尾。
@@ -160,6 +160,7 @@
 - **2026-11-24 UI 长尾 U-01：Media 素材排序（按 `UI_TAIL_SCHEDULE.md` A 档启动）**：新 `asset-sort.ts` 纯函数（`original`/`name`/`duration`/`type` 四键 × 升降序；原序保持导入顺序、无时长项恒末尾不随方向翻转、名称显式小写比较不依赖运行时 locale、同键值索引兜底稳定），11 项单测覆盖正常/边界/异常；`assets-panel.tsx` MediaView 加本地 `useState<AssetSort>` + `useMemo` 排序后渲染，排序控件带 `data-testid`。不扩 core、不改 `props.assets`（排序只影响展示）。验收：tsc 0、vitest 42 文件 508/508（新增 11）、build 成功；ego(lite) 三份不同文件名真实 MP4 上传后，名称升序 `[a-first,m-mid,z-last]`、降序 `[z-last,m-mid,a-first]`、Original 恢复导入序，排序后点加号加入时间轴片段 2→3，`oc-asset-sort.png`。§2 排序列 🟡→✅，统计 42/5/5/15。
 - **2026-11-24 UI 长尾 U-02：撤销/重做全覆盖**：`TimelineSnapshot` 扩为 `EditorSnapshotState`（clips + 书签 + 轨道标志 + 选中态 + ripple adjustments），保留旧类型名、`moveHistory().clips` 兼容字段与可选 `parts` 参数；新增 `normalizeSnapshotState` 对旧持久化条目缺字段逐项给安全默认值（additive-only）。`record` 通过注入 `getParts` 读取当前编辑器现场，新增/删除/片段编辑/复制粘贴/书签/轨道标志统一 `pushSnapshot`；书签拖动以 `commit` 标志区分中间态，pointerup 只提交一条，避免高频写入。`recordHistory` 扩第三参数 `selectedId` 并同步 `use-selection.ts`/`editor-actions.ts` 全部调用方，保证快照记录动作后的选中态。验收：tsc 0、vitest 42 文件 518/518（+10）、build 成功；ego(lite) 实测添加书签→静音→删除片段→撤销：片段 1→2、书签/静音保持、选中态回到 clip-intro，重做再删、连续撤销逐条回退，`oc-undo-full-coverage.png`。§6 撤销行 🟡→✅，统计 43/4/5/15。
 - **2026-11-24 UI 长尾 U-03：自动保存介质升级到 IndexedDB**：`project-autosave.ts` 保留同步纯函数（供迁移/单测），提取 `parseAutosaveEnvelope` 让同步/异步共用校验，新增 `AsyncAutosaveStorage` 与 `readAutosaveAsync`/`persistAutosaveAsync`/`clearAutosaveAsync`；新 `autosave-idb.ts` 提供 IndexedDB 后端（事务 complete 后 resolve）、复合后端（IDB 失败降级 localStorage）、`migrateLegacyAutosave` 一次性迁移（原始字符串搬运 + 标记防重复，损坏数据跳过、写入失败不写标记可重试）。编辑器加载项目时先迁移再异步读取，防抖写入改异步。验收：tsc 0、vitest 43 文件 530/530（+12）、build 成功；ego(lite) 实测旧 localStorage 信封（frameIndex=99 + 旧书签）经刷新迁移到 IDB、标记写入且旧数据保留，清除 localStorage 后新增书签→IDB 更新→刷新仍恢复两个书签，`oc-autosave-idb.png`。§6 自动保存行 🟡→✅，统计 44/3/5/15。
+- **2026-11-25 UI 长尾 U-04：选框/手柄/对齐参考线闭环**：`preview-transform-model.ts` 新增 `snapBoxToCanvas`（左/中/右、上/中/下三锚点吸附 + 带画布百分比位置的 `SnapGuides`，10 项单测，模块共 21 项）；`preview-section.tsx` 旋转手柄从「顶边外移 24px」改为 CSS `max()` 夹在画布内（满幅元素贴顶时不再被 `overflow:hidden` 裁掉），参考线从选框内部移到 stage 画布坐标系并按锚点定位，旋转模式不再误触发位置吸附。验收：tsc 0、vitest 43 文件 540/540（+10）、build 成功；ego(lite) 实测旋转手柄 `top=63.2px` 完整处于 stage 内、拖拽写回 `rotate=117.6°`，缩小并左移后 vertical/horizontal 参考线均出现在 0% 且 `positionX=-79.86/scaleX=0.50` 写回，`oc-rotate-handle.png` / `oc-snap-guides.png`。§4 选框行 🟡→✅，统计 45/2/5/15。
 
 ## 附录 A：经典版「新增文字」实证（为什么不是 core 的事）
 
