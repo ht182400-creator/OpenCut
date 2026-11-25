@@ -3,6 +3,8 @@
 > 背景：用户要求把 `FEATURE_PARITY.md` 剩余的 🟡6 / 🔴5 / ⚪15 正式排期。
 > 本文给出**批次顺序 + 前置依赖 + 工作量口径**，不承诺绝对日期。沿用两条既有口径：
 > ① `PRIORITY.md` 的 T+ 为「1 人全职累计周数、估算非承诺」；② P0~P4 批次「每批 tsc 0 + vitest 全绿 + build + 浏览器截图验收」。
+>
+> **A 档 U-01~U-08 已于 2026-11-25 全部完成**；剩余 4 项 🔴 的数据源需求与解除条件见 `roadmap/REMAINING_DATA_SOURCES.md`。
 
 ## 0. 排期前的事实核对（决定哪些能排）
 
@@ -13,6 +15,7 @@
 | 撤销重做「仅 clip 历史」 | `clip-history.ts` 的 `TimelineSnapshot` 只存 clips，不含书签/轨道标志/属性/导出设置 | 纯前端状态模型扩展，不需扩 core |
 | 自动保存介质升级（localStorage→IndexedDB/OPFS） | `project-autosave.ts` 800ms 防抖写 localStorage，可注入 storage（已有接口） | 纯前端换存储后端 + 迁移逻辑，不需扩 core |
 | 🔴 数据源 4 项 + ⚪ AI 字幕/项目列表 | 本仓库无后端服务/转写模型/多项目持久化 | **阻塞，不排期**（按「不伪造数据」原则挂账） |
+| 🔴 数据源 4 项（2026-11-25 复核更正） | Sounds/Stickers/Effects 用本地 JSON + 静态资产文件即可闭环；Settings 是纯前端枚举 + core profile 接线；拖放/插入/参数通道已就绪 | **不再需要后端**。所需数据源格式与逐项解除 DoD 见 `roadmap/REMAINING_DATA_SOURCES.md`；AI 字幕/项目管理页仍真阻塞（无转写/持久化服务） |
 
 ## 1. A 档：可立即排（纯前端，不扩 core、不依赖外部）
 

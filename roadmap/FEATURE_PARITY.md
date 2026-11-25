@@ -39,15 +39,15 @@
 | Media：真实帧缩略图 | 真实 | 真实（批 7.4） | ✅ | `thumbnail.ts` + core `thumbnail_rgba` |
 | Media：卡片 + / 拖拽加入时间轴 | 真实 | 真实（点击 + 拖放均插入，自动找空位 + undo） | ✅ | P0：`element-model.ts` + `handleAddAsset` + 时间轴 `onDropAsset`，浏览器验收 |
 | 视频卡片预览播放 | 真实 | 无 | ⚪ | — |
-| Sounds：音效库/搜索/试听/收藏 | 真实 | 搜索框 + coming soon 文案 | 🔴 | UI 骨架无数据层 |
+| Sounds：音效库/搜索/试听/收藏 | 真实 | 搜索框 + coming soon 文案 | 🔴 | UI 骨架无数据层；所需数据源格式与解除 DoD 见 `roadmap/REMAINING_DATA_SOURCES.md` §1（本地 JSON + 音频文件即可，无需后端） |
 | Text：Default text 加入时间轴 | 真实 | 真实（插入 text 元素 + 属性面板编辑 + 预览渲染） | ✅ | P0：用户实测起点已闭环，`oc-p0-text-preview.png` 截图验收 |
-| Stickers：分类/搜索/添加 | 真实 | 搜索框 + 骨架 | 🔴 | 无贴纸数据源 |
-| Effects：效果网格/预览/添加 | 真实 | 骨架 | 🔴 | 无效果注册表 |
+| Stickers：分类/搜索/添加 | 真实 | 搜索框 + 骨架 | 🔴 | 无贴纸数据源；格式与 DoD 见 `REMAINING_DATA_SOURCES.md` §2（本地 JSON + 图片，贴纸落 `shape.imageSrc` 方案推荐） |
+| Effects：效果网格/预览/添加 | 真实 | 骨架 | 🔴 | 无效果注册表；格式与 DoD 见 `REMAINING_DATA_SOURCES.md` §3（颜色三参数预设即可闭环，复杂滤镜需另评） |
 | Transitions | 经典版 coming soon | coming soon | ⚪ | 双方均无闭环 |
 | Captions：AI 字幕生成 | 真实（本地转写模型） | 无 | ⚪ | 需转写服务/模型 |
 | Captions：SRT/ASS 导入 | 真实 | 无 | ⚪ | — |
 | Adjustment | 经典版 coming soon | coming soon | ⚪ | 双方均无闭环 |
-| Settings：FPS / 宽高比 / 背景 | 真实 | 仅分辨率 3 档可切（非经典版同款），无背景设置 | 🔴 | `resolution.ts`；经典版闭环未达成 |
+| Settings：FPS / 宽高比 / 背景 | 真实 | 仅分辨率 3 档可切（非经典版同款），无背景设置 | 🔴 | `resolution.ts`；闭环条件见 `REMAINING_DATA_SOURCES.md` §4（纯前端枚举 + core profile 接线，无需外部数据） |
 
 ## 3. 时间轴
 
@@ -147,6 +147,7 @@
 > **2026-11-17 P0 完成后变化**：✅ 20→23（Text/Media 加轨、落轨拖放），🟡 7→9（参数编辑、自动保存由 🔴 升级），🔴 19→14。详见 `UI_REPLICA_PLAN.md` §8「P0 闭环实现」。
 > **2026-11-17 P1 完成后变化**：✅ 23→25（Duplicate、复制/粘贴），🟡 9→11（多选、快捷键分发升级），🔴 14→13（Duplicate 出占位），⚪ 20→17（多选/复制粘贴出未覆盖）。数据源接入（Sounds/Stickers/Effects）依赖服务端素材库，本仓库无此后端且超出 UI 闭环范围，记 🔴 并写入 `UI_REPLICA_PLAN.md` §7 差异台账；不伪造数据。
 > **2026-11-17 P2 完成后变化**：新增 GPU 项（总 66→67）；✅ 25→28（Transform/Text 参数修复 key 映射升 ✅、GPU 提示、WebM 文档更正），🟡 11→13（遮罩/效果基础参数、关键帧真实数据模型），🔴 13→11（参数/关键帧出占位），⚪ 17→15（WebM/GPU 出未覆盖）。AI 字幕、项目管理页无后端，保持 ⚪ 并写入台账；曲线编辑器、GPU 效果、框选橡皮筋归长尾。
+> **2026-11-25 更正（历史快照保留原值）**：上文 P1/P2/P4 段所称 Sounds/Stickers/Effects「依赖服务端素材库/需后端」是当时的保守判断；复核现有代码后确认四项均可用**本地 JSON + 静态资产文件**闭环（拖放协议、插入链路、core 参数通道均已就绪），Settings 更是纯前端枚举 + core profile 接线。精确数据源格式与逐项解除 DoD 见 `roadmap/REMAINING_DATA_SOURCES.md`。此更正不改变历史统计值，只更新「解除条件」的认知。
 
 ## 10. 闭环优先级（P0 → P2，供实施）
 
