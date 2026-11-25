@@ -21,6 +21,7 @@ import {
   buildTextElement,
   insertElement,
   makeElementId,
+  moveElementToTrack,
   normalizeElementParams,
   patchElementParams,
   readParamValue,
@@ -349,5 +350,59 @@ describe('关键帧轨道增删改与采样', () => {
     const element = buildTextElement({ id: 'k', content: 'x', startTime: 0 })
     element.params = normalizeElementParams({ ...element.params, [ANIMATION_TRACKS_KEY]: 'bad' as never })
     expect(readAnimationTracks(element)).toEqual({})
+  })
+})
+
+/** U-05：跨轨移动纯函数回归（正常/边界/异常/不改性）。 */
+describe('moveElementToTrack（U-05 跨轨）', () => {
+  /** 两条 main 轨最小片段。 */
+  const base = () => [
+    { ...clip('a', 0, 100), name: 'A' },
+    { ...clip('b', 200, 100), name: 'B' },
+  ]
+
+  it('main → audio：写入目标 trackId 并更新起点', () => {
+    const next = moveElementToTrack(base(), 'a', 300, 'audio')
+    expect(next[0].trackId).toBe('audio')
+    expect(next[0].startTime).toBe(300)
+    expect(next[1].trackId).toBeUndefined()
+  })
+
+  it('audio → main：移除 trackId 保持旧数据兼容', () => {
+    const source = base().map((item) => item.id === 'a' ? { ...item, trackId: 'audio' } : item)
+    const next = moveElementToTrack(source, 'a', 50, 'main')
+    expect(next[0].trackId).toBeUndefined()
+    expect(next[0].startTime).toBe(50)
+  })
+
+  it('同轨移动只改时间', () => {
+    const next = moveElementToTrack(base(), 'a', 150, 'main')
+    expect(next[0].startTime).toBe(150)
+    expect(next[0].trackId).toBeUndefined()
+  })
+
+  it('负数与 NaN 起点夹逼/兜底到 0', () => {
+    expect(moveElementToTrack(base(), 'a', -50, 'audio')[0].startTime).toBe(0)
+    expect(moveElementToTrack(base(), 'a', Number.NaN, 'audio')[0].startTime).toBe(0)
+  })
+
+  it('id 不存在时返回等副本，不产生无意义变更', () => {
+    const source = base()
+    const next = moveElementToTrack(source, 'missing', 100, 'audio')
+    expect(next).toEqual(source)
+    expect(next).not.toBe(source)
+  })
+
+  it('不改入参，其他字段完整保留', () => {
+    const source = base()
+    const next = moveElementToTrack(source, 'b', 400, 'overlay')
+    expect(source[1].startTime).toBe(200)
+    expect(next[1].name).toBe('B')
+    expect(next[1].duration).toBe(100)
+    expect(next[1].trackId).toBe('overlay')
+  })
+
+  it('空数组安全返回', () => {
+    expect(moveElementToTrack([], 'a', 100, 'audio')).toEqual([])
   })
 })

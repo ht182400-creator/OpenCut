@@ -27,6 +27,7 @@ import {
   buildTextElement,
   insertElement,
   makeElementId,
+  moveElementToTrack,
   patchElementParams,
   resolveAutoPlacement,
   sampleParamsAtTime,
@@ -454,12 +455,16 @@ export function Editor() {
     }
   }
 
-  /** 应用一次片段编辑：无变化时提示原因，有变化则重算帧计划并复位选中。 */
+  /**
+   * 应用一次片段编辑：无变化时提示原因，有变化则重算帧计划并复位选中。
+   * @param selectedAfter U-05：编辑后保持选中的 id（跨轨移动传入，避免片段换轨后失焦）
+   */
   const applyClipEdit = (
     unchangedHint: string,
     edit: (clips: CoreElement[], ctx: { clipId: string; playhead: number; ticksPerFrame: number }) => CoreElement[],
     forcedId?: string,
     label = '片段编辑',
+    selectedAfter: string | null = null,
   ) => {
     const clipId = forcedId ?? selectedId
     if (!session || !clipId) return
@@ -475,8 +480,8 @@ export function Editor() {
       return
     }
     setElements(next)
-    clipHistory.record(next, label, { selectedId: null })
-    setSelectedId(null)
+    clipHistory.record(next, label, { selectedId: selectedAfter })
+    setSelectedId(selectedAfter)
     setPlaying(false)
     setFrameCount(plannedFrameCount(next, session.adapter, session.profile))
     setFrameIndex(Math.min(frameIndex, frameCount - 1))
@@ -861,8 +866,9 @@ export function Editor() {
    * 起点优先取投放位置（拖放）或播放头（点击卡片），插入后重算帧计划并记入撤销历史。
    * @param payload 素材载荷（Text/Media）
    * @param atTicks 可选的目标起点；缺省用播放头
+   * @param targetTrackId U-05：目标轨 id，缺省 main
    */
-  const handleAddAsset = (payload: AssetDragPayload, atTicks?: number) => {
+  const handleAddAsset = (payload: AssetDragPayload, atTicks?: number, targetTrackId?: string) => {
     if (!session) {
       setErrorText('请先加载项目，再添加素材到时间轴')
       return
@@ -901,7 +907,11 @@ export function Editor() {
         })
       }
       const start = resolveAutoPlacement(elements, desiredStart, element.duration)
-      const placed = { ...element, startTime: start }
+      // U-05：非 main 轨用显式 trackId 标记；main 保持缺省以兼容旧数据。
+      const placed = {
+        ...element, startTime: start,
+        ...(targetTrackId && targetTrackId !== 'main' ? { trackId: targetTrackId } : {}),
+      }
       const next = insertElement(elements, placed)
       setElements(next)
       clipHistory.record(next, `新增${payload.kind === 'text' ? '文字' : payload.kind === 'graphic' ? '图形' : '媒体'}片段`, { selectedId: placed.id })
@@ -914,10 +924,10 @@ export function Editor() {
     }
   }
 
-  /** 时间轴拖放落点：由时间轴组件换算好 ticks，这里只做类型校验并插入。 */
-  const handleTimelineDrop = (payload: AssetDragPayload, atTicks: number) => {
+  /** U-05：时间轴拖放落点由组件换算 ticks 与目标轨，这里只做类型校验并插入。 */
+  const handleTimelineDrop = (payload: AssetDragPayload, atTicks: number, targetTrackId: string) => {
     if (payload.kind !== 'text' && payload.kind !== 'media' && payload.kind !== 'graphic') return
-    handleAddAsset(payload, atTicks)
+    handleAddAsset(payload, atTicks, targetTrackId)
   }
 
   const activeClip = clipAtTime(elements, frameIndex * (session?.ticksPerFrame ?? 0))?.id ?? (session ? '空档' : '—')
@@ -987,11 +997,16 @@ export function Editor() {
    * 批 2：渲染用三轨视图。main 轨始终用可编辑 elements 覆盖，保证删除/分割/拖拽后时间轴同步；
    * overlay/audio 轨为只读展示（core 编辑 API 仍只覆盖主轨，见 UI_REPLICA_PLAN 边界）。
    */
+  // U-05：可编辑元素按 trackId 分配到对应轨；main 用缺省 trackId 表达，兼容旧数据。
   const timelineTracks: ClassicTimelineTrack[] = projectTracks.length > 0
-    ? projectTracks.map((track) => track.trackType === 'video' && track.id === 'main'
-      ? { ...track, elements }
-      : track)
-    : [{ id: 'main', trackType: 'video', label: '主轨', elements }]
+    ? projectTracks.map((track) => ({
+        ...track,
+        elements: track.id === 'main'
+          ? elements.filter((element) => !element.trackId || element.trackId === 'main')
+          : [...track.elements, ...elements.filter((element) => element.trackId === track.id)],
+      }))
+    : [{ id: 'main', trackType: 'video', label: '主轨',
+      elements: elements.filter((element) => !element.trackId || element.trackId === 'main') }]
 
   const timelineActions: TimelineAction[] = [
     { label: '删除选中片段', icon: 'trash', disabled: !selectedId || elements.length < 2, onClick: deleteSelected },
@@ -1141,7 +1156,13 @@ export function Editor() {
             ticksPerSecond={TICKS_PER_SECOND}
             fps={session.fps}
             onSeek={(frame) => { setPlaying(false); setFrameIndex(frame) }}
-            onMoveClip={(id, start) => applyClipEdit('片段被相邻片段挡住，无法移动到该位置', (cs) => moveClipClamped(cs, id, start), id, '拖拽片段')}
+            onMoveClip={(id, start, targetTrackId) => applyClipEdit(
+              '片段被相邻片段挡住，无法移动到该位置',
+              (cs) => moveClipClamped(moveElementToTrack(cs, id, start, targetTrackId), id, start),
+              id,
+              targetTrackId !== 'main' ? '跨轨移动片段' : '拖拽片段',
+              id,
+            )}
             onResizeClip={(id, edge, delta) => applyClipEdit('片段已到时长边界', (cs) => resizeClipEdge(cs, id, edge, delta, session?.ticksPerFrame ?? 4000), id, '边缘裁剪')}
             statusText={selection.selectedIds.length > 1
               ? `已选中 ${selection.selectedIds.length} 个片段 · 剩余 ${elements.length} 个`

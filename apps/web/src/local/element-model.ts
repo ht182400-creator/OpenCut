@@ -297,6 +297,34 @@ export function removeElementById(clips: readonly CoreElement[], id: string): Co
 }
 
 /**
+ * U-05：把片段移动到目标轨并更新起始时间；main 轨用缺省 trackId 表示，保持旧数据兼容。
+ * 不改变其他字段、不改入参；id 不存在时原样返回，避免无意义的历史记录。
+ * @param clips 现有片段
+ * @param id 待移动片段 id
+ * @param startTicks 目标起始 ticks（负值按 0）
+ * @param targetTrackId 目标轨 id
+ * @returns {CoreElement[]} 新数组或原引用
+ */
+export function moveElementToTrack(
+  clips: readonly CoreElement[],
+  id: string,
+  startTicks: number,
+  targetTrackId: string,
+): CoreElement[] {
+  const index = clips.findIndex((clip) => clip.id === id);
+  if (index < 0) return [...clips];
+  const safeStart = Number.isFinite(startTicks) ? Math.max(0, startTicks) : 0;
+  const trackId = targetTrackId && targetTrackId !== 'main' ? targetTrackId : undefined;
+  return clips.map((clip, position) => {
+    if (position !== index) return clip;
+    const next = { ...clip, startTime: safeStart };
+    if (trackId === undefined) delete next.trackId;
+    else next.trackId = trackId;
+    return next;
+  });
+}
+
+/**
  * 合并参数补丁到元素（归一化后写回），无变化时返回原引用。
  * @param element 目标元素
  * @param patch 参数补丁

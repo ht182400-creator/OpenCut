@@ -346,6 +346,8 @@ export interface CoreElement extends TimelineClip {
   params?: ElementParams
   /** P0：来源素材 id（媒体片段），用于溯源与将来多素材选择，不写回经典版 JSON。 */
   mediaId?: string
+  /** U-05：所在轨道 id（缺省为 main）；仅表达编辑器会话内跨轨，写回边界见 UI_REPLICA_PLAN。 */
+  trackId?: string
 }
 
 /** core ripple 计算出的单条位移建议。 */

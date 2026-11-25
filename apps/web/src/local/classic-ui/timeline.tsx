@@ -76,6 +76,9 @@ interface TimelineDrag {
   proposed: number
   delta: number
   snapTarget: number | null
+  /** U-05：拖拽起点轨与当前指针所在轨（跨轨移动时不同）。 */
+  sourceTrackId: string
+  targetTrackId: string
 }
 
 /** 片段拖拽时的即时预览位置。 */
@@ -193,8 +196,8 @@ export function ClassicTimeline(props: {
   onSelect: (id: string, additive: boolean, range: boolean) => void
   /** P2：空白处框选命中片段；additive=Shift 加框取并集。 */
   onBoxSelect?: (hitIds: string[], additive: boolean) => void
-  /** P0：素材卡拖放到轨道时，按落点 ticks 回调插入（载荷经经典版 MIME 传递）。 */
-  onDropAsset?: (payload: AssetDragPayload, atTicks: number) => void
+  /** P0 + U-05：素材卡拖放到轨道时，按落点 ticks 与 Y 判定目标轨回调插入。 */
+  onDropAsset?: (payload: AssetDragPayload, atTicks: number, targetTrackId: string) => void
   actions: TimelineAction[]
   statusText: string
   adjustments: RippleAdjustment[]
@@ -204,7 +207,8 @@ export function ClassicTimeline(props: {
   ticksPerSecond: number
   fps: number
   onSeek: (frameIndex: number) => void
-  onMoveClip?: (clipId: string, proposedStart: number) => void
+  /** U-05：第三参数为目标轨 id，与源轨不同即跨轨移动。 */
+  onMoveClip?: (clipId: string, proposedStart: number, targetTrackId: string) => void
   onResizeClip?: (clipId: string, edge: 'left' | 'right', deltaTicks: number) => void
   /** 批 7.3：元素 id → 真实峰值数组（0~255）；缺省时对 audio 轨渲染占位线。 */
   waveforms?: ReadonlyMap<string, Uint8Array>
@@ -322,6 +326,8 @@ export function ClassicTimeline(props: {
     setNoteDraft('')
   }
   const scrollRef = useRef<HTMLDivElement>(null)
+  /** U-05：轨道容器 DOM，用于按指针 Y 判定跨轨目标。 */
+  const tracksContainerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<TimelineDrag | null>(null)
   /** P2：框选起点（内容坐标 px）与是否加框，null 表示未开始。 */
   const marqueeStartRef = useRef<{ x: number; y: number; additive: boolean } | null>(null)
@@ -456,7 +462,7 @@ export function ClassicTimeline(props: {
     event: ReactMouseEvent,
     element: CoreElement,
     mode: TimelineDragMode,
-    readOnly: boolean,
+    sourceTrackId: string,
   ) => {
     if (mode === 'playhead') {
       if (!props.onSeek) return
@@ -464,17 +470,20 @@ export function ClassicTimeline(props: {
       dragRef.current = {
         id: '', mode, startX: event.clientX, startTicks: 0, origDuration: 0,
         pixelsPerSecond, proposed: 0, delta: 0, snapTarget: null,
+        sourceTrackId: '', targetTrackId: '',
       }
       seekAt(event.clientX)
       return
     }
-    if (readOnly || (mode === 'move' && !moveRef.current) || (mode !== 'move' && !resizeRef.current)) return
+    // U-05：所有轨道均可移动/裁剪片段；仅缺少对应回调时放弃。
+    if ((mode === 'move' && !moveRef.current) || (mode !== 'move' && !resizeRef.current)) return
     event.preventDefault()
     event.stopPropagation()
     dragRef.current = {
       id: element.id, mode, startX: event.clientX,
       startTicks: element.startTime, origDuration: element.duration,
       pixelsPerSecond, proposed: element.startTime, delta: 0, snapTarget: null,
+      sourceTrackId, targetTrackId: sourceTrackId,
     }
   }
 
@@ -525,6 +534,8 @@ export function ClassicTimeline(props: {
         drag.snapTarget = snappingRef.current && boundaries.some(
           (boundary) => Math.abs(boundary - raw) <= thresholdTicks,
         ) ? drag.proposed : null
+        // U-05：按指针 Y 实时判定目标轨，松手时随起始时间一并提交。
+        drag.targetTrackId = trackIdAtClientY(event.clientY)
         setSnapLine(drag.snapTarget)
         setPreview({ id: drag.id, start: drag.proposed, duration: drag.origDuration })
       } else {
@@ -562,8 +573,9 @@ export function ClassicTimeline(props: {
       dragRef.current = null
       setPreview(null)
       setSnapLine(null)
-      if (drag.mode === 'move' && drag.proposed !== drag.startTicks) {
-        moveRef.current?.(drag.id, drag.proposed)
+      // U-05：纯跨轨（时间未变）也要提交，否则片段不会换轨。
+      if (drag.mode === 'move' && (drag.proposed !== drag.startTicks || drag.targetTrackId !== drag.sourceTrackId)) {
+        moveRef.current?.(drag.id, drag.proposed, drag.targetTrackId)
       } else if ((drag.mode === 'left' || drag.mode === 'right') && drag.delta !== 0) {
         resizeRef.current?.(drag.id, drag.mode, drag.delta)
       }
@@ -631,7 +643,26 @@ export function ClassicTimeline(props: {
   }
 
   /**
-   * P0：素材卡拖放落地。按落点 X 与当前缩放/滚动换算 ticks，吸附到帧网格后回调插入。
+   * U-05：按指针屏幕 Y 找目标轨道 id；落容器外时回退到首轨。
+   * @param clientY 指针屏幕 Y
+   * @returns {string} 目标轨 id
+   */
+  const trackIdAtClientY = (clientY: number): string => {
+    const tracks = props.tracks
+    if (tracks.length === 0) return props.mainTrackId
+    const container = tracksContainerRef.current
+    if (!container) return tracks[0].id
+    const relativeY = clientY - container.getBoundingClientRect().top - 2
+    let cumulative = 0
+    for (let index = 0; index < tracks.length; index += 1) {
+      cumulative += getTrackHeight(toTrackType(tracks[index].trackType))
+      if (relativeY < cumulative) return tracks[index].id
+    }
+    return tracks[tracks.length - 1].id
+  }
+
+  /**
+   * P0 + U-05：素材卡拖放落地。按落点 X 换算 ticks、Y 判定目标轨，吸附到帧网格后回调插入。
    * 只接受本应用经典版 MIME 的载荷，避免误吞外部拖入内容。
    */
   const handleAssetDrop = (event: ReactDragEvent<HTMLDivElement>) => {
@@ -647,7 +678,7 @@ export function ClassicTimeline(props: {
       const seconds = relativeX / pixelsPerSecond
       const rawTicks = seconds * props.ticksPerSecond
       const snapped = Math.max(0, Math.round(rawTicks / props.ticksPerFrame) * props.ticksPerFrame)
-      props.onDropAsset(payload, snapped)
+      props.onDropAsset(payload, snapped, trackIdAtClientY(event.clientY))
     } catch {
       // 载荷损坏时忽略，不影响其他拖放（如文件导入）。
     }
@@ -758,7 +789,7 @@ export function ClassicTimeline(props: {
         <div className="classic-timeline-scroll" ref={scrollRef}>
           <div className="classic-timeline-inner" style={{ width: timelineWidth }}>
             <div className="classic-timeline-ruler" style={{ height: TIMELINE_RULER_HEIGHT_PX }}
-              onMouseDown={(event) => startDrag(event, { id: '', startTime: 0, duration: 0, trimStart: 0 }, 'playhead', false)}>
+              onMouseDown={(event) => startDrag(event, { id: '', startTime: 0, duration: 0, trimStart: 0 }, 'playhead', '')}>
               {rulerTicks.map((tick) => {
                 const left = timelineTimeToPixels(tick.ticks, safeZoom, props.ticksPerSecond)
                 if (tick.showLabel) {
@@ -823,12 +854,11 @@ export function ClassicTimeline(props: {
                 )
               })}
             </div>
-            <div className="classic-timeline-tracks" style={{ height: tracksHeight + 2 }}
+            <div ref={tracksContainerRef} className="classic-timeline-tracks" style={{ height: tracksHeight + 2 }}
               onDragOver={(event) => { if (props.onDropAsset && event.dataTransfer.types.includes(TIMELINE_DRAG_MIME)) event.preventDefault() }}
               onDrop={handleAssetDrop}>
               {props.tracks.map((track, trackIndex) => {
                 const trackType = toTrackType(track.trackType)
-                const readOnly = track.id !== props.mainTrackId
                 const top = getCumulativeHeightBefore(trackTypes, trackIndex) + 2
                 return (
                   <div key={track.id} className="classic-timeline-track"
@@ -843,7 +873,7 @@ export function ClassicTimeline(props: {
                       // P2：有框选回调时空白处拖动框选；否则退回定位播放头。
                       if (props.onBoxSelect) startMarquee(event)
                       else startDrag(
-                        event, { id: '', startTime: 0, duration: 0, trimStart: 0 }, 'playhead', false,
+                        event, { id: '', startTime: 0, duration: 0, trimStart: 0 }, 'playhead', '',
                       )
                     }}>
                     {track.elements.length === 0 ? (
@@ -859,7 +889,7 @@ export function ClassicTimeline(props: {
                         <div key={element.id} className="classic-timeline-element"
                           data-track-type={trackType}
                           data-selected={isSelected}
-                          title={`${element.id} · ${(shownDuration / props.ticksPerSecond).toFixed(2)}s${readOnly ? '（只读轨道）' : ''}`}
+                          title={`${element.id} · ${(shownDuration / props.ticksPerSecond).toFixed(2)}s`}
                           style={{
                             left, width,
                             height: getTrackHeight(trackType),
@@ -868,7 +898,7 @@ export function ClassicTimeline(props: {
                             opacity: hiddenTracks.has(track.id) ? 0.5 : undefined,
                           }}
                           onClick={(event) => props.onSelect(element.id, event.metaKey || event.ctrlKey, event.shiftKey)}
-                          onMouseDown={(event) => startDrag(event, element, 'move', readOnly)}>
+                          onMouseDown={(event) => startDrag(event, element, 'move', track.id)}>
                           {(() => {
                             const thumbnailUrl = props.videoThumbnails?.get(element.id)
                             if (!thumbnailUrl || trackType !== 'video') return null
@@ -890,12 +920,12 @@ export function ClassicTimeline(props: {
                             )
                           })()}
                           <span className="classic-timeline-element-name">{element.id}</span>
-                          {isSelected && !readOnly && (
+                          {isSelected && (
                             <>
                               <span className="classic-timeline-handle left" title="裁剪入点"
-                                onMouseDown={(event) => startDrag(event, element, 'left', false)} />
+                                onMouseDown={(event) => startDrag(event, element, 'left', track.id)} />
                               <span className="classic-timeline-handle right" title="裁剪出点"
-                                onMouseDown={(event) => startDrag(event, element, 'right', false)} />
+                                onMouseDown={(event) => startDrag(event, element, 'right', track.id)} />
                             </>
                           )}
                         </div>
@@ -907,7 +937,7 @@ export function ClassicTimeline(props: {
             </div>
             <div className="classic-timeline-gutter"
               onMouseDown={(event) => startDrag(
-                event, { id: '', startTime: 0, duration: 0, trimStart: 0 }, 'playhead', false,
+                event, { id: '', startTime: 0, duration: 0, trimStart: 0 }, 'playhead', '',
               )} />
           </div>
 
@@ -922,7 +952,7 @@ export function ClassicTimeline(props: {
             <span className="classic-timeline-playhead-knob"
               style={{ width: PLAYHEAD_KNOB_SIZE_PX, height: PLAYHEAD_KNOB_SIZE_PX }}
               onMouseDown={(event) => startDrag(
-                event, { id: '', startTime: 0, duration: 0, trimStart: 0 }, 'playhead', false,
+                event, { id: '', startTime: 0, duration: 0, trimStart: 0 }, 'playhead', '',
               )} />
           </div>
           {snapLine !== null && (

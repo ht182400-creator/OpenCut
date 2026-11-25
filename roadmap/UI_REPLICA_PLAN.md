@@ -170,6 +170,8 @@
 
 | 2026-11-25 | U-04 选框/手柄/对齐参考线闭环 | 本次提交（见 `git log -1`） | UI 长尾 A 档第 4 批。`preview-transform-model.ts` 新增 `snapBoxToCanvas`（左/中/右、上/中/下三锚点 + 带位置的 `SnapGuides`，10 项单测，模块共 21 项）；`preview-section.tsx` 旋转手柄用 CSS `max()` 限制在画布可见区（修复满幅贴顶时被 `overflow:hidden` 裁掉），参考线从选框内部移到 stage 画布坐标系并按锚点定位，旋转模式不再误触发位置吸附。**验收**：tsc 0、vitest **43 文件/540 项**（+10）全绿、vite build 成功；ego(lite) 实测旋转手柄完整可见且拖拽写回 `rotate=117.6°`，左移后 vertical/horizontal 参考线均在 0% 且 `positionX=-79.86/scaleX=0.50` 写回，`roadmap/oc-rotate-handle.png` / `oc-snap-guides.png`。FEATURE_PARITY §4 选框行 🟡→✅，统计 45/2/5/15。**边界**：吸附仅画布三锚点，未扩展元素间对齐；无 core 改动。 | `apps/web/src/local/classic-ui/preview-transform-model.ts` / `preview-transform-model.test.ts` / `preview-section.tsx` |
 
+| 2026-11-25 | U-05 跨轨拖拽与撤销 | 本次提交（见 `git log -1`） | UI 长尾 A 档第 5 批（依赖 U-02 快照）。探查发现比排期预估更深：`CoreElement` 无轨字段、落轨/拖动回调无轨道维度。实现：`CoreElement.trackId?` 可选字段（缺省 main）+ `moveElementToTrack` 纯函数（7 项单测）；`timeline.tsx` 移除 `readOnly` 对移动/裁剪的阻断、按指针 Y 判定目标轨，回调增目标轨参数；`editor-page.tsx` 按 trackId 分轨渲染、落轨写标记、跨轨走统一 `applyClipEdit` 并记入 U-02 快照。**验收**：tsc 0、vitest **43 文件/547 项**（+7）全绿、vite build 成功；ego(lite) 实测 clip-intro 从 main 拖到 audio 后 Ctrl+Z 回原轨，`roadmap/oc-cross-track.png`。FEATURE_PARITY §6 拖拽排序行 🟡→✅，统计 46/1/5/15。**边界**：仅会话内跨轨；写回 JSON 搬轨触 additive-only 边界，留 U-06/U-07 决策。 | `apps/web/src/local/editor-ui.tsx` / `element-model.ts` / `element-model.test.ts` / `classic-ui/timeline.tsx` / `editor-page.tsx` |
+
 ## 9. 未开展进度明细（2026-11-16 会话总结登记）
 
 > 本节是批 7 剩余项与批 8 的**统一进度落点**，由本次会话总结（见 `.codebuddy/memory/2026-11-16.md`）登记。§3 批次表给出状态概览，本节给出逐项范围、DoD、边界与当前探查结论。更新任一子项时同步 §3 行、§8 变更记录与看板。

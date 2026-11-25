@@ -102,7 +102,7 @@
 | 自动保存 | 真实（800ms debounce + IndexedDB/OPFS） | 真实（800ms debounce + IndexedDB 主后端 + localStorage 降级，localStorage→IDB 一次性迁移，刷新恢复；OPFS 未做） | ✅ | P0 刷新恢复 + U-03 介质升级：`autosave-idb.ts` + `project-autosave.ts` 异步读写（12 项单测）；浏览器验收旧 localStorage 数据迁移到 IDB 且迁移标记写入、清除 localStorage 后编辑+刷新仍恢复两个书签，`oc-autosave-idb.png` |
 | 快捷键分发 | 真实（可重绑定驱动动作） | 23 项动作（第二档项3 +9：stop/seek±1s/jump±5s/split-left/right/deselect-all/toggle-bookmark；+snapping：n）+ Ctrl/Cmd+C/V/D/A 与 undo/redo，用户重绑定真实驱动 | ✅ | P1 分发 + P3 批 2 + 第二档项3：`shortcut-bindings.ts` 扩 9 动作与默认键（j/l/Shift+方向/q/w），`shortcut-actions-model.ts` 纯函数处理 seek 边界/split 删侧/书签切换（8 项单测），无默认键动作录制后生效；snapping 状态提升到 editor 受控，磁铁按钮与 n 双向同步；浏览器验收 l→+1s、Shift+→→末帧、j→-1s、q→clip-body 2.00s→1.93s、n→aria-pressed true↔false，`oc-p3-shortcut-actions.png`、`oc-p3-snapping.png` |
 | 多选/框选/全选 | 真实 | Cmd/Ctrl 加选 + Shift 区间 + Ctrl+A + 空白拖框选 | ✅ | P1 + P2 长尾批：见 §3 同名行 |
-| 拖拽排序 | 真实（片段跨轨 + 效果列表） | 仅 main 轨片段拖动 | 🟡 | — |
+| 拖拽排序 | 真实（片段跨轨 + 效果列表） | 真实（片段可跨轨拖放：main/overlay/audio 按指针 Y 判定目标轨，素材卡也可直接落到非主轨；撤销回原轨） | ✅ | U-05：`CoreElement.trackId?` 可选字段（缺省 main）+ `moveElementToTrack` 纯函数（7 项单测），`timeline.tsx` 放开 readOnly、拖拽/落轨带目标轨，`editor-page.tsx` 按 trackId 分轨渲染并统一记史；浏览器验收 clip-intro 从 main 拖到 audio 轨后撤销回原位，`oc-cross-track.png`。**边界**：仅会话内跨轨，写回 JSON 搬轨仍属 additive-only 边界（见 U-06/U-07） |
 | 剪贴板直接贴媒体 | 真实 | 无（P1 仅内部元素剪贴板，非系统剪贴板贴文件） | ⚪ | — |
 | 面板尺寸可拖拽 | 真实 | 真实 | ✅ | 批 1 |
 | GPU/编解码能力提示 | 真实 | P2：WebGL2/WebGPU/硬件编码能力探测 + 诊断面板真实提示 | ✅ | P2：`gpu-capability.ts`，浏览器验收显示「WebGL2 / WebGPU / 硬件视频编码」 |
@@ -138,12 +138,12 @@
 
 | 状态 | 数量 | 分布（§） | 主要条目 |
 | --- | --- | --- | --- |
-| ✅ 已实现 | 45 | §1:5 §2:5 §3:13 §4:7 §5:5 §6:6 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、**素材排序**、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、**选框/手柄/参考线吸附闭环**、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）**、**撤销/重做全覆盖**、**自动保存 IndexedDB + 迁移** |
-| 🟡 部分闭环 | 2 | §3:1 §6:1 | 三轨结构固定、Masks/Effects 基础参数（无 GPU 效果）、拖拽排序 |
+| ✅ 已实现 | 46 | §1:5 §2:5 §3:13 §4:7 §5:5 §6:7 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、**素材排序**、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、**选框/手柄/参考线吸附闭环**、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）**、**撤销/重做全覆盖**、**自动保存 IndexedDB + 迁移** |
+| 🟡 部分闭环 | 1 | §3:1 | 三轨结构（overlay/main/audio，新增轨仍需 U-06 决策） |
 | 🔴 占位 | 5 | §2:4 §3:1 | Sounds/Stickers/Effects/Settings 数据源、overlay/audio 编辑、时间码编辑、右键菜单 |
 | ⚪ 未覆盖 | 15 | §1:5 §2:5 §3:2 §4:1 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、双击文字就地编辑、素材右键 Export clips、剪贴板直接贴媒体 |
 
-> 合计 67 项（45+2+5+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后核算为 41/6/5/15，UI 长尾 U-01 素材排序闭环后核算为 42/5/5/15，U-02 撤销重做全覆盖后核算为 43/4/5/15，U-03 自动保存介质升级后核算为 44/3/5/15；2026-11-25 U-04 选框/手柄/参考线吸附闭环后核算为 45/2/5/15）。
+> 合计 67 项（46+1+5+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后核算为 41/6/5/15，UI 长尾 U-01 素材排序闭环后核算为 42/5/5/15，U-02 撤销重做全覆盖后核算为 43/4/5/15，U-03 自动保存介质升级后核算为 44/3/5/15；2026-11-25 U-04 选框/手柄/参考线吸附闭环后核算为 45/2/5/15，U-05 跨轨拖拽后核算为 46/1/5/15）。
 > **2026-11-17 P0 完成后变化**：✅ 20→23（Text/Media 加轨、落轨拖放），🟡 7→9（参数编辑、自动保存由 🔴 升级），🔴 19→14。详见 `UI_REPLICA_PLAN.md` §8「P0 闭环实现」。
 > **2026-11-17 P1 完成后变化**：✅ 23→25（Duplicate、复制/粘贴），🟡 9→11（多选、快捷键分发升级），🔴 14→13（Duplicate 出占位），⚪ 20→17（多选/复制粘贴出未覆盖）。数据源接入（Sounds/Stickers/Effects）依赖服务端素材库，本仓库无此后端且超出 UI 闭环范围，记 🔴 并写入 `UI_REPLICA_PLAN.md` §7 差异台账；不伪造数据。
 > **2026-11-17 P2 完成后变化**：新增 GPU 项（总 66→67）；✅ 25→28（Transform/Text 参数修复 key 映射升 ✅、GPU 提示、WebM 文档更正），🟡 11→13（遮罩/效果基础参数、关键帧真实数据模型），🔴 13→11（参数/关键帧出占位），⚪ 17→15（WebM/GPU 出未覆盖）。AI 字幕、项目管理页无后端，保持 ⚪ 并写入台账；曲线编辑器、GPU 效果、框选橡皮筋归长尾。
@@ -161,6 +161,7 @@
 - **2026-11-24 UI 长尾 U-02：撤销/重做全覆盖**：`TimelineSnapshot` 扩为 `EditorSnapshotState`（clips + 书签 + 轨道标志 + 选中态 + ripple adjustments），保留旧类型名、`moveHistory().clips` 兼容字段与可选 `parts` 参数；新增 `normalizeSnapshotState` 对旧持久化条目缺字段逐项给安全默认值（additive-only）。`record` 通过注入 `getParts` 读取当前编辑器现场，新增/删除/片段编辑/复制粘贴/书签/轨道标志统一 `pushSnapshot`；书签拖动以 `commit` 标志区分中间态，pointerup 只提交一条，避免高频写入。`recordHistory` 扩第三参数 `selectedId` 并同步 `use-selection.ts`/`editor-actions.ts` 全部调用方，保证快照记录动作后的选中态。验收：tsc 0、vitest 42 文件 518/518（+10）、build 成功；ego(lite) 实测添加书签→静音→删除片段→撤销：片段 1→2、书签/静音保持、选中态回到 clip-intro，重做再删、连续撤销逐条回退，`oc-undo-full-coverage.png`。§6 撤销行 🟡→✅，统计 43/4/5/15。
 - **2026-11-24 UI 长尾 U-03：自动保存介质升级到 IndexedDB**：`project-autosave.ts` 保留同步纯函数（供迁移/单测），提取 `parseAutosaveEnvelope` 让同步/异步共用校验，新增 `AsyncAutosaveStorage` 与 `readAutosaveAsync`/`persistAutosaveAsync`/`clearAutosaveAsync`；新 `autosave-idb.ts` 提供 IndexedDB 后端（事务 complete 后 resolve）、复合后端（IDB 失败降级 localStorage）、`migrateLegacyAutosave` 一次性迁移（原始字符串搬运 + 标记防重复，损坏数据跳过、写入失败不写标记可重试）。编辑器加载项目时先迁移再异步读取，防抖写入改异步。验收：tsc 0、vitest 43 文件 530/530（+12）、build 成功；ego(lite) 实测旧 localStorage 信封（frameIndex=99 + 旧书签）经刷新迁移到 IDB、标记写入且旧数据保留，清除 localStorage 后新增书签→IDB 更新→刷新仍恢复两个书签，`oc-autosave-idb.png`。§6 自动保存行 🟡→✅，统计 44/3/5/15。
 - **2026-11-25 UI 长尾 U-04：选框/手柄/对齐参考线闭环**：`preview-transform-model.ts` 新增 `snapBoxToCanvas`（左/中/右、上/中/下三锚点吸附 + 带画布百分比位置的 `SnapGuides`，10 项单测，模块共 21 项）；`preview-section.tsx` 旋转手柄从「顶边外移 24px」改为 CSS `max()` 夹在画布内（满幅元素贴顶时不再被 `overflow:hidden` 裁掉），参考线从选框内部移到 stage 画布坐标系并按锚点定位，旋转模式不再误触发位置吸附。验收：tsc 0、vitest 43 文件 540/540（+10）、build 成功；ego(lite) 实测旋转手柄 `top=63.2px` 完整处于 stage 内、拖拽写回 `rotate=117.6°`，缩小并左移后 vertical/horizontal 参考线均出现在 0% 且 `positionX=-79.86/scaleX=0.50` 写回，`oc-rotate-handle.png` / `oc-snap-guides.png`。§4 选框行 🟡→✅，统计 45/2/5/15。
+- **2026-11-25 UI 长尾 U-05：跨轨拖拽与撤销**：探查发现 `CoreElement` 无轨道字段、`elements` 扁平且只覆盖 main 轨，落轨/拖动回调均无轨道维度（比排期预估更深）。实现：`CoreElement` 加可选 `trackId?`（缺省 main，additive-only），新增 `moveElementToTrack` 纯函数（7 项单测）；`timeline.tsx` 移除 `readOnly` 对移动/裁剪的阻断、按指针 Y 判定目标轨，`onDropAsset`/`onMoveClip` 增加目标轨参数；`editor-page.tsx` 按 trackId 分轨渲染、落轨写标记、跨轨走统一 `applyClipEdit` 并记入 U-02 快照，跨轨后保持选中。验收：tsc 0、vitest 43 文件 547/547（+7）、build 成功；ego(lite) 实测 clip-intro 从 main（轨 1）拖到 audio（轨 2）后 Ctrl+Z 回原轨且其余片段不变，`oc-cross-track.png`。§6 拖拽排序行 🟡→✅，统计 46/1/5/15。**边界**：仅会话内跨轨；写回 JSON 搬轨仍触 additive-only 边界，留 U-06/U-07 决策。
 
 ## 附录 A：经典版「新增文字」实证（为什么不是 core 的事）
 
