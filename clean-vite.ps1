@@ -9,8 +9,17 @@ param(
 $ErrorActionPreference = 'SilentlyContinue'
 
 try {
+    # Exclude self: the -Needle argument itself contains the path, so this
+    # powershell process matches its own needle and would kill itself.
+    $selfPid = $PID
+    $parentPid = (Get-CimInstance Win32_Process -Filter "ProcessId = $selfPid").ParentProcessId
     $processes = Get-CimInstance Win32_Process |
-        Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Needle) }
+        Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine.Contains($Needle) -and
+            $_.ProcessId -ne $selfPid -and
+            $_.ProcessId -ne $parentPid
+        }
 
     foreach ($process in $processes) {
         Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
