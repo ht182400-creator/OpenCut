@@ -45,17 +45,7 @@ function toWriteTrackView(
     id: track.id,
     trackType: track.trackType,
     elementCount: owned.length,
-    elements: owned.map((element) => ({
-      id: element.id,
-      elementType: element.elementType ?? 'video',
-      startTime: element.startTime,
-      duration: element.duration,
-      trimStart: element.trimStart,
-      trimEnd: element.trimEnd ?? element.duration,
-      ...(element.name !== undefined ? { name: element.name } : {}),
-      ...(element.content !== undefined ? { content: element.content } : {}),
-      ...(element.params !== undefined ? { params: element.params } : {}),
-    })),
+    elements: owned.map(toWriteElement),
     ...(track.muted !== undefined ? { muted: track.muted } : {}),
     ...(track.hidden !== undefined ? { hidden: track.hidden } : {}),
   };
@@ -93,6 +83,8 @@ function toWriteElement(element: CoreElement) {
     trimEnd: element.trimEnd ?? element.duration,
     ...(element.name !== undefined ? { name: element.name } : {}),
     ...(element.content !== undefined ? { content: element.content } : {}),
+    // D 档：媒体来源 id（音效为静态资源路径）须写回，否则经典版丢失素材引用。
+    ...(element.mediaId !== undefined ? { mediaId: element.mediaId } : {}),
     ...(element.params !== undefined ? { params: element.params } : {}),
   };
 }
@@ -194,6 +186,8 @@ export function buildWriteView(
             ...(edit.name !== undefined ? { name: edit.name } : {}),
             ...(edit.content !== undefined ? { content: edit.content } : {}),
             ...(edit.elementType !== undefined ? { elementType: edit.elementType } : {}),
+            // D 档：媒体来源 id 写回（音效/媒体元素在已有轨上被编辑时保真）。
+            ...(edit.mediaId !== undefined ? { mediaId: edit.mediaId } : {}),
             // P0：可视参数写回（含 opacity/position/scale/rotate 与文字字段）。
             ...(edit.params !== undefined ? { params: edit.params } : {}),
           };

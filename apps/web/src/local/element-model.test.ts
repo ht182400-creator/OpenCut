@@ -151,6 +151,15 @@ describe('buildTextElement / buildMediaElement（构建元素）', () => {
     expect(element.duration).toBe(DEFAULT_MEDIA_DURATION_SECONDS * TICKS_PER_SECOND)
   })
 
+  it('D 档：传入 mediaId 时写入元素（音效静态路径写回保真）', () => {
+    const element = buildMediaElement({
+      id: 'm4', name: 'Click', elementType: 'audio', startTime: 0,
+      mediaId: '/assets/sounds/click_001.ogg',
+    })
+    expect(element.mediaId).toBe('/assets/sounds/click_001.ogg')
+    expect(element.elementType).toBe('audio')
+  })
+
   it('非法 ticksPerSecond 回落到契约常量', () => {
     const element = buildMediaElement({
       id: 'm3', name: 'a.mp4', elementType: 'video', startTime: 0,

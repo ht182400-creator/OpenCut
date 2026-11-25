@@ -1006,10 +1006,15 @@ export function Editor() {
         })
       }
       const start = resolveAutoPlacement(elements, desiredStart, element.duration)
+      // D 档：音效元素默认落到第一条 audio 轨（除非拖放时显式指定目标轨）。
+      const effectiveTrackId = targetTrackId
+        ?? (payload.kind === 'audio'
+          ? projectTracks.find((track) => track.trackType === 'audio')?.id
+          : undefined)
       // U-05：非 main 轨用显式 trackId 标记；main 保持缺省以兼容旧数据。
       const placed = {
         ...element, startTime: start,
-        ...(targetTrackId && targetTrackId !== 'main' ? { trackId: targetTrackId } : {}),
+        ...(effectiveTrackId && effectiveTrackId !== 'main' ? { trackId: effectiveTrackId } : {}),
       }
       const next = insertElement(elements, placed)
       setElements(next)

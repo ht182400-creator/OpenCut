@@ -238,6 +238,8 @@ export function buildMediaElement(input: {
     startTime: Math.max(0, Math.round(input.startTime)),
     duration: secondsToTicks(input.durationSeconds, tps, DEFAULT_MEDIA_DURATION_SECONDS),
     trimStart: 0,
+    // D 档：媒体来源 id 必须落到元素上，否则 autosave/写回都会丢失素材引用。
+    ...(input.mediaId !== undefined ? { mediaId: input.mediaId } : {}),
     params: normalizeElementParams(),
   };
 }

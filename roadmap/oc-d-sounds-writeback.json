@@ -1,0 +1,144 @@
+{
+  "currentSceneId": "scene-1",
+  "metadata": {
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "duration": 360000,
+    "id": "classic-demo-31",
+    "name": "Classic demo project (v31)",
+    "updatedAt": "2026-01-02T00:00:00.000Z"
+  },
+  "scenes": [
+    {
+      "bookmarks": [
+        {
+          "id": "legacy-bm",
+          "name": "旧书签",
+          "ticks": 48000
+        },
+        {
+          "id": "bm-1795536267305-4q2kc",
+          "name": "书签 2",
+          "ticks": 396000
+        }
+      ],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "id": "scene-1",
+      "isMain": true,
+      "name": "Main scene",
+      "tracks": {
+        "audio": [
+          {
+            "elements": [
+              {
+                "duration": 360000,
+                "id": "audio-bed",
+                "mediaId": "media-music",
+                "name": "Background music",
+                "params": {},
+                "startTime": 0,
+                "trimEnd": 360000,
+                "trimStart": 0,
+                "type": "audio"
+              },
+              {
+                "duration": 960000,
+                "id": "media-7ae31238-47ec-4a6e-8477-72dbf7631bdf",
+                "mediaId": "/assets/sounds/click_001.ogg",
+                "name": "Click",
+                "params": {
+                  "opacity": 1,
+                  "positionX": 0,
+                  "positionY": 0,
+                  "rotate": 0,
+                  "scaleX": 1,
+                  "scaleY": 1
+                },
+                "startTime": 360000,
+                "trimEnd": 960000,
+                "trimStart": 0,
+                "type": "audio"
+              }
+            ],
+            "id": "audio-1",
+            "muted": false,
+            "name": "Music",
+            "type": "audio"
+          }
+        ],
+        "main": {
+          "elements": [
+            {
+              "duration": 120000,
+              "id": "clip-intro",
+              "mediaId": "media-intro",
+              "name": "Intro",
+              "params": {},
+              "startTime": 0,
+              "trimEnd": 120000,
+              "trimStart": 0,
+              "type": "video"
+            },
+            {
+              "duration": 240000,
+              "id": "clip-body",
+              "mediaId": "media-body",
+              "name": "Body",
+              "params": {},
+              "startTime": 120000,
+              "trimEnd": 360000,
+              "trimStart": 120000,
+              "type": "video"
+            }
+          ],
+          "hidden": false,
+          "id": "main",
+          "muted": false,
+          "name": "Main Track",
+          "type": "video"
+        },
+        "overlay": [
+          {
+            "elements": [
+              {
+                "duration": 120000,
+                "id": "title-a",
+                "name": "Opening title",
+                "params": {},
+                "startTime": 0,
+                "trimEnd": 120000,
+                "trimStart": 0,
+                "type": "text"
+              }
+            ],
+            "hidden": false,
+            "id": "overlay-text",
+            "name": "Titles",
+            "type": "text"
+          }
+        ]
+      },
+      "updatedAt": "2026-01-02T00:00:00.000Z"
+    }
+  ],
+  "settings": {
+    "background": {
+      "color": "#0f172a",
+      "type": "color"
+    },
+    "canvasSize": {
+      "height": 180,
+      "width": 320
+    },
+    "canvasSizeMode": "preset",
+    "fps": {
+      "denominator": 1,
+      "numerator": 30
+    }
+  },
+  "timelineViewState": {
+    "playheadTime": 0,
+    "scrollLeft": 0,
+    "zoomLevel": 1
+  },
+  "version": 31
+}

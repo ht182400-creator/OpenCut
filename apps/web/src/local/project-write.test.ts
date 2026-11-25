@@ -200,6 +200,14 @@ describe('buildWriteView 合并编辑', () => {
     expect(audio.elementCount).toBe(2);
   });
 
+  it('D 档：媒体元素 mediaId（音效静态路径）写回保留', () => {
+    const view = buildWriteView(makeProject(), [
+      makeElement({ id: 'new-audio', trackId: 'new-track-1', mediaId: '/assets/sounds/click_001.ogg' }),
+    ], undefined, undefined, undefined, [{ id: 'new-track-1', trackType: 'audio' }]);
+    const added = view.scenes[0].tracks.find((t) => t.id === 'new-track-1')!;
+    expect(added.elements[0].mediaId).toBe('/assets/sounds/click_001.ogg');
+  });
+
   it('U-07：hasNewElements 识别分割产生的新 id，旧 id 不误判', () => {
     const project = makeProject();
     expect(hasNewElements(project, [makeElement({ id: 'c1' })])).toBe(false);
