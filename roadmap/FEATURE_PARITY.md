@@ -80,7 +80,7 @@
 | 缩放预设 + Fit + 全屏 | 真实 | 真实 | ✅ | 批 5 验收 |
 | 选框/手柄/对齐参考线 | 真实（改 transform） | 真实（选框 + 四角/三边/旋转手柄 + 画布三锚点吸附参考线，拖拽松手统一写回 position/scale/rotate 并驱动画面） | ✅ | 第二档写回 + U-04：`preview-transform-model.ts` 新增 `snapBoxToCanvas`（左/中/右、上/中/下三锚点，10 项单测，模块共 21 项），`preview-section.tsx` 旋转手柄用 CSS `max()` 夹在画布内、参考线改画在 stage 画布坐标系；浏览器验收旋转手柄完整可见且拖拽写回 `rotate=117.6°`，边缘吸附出现 vertical/horizontal@0% 且 `positionX=-79.86/scaleX=0.50`，`oc-rotate-handle.png` / `oc-snap-guides.png` |
 | 遮罩手柄 | 真实 | 真实（预览叠加遮罩矩形 + 4 边拖拽手柄，驱动 mask.* 参数并像素裁剪生效） | ✅ | P4 批 5：`resizeMask` 纯函数 + `preview-section.tsx` 手柄，浏览器拖动 left 写回 `mask.left=0.052`，`oc-p4-mask-handle.png` |
-| 双击文字就地编辑 | 真实 | 无 | ⚪ | 依赖文字元素可编辑 |
+| 双击文字就地编辑 | 真实 | 真实（双击预览画布进入 contentEditable，Enter/blur 提交、Shift+Enter 换行、Escape 取消；经 `applyPropertyPatch` 写回 content + params.content，撤销与刷新恢复均闭环） | ✅ | U-08：`preview-text-edit-model.ts` 纯函数（初始草稿/提交判定/按键语义，10 项单测），`preview-section.tsx` 加文字编辑 overlay（仅文字元素启用），`editor-page.tsx` 传 `textContent`/`onTextChange` 复用属性写回链路；浏览器验收 title-a 编辑后 autosave content 与 params.content 同步、刷新恢复、Escape 不写回，`oc-u08-inline-edit.png` |
 | 画面合成 | 真实（canvas renderer） | 真实（core `composite_frame` + 真实素材帧） | ✅ | 批 7 + 正式模式去演示色块 |
 | 右键菜单（Fit/Full screen/Snapshot） | 真实 | 真实（Fit/Full screen/Save snapshot/Copy snapshot） | ✅ | 批 4：`preview-section.tsx` onContextMenu + 自定义菜单，canvas.toDataURL 下载 / ClipboardItem 复制，浏览器验收 4 项菜单显示与点击关闭，`oc-p4-timecode-menu.png` |
 
@@ -138,12 +138,12 @@
 
 | 状态 | 数量 | 分布（§） | 主要条目 |
 | --- | --- | --- | --- |
-| ✅ 已实现 | 48 | §1:5 §2:5 §3:15 §4:7 §5:5 §6:7 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、**素材排序**、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、**选框/手柄/参考线吸附闭环**、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）**、**撤销/重做全覆盖**、**自动保存 IndexedDB + 迁移**、**动态新增轨道 + 写回保真**、**overlay/audio 轨编辑写回** |
+| ✅ 已实现 | 49 | §1:5 §2:5 §3:15 §4:8 §5:5 §6:7 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、**素材排序**、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、**选框/手柄/参考线吸附闭环**、**双击文字就地编辑**、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）**、**撤销/重做全覆盖**、**自动保存 IndexedDB + 迁移**、**动态新增轨道 + 写回保真**、**overlay/audio 轨编辑写回** |
 | 🟡 部分闭环 | 0 | — | 无 |
 | 🔴 占位 | 4 | §2:4 | Sounds/Stickers/Effects/Settings 数据源 |
-| ⚪ 未覆盖 | 15 | §1:5 §2:5 §3:2 §4:1 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、双击文字就地编辑、素材右键 Export clips、剪贴板直接贴媒体 |
+| ⚪ 未覆盖 | 14 | §1:5 §2:5 §3:2 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、素材右键 Export clips、剪贴板直接贴媒体 |
 
-> 合计 67 项（48+0+4+15），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后核算为 41/6/5/15，UI 长尾 U-01 素材排序闭环后核算为 42/5/5/15，U-02 撤销重做全覆盖后核算为 43/4/5/15，U-03 自动保存介质升级后核算为 44/3/5/15；2026-11-25 U-04 选框/手柄/参考线吸附闭环后核算为 45/2/5/15，U-05 跨轨拖拽后核算为 46/1/5/15，U-06 动态新增轨道后核算为 47/0/5/15，U-07 overlay/audio 轨编辑写回后核算为 48/0/4/15）。
+> 合计 67 项（49+0+4+14），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后核算为 41/6/5/15，UI 长尾 U-01 素材排序闭环后核算为 42/5/5/15，U-02 撤销重做全覆盖后核算为 43/4/5/15，U-03 自动保存介质升级后核算为 44/3/5/15；2026-11-25 U-04 选框/手柄/参考线吸附闭环后核算为 45/2/5/15，U-05 跨轨拖拽后核算为 46/1/5/15，U-06 动态新增轨道后核算为 47/0/5/15，U-07 overlay/audio 轨编辑写回后核算为 48/0/4/15，U-08 双击文字就地编辑后核算为 49/0/4/14）。
 > **2026-11-17 P0 完成后变化**：✅ 20→23（Text/Media 加轨、落轨拖放），🟡 7→9（参数编辑、自动保存由 🔴 升级），🔴 19→14。详见 `UI_REPLICA_PLAN.md` §8「P0 闭环实现」。
 > **2026-11-17 P1 完成后变化**：✅ 23→25（Duplicate、复制/粘贴），🟡 9→11（多选、快捷键分发升级），🔴 14→13（Duplicate 出占位），⚪ 20→17（多选/复制粘贴出未覆盖）。数据源接入（Sounds/Stickers/Effects）依赖服务端素材库，本仓库无此后端且超出 UI 闭环范围，记 🔴 并写入 `UI_REPLICA_PLAN.md` §7 差异台账；不伪造数据。
 > **2026-11-17 P2 完成后变化**：新增 GPU 项（总 66→67）；✅ 25→28（Transform/Text 参数修复 key 映射升 ✅、GPU 提示、WebM 文档更正），🟡 11→13（遮罩/效果基础参数、关键帧真实数据模型），🔴 13→11（参数/关键帧出占位），⚪ 17→15（WebM/GPU 出未覆盖）。AI 字幕、项目管理页无后端，保持 ⚪ 并写入台账；曲线编辑器、GPU 效果、框选橡皮筋归长尾。

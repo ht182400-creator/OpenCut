@@ -1148,6 +1148,11 @@ export function Editor() {
                     onMaskChange={handleMaskChange}
                     transform={selectedElement ? transformFromElement(selectedElement) : undefined}
                     onTransformChange={handleTransformChange}
+                    textContent={selectedElement?.elementType === 'text'
+                      ? (selectedElement.content ?? (typeof selectedElement.params?.content === 'string' ? selectedElement.params.content : ''))
+                      : undefined}
+                    onTextChange={selectedElement?.elementType === 'text'
+                      ? (content) => applyPropertyPatch({ content }) : undefined}
                   />
                 </ResizablePanel>
                 <ResizableHandle withHandle />

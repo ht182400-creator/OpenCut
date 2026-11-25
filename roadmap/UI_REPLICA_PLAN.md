@@ -176,6 +176,8 @@
 
 | 2026-11-25 | U-07 overlay/audio 轨编辑写回 | 本次提交（见 `git log -1`） | UI 长尾 B 档第 2 批（依赖 U-05 + U-06）。四层全打通：① `editor-page.tsx` `loadProject` 纳入全部轨元素并带 `trackId`（此前只读 main），`deleteSelected` ripple 按轨分组互不干扰；② `timeline.ts` 约束函数（`moveClipClamped`/`resizeClipEdge`）按 `trackId` 过滤邻居，`splitClipAt` 第二段继承轨道；③ `project-write.ts` 按 `trackId` 路由新元素到对应轨，新轨带元素，新增 `hasNewElements` 判定写回开关；④ core `merge_track` 在 `allowNewTracks` 开关下允许已有轨新元素（默认拒绝保 additive-only），重编 wasm。**验收**：tsc 0、vitest **43 文件/560 项**（+8）全绿、`project_write` Rust 16/16（+2）、vite build 成功；ego(lite) 实测 audio-bed 分割后 `audio-bed#2` 仍在 audio 轨、写回 JSON audio 数组含两段且未知字段保留，删除 audio-bed 后 main 两片段不变，`oc-u07-writeback.json`。FEATURE_PARITY §3 overlay/audio 轨编辑 🔴→✅，统计 47/0/5/15→**48/0/4/15**。**边界**：ripple 逐轨独立（不做跨轨连锁）；新元素写回复用 `allowNewTracks` 开关（与 U-06 同一契约，未加第三选项）。 |
 
+| 2026-11-25 | U-08 双击文字就地编辑（A 档最后一批） | 本次提交（见 `git log -1`） | UI 长尾 A 档第 6 批（独立无前置）。预览是 canvas 栅格化无 DOM 文字节点，新增 contentEditable overlay（仅 `elementType==='text'` 时启用，定位复用选中框 box）；抽离 `preview-text-edit-model.ts` 纯函数（初始草稿/提交判定/按键语义，10 项单测）；提交走 `applyPropertyPatch({ content })` 复用既有写回链路，自动同步 content + params.content 并记 U-02 历史。**验收**：tsc 0、vitest **44 文件/570 项**（+10）全绿、vite build 成功；ego(lite) 实测 title-a 双击进入编辑→输入→Enter 提交后 autosave `content`/`params.content` 均为新文本、刷新恢复、Escape 取消不写回、编辑态截图 `oc-u08-inline-edit.png`。FEATURE_PARITY §4 双击文字行 ⚪→✅，统计 48/0/4/15→**49/0/4/14**。**边界**：编辑框位置沿用选框（不按字形精确包围）；仅 text 类型元素启用；Shift+Enter 换行、Enter 提交。 |
+
 ## 9. 未开展进度明细（2026-11-16 会话总结登记）
 
 > 本节是批 7 剩余项与批 8 的**统一进度落点**，由本次会话总结（见 `.codebuddy/memory/2026-11-16.md`）登记。§3 批次表给出状态概览，本节给出逐项范围、DoD、边界与当前探查结论。更新任一子项时同步 §3 行、§8 变更记录与看板。

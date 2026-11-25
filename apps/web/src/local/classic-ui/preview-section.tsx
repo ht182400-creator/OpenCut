@@ -59,6 +59,7 @@ import {
   CONTEXT_MENU_PREVIEW_ITEMS,
 } from './commands-tokens';
 import { resizeMask, type ElementTransform, type RectMask } from '../element-composite';
+import { initialTextDraft, shouldCommitText, textEditKeyAction } from './preview-text-edit-model';
 import {
   NO_SNAP_GUIDES,
   boxFromTransform,
@@ -93,7 +94,16 @@ export interface PreviewSectionProps {
   transform?: ElementTransform
   /** 第二档：变换拖拽提交回调（松手一次性写回 position/scale/rotate）。 */
   onTransformChange?: (transform: ElementTransform) => void
+  /** U-08：选中文字元素的当前文本（仅文字元素传入，启用双击就地编辑）。 */
+  textContent?: string
+  /** U-08：双击编辑提交回调（写回元素 content，属性面板同步）。 */
+  onTextChange?: (content: string) => void
 }
+
+/** U-08：文字就地编辑框字号（px，提取常量避免业务代码硬编码）。 */
+const TEXT_EDIT_FONT_SIZE_PX = 16
+/** U-08：文字就地编辑框内边距（px）。 */
+const TEXT_EDIT_PADDING_PX = 4
 
 /** 本地选框矩形（百分比坐标，0~100；旋转恒 0，见边界）。 */
 interface LocalBox {
@@ -140,6 +150,11 @@ export function PreviewSection(props: PreviewSectionProps) {
   const [timecodeDraft, setTimecodeDraft] = useState<string | null>(null)
   /** 批 4：右键菜单开关与屏幕坐标。 */
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  /** U-08：文字就地编辑开关与草稿（原文用于判重，避免无变化写回）。 */
+  const [textEditing, setTextEditing] = useState(false)
+  const [textDraft, setTextDraft] = useState('')
+  const [textOriginal, setTextOriginal] = useState('')
+  const textEditRef = useRef<HTMLDivElement>(null)
   /** 批 5：遮罩手柄拖拽起点（像素 + 原始遮罩）。 */
   const maskDragRef = useRef<{ edge: string; startX: number; startY: number; width: number; height: number; orig: RectMask } | null>(null)
   const dragRef = useRef<{
@@ -164,6 +179,54 @@ export function PreviewSection(props: PreviewSectionProps) {
 
   // 帧号外部变化（播放/seek）时清空时间码草稿，避免显示与真实帧不一致。
   useEffect(() => { setTimecodeDraft(null) }, [props.frameIndex])
+
+  // U-08：进入编辑态时把草稿写入 contentEditable 并聚焦到末尾。
+  // contentEditable 不受 React 受控，避免每次按键重渲染把光标顶回开头。
+  useEffect(() => {
+    if (!textEditing || !textEditRef.current) return
+    try {
+      const editor = textEditRef.current
+      editor.innerText = textDraft
+      editor.focus()
+      const range = document.createRange()
+      range.selectNodeContents(editor)
+      range.collapse(false)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+    } catch {
+      // 聚焦/选区失败不影响编辑能力，用户仍可手动点击输入框。
+      setTextEditing(false)
+    }
+  }, [textEditing])
+
+  /** U-08：双击文字元素进入就地编辑（仅文字元素传了 onTextChange 时生效）。 */
+  const startTextEdit = () => {
+    if (!props.onTextChange) return
+    const original = initialTextDraft(props.textContent)
+    setTextOriginal(original)
+    setTextDraft(original)
+    setTextEditing(true)
+  }
+
+  /** U-08：提交草稿——文本真的变化才回调写回，避免无意义历史快照。 */
+  const commitTextEdit = () => {
+    try {
+      const next = textEditRef.current?.innerText ?? textDraft
+      if (shouldCommitText(next, textOriginal)) props.onTextChange?.(next)
+    } catch {
+      // DOM 文本读取失败时放弃本次提交，不把不完整内容写回元素。
+      setTextDraft(textOriginal)
+    } finally {
+      setTextEditing(false)
+    }
+  }
+
+  /** U-08：Escape 取消编辑，草稿丢弃不写回。 */
+  const cancelTextEdit = () => {
+    setTextDraft(textOriginal)
+    setTextEditing(false)
+  }
 
   /** 缩放：步进 ×1.25，夹在 [0.25,16]。 */
   const applyZoom = (next: number) => {
@@ -430,7 +493,7 @@ export function PreviewSection(props: PreviewSectionProps) {
         paddingBottom: PREVIEW_VIEWPORT_PADDING_BOTTOM_PX,
         background: 'var(--background)',
       }} onWheel={onWheel} onContextMenu={openContextMenu}>
-        <div ref={stageRef} data-testid="preview-stage" style={{
+        <div ref={stageRef} data-testid="preview-stage" onDoubleClick={startTextEdit} style={{
           position: 'relative', aspectRatio: '16 / 9',
           width: `${Math.min(100, 100 * zoom)}%`, height: '100%', maxWidth: '100%', maxHeight: '100%',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -499,6 +562,29 @@ export function PreviewSection(props: PreviewSectionProps) {
               position: 'absolute', top: `${snapLines.horizontalAt}%`, left: 0, right: 0,
               height: SNAP_GUIDE_WIDTH, background: SNAP_GUIDE_COLOR, pointerEvents: 'none',
             }} />
+          )}
+          {/* U-08：文字就地编辑框（双击画布进入，Enter/blur 提交，Escape 取消）。 */}
+          {textEditing && (
+            <div ref={textEditRef} data-testid="preview-text-editor"
+              contentEditable suppressContentEditableWarning
+              aria-label="编辑文字内容"
+              onBlur={commitTextEdit}
+              onKeyDown={(event) => {
+                const action = textEditKeyAction(event.key, event.shiftKey)
+                if (action === 'commit') { event.preventDefault(); commitTextEdit() }
+                else if (action === 'cancel') { event.preventDefault(); cancelTextEdit() }
+              }}
+              style={{
+                position: 'absolute',
+                left: `${box.left}%`, top: `${box.top}%`,
+                width: `${box.width}%`, height: `${box.height}%`,
+                boxSizing: 'border-box', padding: TEXT_EDIT_PADDING_PX,
+                fontSize: TEXT_EDIT_FONT_SIZE_PX, color: 'var(--foreground)',
+                background: 'color-mix(in srgb, var(--background) 80%, transparent)',
+                border: '1px solid var(--primary)', borderRadius: 'var(--radius-sm)',
+                outline: 'none', overflow: 'auto', whiteSpace: 'pre-wrap',
+                pointerEvents: 'auto', zIndex: 5,
+              }} />
           )}
         </div>
       </div>

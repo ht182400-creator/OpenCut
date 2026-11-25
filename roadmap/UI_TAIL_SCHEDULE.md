@@ -23,7 +23,7 @@
 | **U-03** | 自动保存介质升级（🟡） | U-02（快照结构统一后迁移更稳） | `project-autosave.ts` 后端从 localStorage 换 IndexedDB（已有可注入 storage 接口），加 localStorage→IndexedDB 一次性迁移；配额失败降级 | 刷新恢复 + 迁移后旧 autosave 不丢；纯函数单测 + 浏览器验收 |
 | **U-04** | 选框/手柄/对齐参考线（🟡） | 无 | 预览旋转手柄被顶栏遮挡的布局修正 + 对齐参考线交互（`preview-transform-model.ts` 扩展）；参考线从纯视觉升级为可吸附 | 浏览器拖动改 transform 并写回；截图验收 |
 | **U-05** | 拖拽排序跨轨（🟡） | U-02（撤销纳入跨轨移动） | 放开 `readOnly` 限制，允许 main→overlay/audio 落轨；落轨走既有 `placement` 纯函数 | 跨轨拖动后片段换轨 + 撤销回原位；浏览器验收 |
-| **U-08** | 双击文字就地编辑（⚪） | 无（属性面板已有 `TEXT_ELEMENT_PARAMS` textarea 写回入口，`properties-panel.tsx:503`） | 预览层双击进入 contentEditable，blur/Enter 把文本写回元素 `text` 参数（复用既有 `onParamChange` 链路），Esc 取消 | 双击预览文字→改字→属性面板 text 同步→刷新恢复；浏览器截图验收 |
+| **U-08** | 双击文字就地编辑（✅ 2026-11-25 完成） | 无（属性面板已有 `TEXT_ELEMENT_PARAMS` textarea 写回入口，`properties-panel.tsx:503`） | 预览层双击进入 contentEditable，blur/Enter 把文本写回元素 `text` 参数（复用既有 `onParamChange` 链路），Esc 取消 | 双击预览文字→改字→属性面板 text 同步→刷新恢复；浏览器截图验收。**已验收**：title-a 编辑写回 content + params.content、刷新恢复、Escape 取消，截图 `oc-u08-inline-edit.png`。**A 档全部完成** |
 
 ## 2. B 档：需 core 写回小扩展（前置是确认 additive-only 边界）
 
