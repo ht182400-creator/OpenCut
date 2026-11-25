@@ -272,3 +272,44 @@ describe('saveProjectJson 写回', () => {
     expect(received).toBe(false);
   });
 });
+
+/** C 档：SRT/ASS 导入的 caption 元素写回保真（elementType + content + 文字参数）。 */
+describe('C 档字幕元素写回', () => {
+  it('新字幕元素按 trackId 追加到文字轨，elementType/content 原样写回', () => {
+    const project = makeProject();
+    project.scenes[0].tracks.push({
+      id: 'overlay-text', trackType: 'text', elementCount: 0, elements: [],
+    });
+    const caption: CoreElement = {
+      id: 'caption-1', startTime: 240000, duration: 180000, trimStart: 0,
+      name: '字幕一', elementType: 'caption', content: '欢迎来到 OpenCut',
+      trackId: 'overlay-text',
+      params: {
+        opacity: 1, positionX: 0, positionY: 65, scaleX: 1, scaleY: 1, rotate: 0,
+        content: '欢迎来到 OpenCut', fontSize: 24,
+      },
+    };
+    const view = buildWriteView(project, [caption]);
+    const textTrack = view.scenes[0].tracks.find((track) => track.id === 'overlay-text');
+    expect(textTrack?.elements).toHaveLength(1);
+    expect(textTrack?.elements[0]).toMatchObject({
+      id: 'caption-1', elementType: 'caption', content: '欢迎来到 OpenCut',
+      startTime: 240000, duration: 180000,
+    });
+    expect(textTrack?.elements[0].params?.fontSize).toBe(24);
+    // 新 id 触发 allowNewTracks 开关（U-07 契约）。
+    expect(hasNewElements(project, [caption])).toBe(true);
+  });
+
+  it('已有元素编辑为 caption 时保留原轨归属与未知字段', () => {
+    const project = makeProject();
+    const edited: CoreElement = {
+      id: 'c1', startTime: 0, duration: 100, trimStart: 0,
+      elementType: 'caption', content: '改写字幕',
+    };
+    const view = buildWriteView(project, [edited]);
+    const main = view.scenes[0].tracks.find((track) => track.id === 'main');
+    expect(main?.elements[0]).toMatchObject({ id: 'c1', elementType: 'caption', content: '改写字幕' });
+    expect(main?.elements[0].mediaId).toBe('m1'); // 未知字段保真
+  });
+});

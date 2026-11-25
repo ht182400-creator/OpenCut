@@ -109,6 +109,12 @@ export interface AssetsPanelProps {
   onToggleFavorite?: (soundId: string) => void
   /** D 档：已收藏音效 id 集合。 */
   favorites?: ReadonlySet<string>
+  /** C 档：字幕文件 input（Captions tab 的 Import 按钮触发）。 */
+  captionsFileRef?: RefObject<HTMLInputElement | null>
+  /** C 档：导入 SRT/ASS 字幕文件的回调。 */
+  onImportCaptions?: (file?: File) => void
+  /** C 档：最近一次字幕导入结果提示（条数/warning）。 */
+  captionsStatus?: string
 }
 
 /** 经典版同位置图标 path（本地绘制，避免图标包版本差异）。 */
@@ -620,12 +626,19 @@ function EffectsView({ effects, onApply }: {
   )
 }
 
-/** Captions 视图：Import + 语言选择 + Generate transcript（转写能力属批 7）。 */
-function CaptionsView() {
+/** Captions 视图：Import（SRT/ASS 本地字幕）+ 语言选择 + Generate transcript（AI 转写仍阻塞）。 */
+function CaptionsView(props: AssetsPanelProps) {
   return (
     <PanelView title="Captions" contentStyle={{ paddingLeft: 0, paddingRight: 0, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', gap: 8, padding: '0 8px 8px' }}>
-        <button type="button" className="classic-button" style={{ padding: '2px 8px', fontSize: 'var(--text-xs)' }}>Import</button>
+      <div style={{ display: 'flex', gap: 8, padding: '0 8px 8px', alignItems: 'center' }}>
+        <label className="classic-button" style={{ padding: '2px 8px', fontSize: 'var(--text-xs)', cursor: 'pointer' }}>
+          Import
+          <input ref={props.captionsFileRef} type="file" accept=".srt,.ass,text/plain" style={{ display: 'none' }}
+            onChange={(event) => props.onImportCaptions?.(event.target.files?.[0])} />
+        </label>
+        <span data-testid="captions-status" style={{ color: 'var(--muted-foreground)', fontSize: 'var(--text-xs)' }}>
+          {props.captionsStatus ?? '支持 .srt / .ass'}
+        </span>
       </div>
       <div style={{ padding: '0 8px', color: 'var(--muted-foreground)', fontSize: 'var(--text-sm)' }}>Select a language</div>
       <button type="button" className="classic-button" disabled
@@ -676,7 +689,7 @@ export function AssetsPanel(props: AssetsPanelProps) {
       content = <EffectsView effects={props.catalog?.effects ?? []} onApply={props.onApplyEffect} />
       break
     case 'captions':
-      content = <CaptionsView />
+      content = <CaptionsView {...props} />
       break
     case 'settings':
       content = props.settingsContent ?? <ComingSoon label="Settings" />

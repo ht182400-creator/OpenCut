@@ -7,6 +7,7 @@
 > **A 档 U-01~U-08 已于 2026-11-25 全部完成**；剩余 4 项 🔴 的数据源需求与解除条件见 `roadmap/REMAINING_DATA_SOURCES.md`。
 >
 > **D 档（四项数据源）已于 2026-11-25 接入完成**：Kenney CC0 音效 + Twemoji CC BY 贴纸 + 8 个颜色效果预设 + FPS/宽高比/背景设置，统计达 53/0/0/14。**本排期所列批次全部完成，🔴 清零**。
+> **C 档提级（SRT/ASS 字幕导入）已于 2026-11-25 完成**：从 C 档阻塞表提级（纯前端可闭环：core 7.1 已支持 Caption 类型），统计达 **54/0/0/13**。
 
 ## 0. 排期前的事实核对（决定哪些能排）
 
@@ -43,7 +44,8 @@
 | --- | --- | --- | --- |
 | Sounds 音效库 / Stickers / Effects / Settings 数据源（4 项 🔴） | 🔴 | 本仓库无服务端素材库；按「不伪造数据」挂账 | 提供素材数据源（API 或本地资源包） |
 | AI 字幕生成（⚪） | ⚪ | 无转写服务/模型 | 提供 STT 服务或本地模型 |
-| 项目列表/重命名/多项目持久化、反馈/Onboarding、视频卡预览、剪贴板贴媒体、素材右键 Export clips、Ripple、场景、GPU 降级横幅、显式保存、Transitions/Adjustment、SRT/ASS 导入（其余 ⚪） | ⚪ | 经典版本身 coming soon（Transitions/Adjustment），或需后端/系统能力，或双方均无闭环 | 逐项评估，非本仓库可单方闭环 |
+| 项目列表/重命名/多项目持久化、反馈/Onboarding、视频卡预览、剪贴板贴媒体、素材右键 Export clips、Ripple、场景、GPU 降级横幅、显式保存、Transitions/Adjustment（其余 ⚪） | ⚪ | 经典版本身 coming soon（Transitions/Adjustment），或需后端/系统能力，或双方均无闭环 | 逐项评估，非本仓库可单方闭环 |
+| ~~SRT/ASS 导入~~（已提级完成） | ✅ | 2026-11-25 核对其依赖：core 7.1 已支持 Caption 类型，纯前端解析器即可闭环，从 C 档提级实现 | 已完成，见 `FEATURE_PARITY.md` §2 |
 
 ## 4. 执行顺序与依赖图
 

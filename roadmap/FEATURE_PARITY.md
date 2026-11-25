@@ -45,7 +45,7 @@
 | Effects：效果网格/预览/添加 | 真实 | 真实（8 个颜色参数预设，CSS 渐变预览 + 点击应用到选中元素并可撤销） | ✅ | D 档：目录 `effects` 预设（brightness/contrast/saturate 与 `properties-tokens.ts` key 一致），`EffectsView` 网格 + `onApplyEffect` → `applyPropertyPatch`；浏览器验收点 vivid 后元素 params 写入 `effects.brightness=1.05/contrast=1.25/saturate=1.3`。**边界**：仅颜色三参数，复杂滤镜（模糊/锐化/暗角）需扩 core，未做 |
 | Transitions | 经典版 coming soon | coming soon | ⚪ | 双方均无闭环 |
 | Captions：AI 字幕生成 | 真实（本地转写模型） | 无 | ⚪ | 需转写服务/模型 |
-| Captions：SRT/ASS 导入 | 真实 | 无 | ⚪ | — |
+| Captions：SRT/ASS 导入 | 真实 | 真实（12 项纯函数单测 + 浏览器真实 SRT 验收） | ✅ | C 档：`caption-import.ts` 解析 SRT（序号/BOM/CRLF/毫秒点号/短时间/尾部坐标）与 ASS（Format 字段定位/样式块剥离/逗号正文），异常行跳过并记 warning；`buildCaptionElement` 落 `elementType:'caption'` + content/params 文本通道 + 文字轨 `overlay-text`，core 7.1 已支持 Caption read→write 保真；浏览器上传真实 `oc-captions-sample.srt` → 状态「已导入 3 条字幕」+ autosave 3 个 caption 元素（startTime 0/240000/480000），写回 JSON 经 project-write 测试验证类型/正文保真，`oc-captions-import.png` |
 | Adjustment | 经典版 coming soon | coming soon | ⚪ | 双方均无闭环 |
 | Settings：FPS / 宽高比 / 背景 | 真实 | 真实（FPS 4 档、宽高比 4 档、背景 3 色，切换同步 session/profile 并提示重导） | ✅ | D 档：`project-settings-panel.tsx` 三组选择器，FPS 改 `session.fps`+`ticksPerFrame`、宽高比映射偶数高度分辨率走 `handleResolutionChange`、背景写 `profile.backgroundRgba`；浏览器验收 FPS 受控值 30→60、背景 black→white。枚举来自目录 JSON |
 
@@ -138,16 +138,17 @@
 
 | 状态 | 数量 | 分布（§） | 主要条目 |
 | --- | --- | --- | --- |
-| ✅ 已实现 | 53 | §1:5 §2:9 §3:15 §4:8 §5:5 §6:7 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、**素材排序**、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、**选框/手柄/参考线吸附闭环**、**双击文字就地编辑**、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）**、**撤销/重做全覆盖**、**自动保存 IndexedDB + 迁移**、**动态新增轨道 + 写回保真**、**overlay/audio 轨编辑写回**、**Sounds/Stickers/Effects/Settings 数据源接入** |
+| ✅ 已实现 | 54 | §1:5 §2:10 §3:15 §4:8 §5:5 §6:7 §7:4 | 入口、主题、导出按钮、移动端拦截、媒体导入、真实帧缩略图、**素材排序**、Text/Media 加入时间轴、片段选中、main 轨编辑、Split、落轨拖放、Duplicate/Delete、复制/粘贴、多选+框选、关键帧曲线编辑器、缩放、seek、波形、播放、缩放全屏、画面合成、空状态、Transform/Text 参数、Timing、面板尺寸、多选全选、关键帧开关、快捷键帮助+重绑定、分发、GPU 能力提示、**选框/手柄/参考线吸附闭环**、**双击文字就地编辑**、MP4/WebM 导出、质量档位、**轨道静音/隐藏（JSON 写回闭环）**、**撤销/重做全覆盖**、**自动保存 IndexedDB + 迁移**、**动态新增轨道 + 写回保真**、**overlay/audio 轨编辑写回**、**Sounds/Stickers/Effects/Settings 数据源接入**、**SRT/ASS 字幕导入** |
 | 🟡 部分闭环 | 0 | — | 无 |
 | 🔴 占位 | 0 | — | 无（D 档 4 项数据源已全部接入） |
-| ⚪ 未覆盖 | 14 | §1:5 §2:5 §3:2 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、素材右键 Export clips、剪贴板直接贴媒体 |
+| ⚪ 未覆盖 | 13 | §1:5 §2:4 §3:2 §6:1 §7:1 | 项目列表/重命名、反馈/Onboarding 提示、视频卡预览、AI 字幕、Transitions/Adjustment、Ripple、场景、素材右键 Export clips、剪贴板直接贴媒体 |
 
-> 合计 67 项（53+0+0+14），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后核算为 41/6/5/15，UI 长尾 U-01 素材排序闭环后核算为 42/5/5/15，U-02 撤销重做全覆盖后核算为 43/4/5/15，U-03 自动保存介质升级后核算为 44/3/5/15；2026-11-25 U-04 选框/手柄/参考线吸附闭环后核算为 45/2/5/15，U-05 跨轨拖拽后核算为 46/1/5/15，U-06 动态新增轨道后核算为 47/0/5/15，U-07 overlay/audio 轨编辑写回后核算为 48/0/4/15，U-08 双击文字就地编辑后核算为 49/0/4/14，D 档四项数据源接入后核算为 53/0/0/14）。
+> 合计 67 项（54+0+0+13），逐项以 §1~§7 表格为准。§8 工程侧 10 项不计入。统计数字按表格状态符号核算（2026-11-24 重新逐行核算并修正：此前 38/9/5/15 与表格符号不符，且 P4 后多处状态更新未回写统计；同日书签拖动/备注闭环后核算为 41/6/5/15，UI 长尾 U-01 素材排序闭环后核算为 42/5/5/15，U-02 撤销重做全覆盖后核算为 43/4/5/15，U-03 自动保存介质升级后核算为 44/3/5/15；2026-11-25 U-04 选框/手柄/参考线吸附闭环后核算为 45/2/5/15，U-05 跨轨拖拽后核算为 46/1/5/15，U-06 动态新增轨道后核算为 47/0/5/15，U-07 overlay/audio 轨编辑写回后核算为 48/0/4/15，U-08 双击文字就地编辑后核算为 49/0/4/14，D 档四项数据源接入后核算为 53/0/0/14，C 档 SRT/ASS 字幕导入后核算为 54/0/0/13）。
 > **2026-11-17 P0 完成后变化**：✅ 20→23（Text/Media 加轨、落轨拖放），🟡 7→9（参数编辑、自动保存由 🔴 升级），🔴 19→14。详见 `UI_REPLICA_PLAN.md` §8「P0 闭环实现」。
 > **2026-11-17 P1 完成后变化**：✅ 23→25（Duplicate、复制/粘贴），🟡 9→11（多选、快捷键分发升级），🔴 14→13（Duplicate 出占位），⚪ 20→17（多选/复制粘贴出未覆盖）。数据源接入（Sounds/Stickers/Effects）依赖服务端素材库，本仓库无此后端且超出 UI 闭环范围，记 🔴 并写入 `UI_REPLICA_PLAN.md` §7 差异台账；不伪造数据。
 > **2026-11-17 P2 完成后变化**：新增 GPU 项（总 66→67）；✅ 25→28（Transform/Text 参数修复 key 映射升 ✅、GPU 提示、WebM 文档更正），🟡 11→13（遮罩/效果基础参数、关键帧真实数据模型），🔴 13→11（参数/关键帧出占位），⚪ 17→15（WebM/GPU 出未覆盖）。AI 字幕、项目管理页无后端，保持 ⚪ 并写入台账；曲线编辑器、GPU 效果、框选橡皮筋归长尾。
 > **2026-11-25 更正（历史快照保留原值）**：上文 P1/P2/P4 段所称 Sounds/Stickers/Effects「依赖服务端素材库/需后端」是当时的保守判断；复核现有代码后确认四项均可用**本地 JSON + 静态资产文件**闭环（拖放协议、插入链路、core 参数通道均已就绪），Settings 更是纯前端枚举 + core profile 接线。精确数据源格式与逐项解除 DoD 见 `roadmap/REMAINING_DATA_SOURCES.md`。此更正不改变历史统计值，只更新「解除条件」的认知。
+> **2026-11-25 C 档提级（SRT/ASS 字幕导入）**：从 C 档阻塞表中把该项提级（无后端依赖、core 7.1 已支持 Caption 类型），落地 `caption-import.ts`（SRT/ASS 解析纯函数，24 项单测）+ `buildCaptionElement` + Captions tab Import 按钮接线 + 预览文字识别 caption 类型 + 写回测试 2 项；vitest 46 文件 612 项全绿、tsc 0、build 成功；ego(lite) 真实 SRT 上传验收见 §2 行与 `oc-captions-import.png`。统计 53/0/0/14 → **54/0/0/13**。
 
 ## 10. 闭环优先级（P0 → P2，供实施）
 

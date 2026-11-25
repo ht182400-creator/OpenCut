@@ -12,7 +12,8 @@ import type { TimelineClip } from './timeline';
 
 /** 可识别的元素类型（与经典版 elementType 字符串对齐）。 */
 export type ElementKind =
-  | 'text' | 'video' | 'image' | 'audio' | 'sticker' | 'graphic' | 'effect';
+  // C 档：字幕元素类型与 core ElementType::Caption 字符串一致（7.1 批已支持 read→write 保真）。
+  | 'text' | 'caption' | 'video' | 'image' | 'audio' | 'sticker' | 'graphic' | 'effect';
 
 /** 参与画面合成的变换参数（P0 驱动预览/导出的字段）。 */
 export interface ElementVisualParams {
@@ -74,6 +75,14 @@ export const TEXT_ID_PREFIX = 'text';
 export const MEDIA_ID_PREFIX = 'media';
 /** 第二档项 2：图形元素 id 前缀。 */
 export const GRAPHIC_ID_PREFIX = 'graphic';
+/** C 档：字幕元素 id 前缀（便于在时间轴/写回 JSON 中辨认来源）。 */
+export const CAPTION_ID_PREFIX = 'caption';
+/** C 档：字幕默认字号（px），比普通文字小一档，贴近经典版字幕观感。 */
+export const DEFAULT_CAPTION_FONT_SIZE_PX = 24;
+/** C 档：字幕默认位置相对画布中心的 Y 偏移比例（正值向下，经典版字幕靠底部）。 */
+export const CAPTION_POSITION_Y_RATIO = 0.36;
+/** 构建字幕时估算默认 Y 偏移的参考画布高度（px）；实际帧尺寸由调用方覆盖。 */
+const BASE_CAPTION_CANVAS_HEIGHT_PX = 180;
 
 /**
  * 把任意输入夹逼到 [min, max]；非有限值回落到 fallback。
@@ -213,6 +222,44 @@ export function buildTextElement(input: {
     trimStart: 0,
     content: input.content,
     params: normalizeElementParams({ content: input.content }),
+  };
+}
+
+/**
+ * C 档：构建字幕元素（SRT/ASS 导入的单条片段）。
+ * 字幕与 text 共享 content/params 文本通道，但 elementType 保留 'caption'
+ * 让经典版 JSON 读回时语义不丢；位置默认靠画布下方，可被参数覆盖。
+ * @param input 构建参数
+ * @returns {CoreElement} 字幕元素
+ */
+export function buildCaptionElement(input: {
+  id: string;
+  content: string;
+  startTime: number;
+  durationTicks: number;
+  ticksPerSecond?: number;
+  name?: string;
+  positionXPx?: number;
+  positionYPx?: number;
+}): CoreElement {
+  // 字幕默认落在画布中下方（Y 偏移 = 画布高度 × 比例），X 居中不偏移。
+  const positionY = input.positionYPx ?? Math.round(BASE_CAPTION_CANVAS_HEIGHT_PX * CAPTION_POSITION_Y_RATIO);
+  return {
+    id: input.id,
+    name: input.name ?? input.content,
+    elementType: 'caption',
+    startTime: Math.max(0, Math.round(input.startTime)),
+    duration: Math.max(1, Math.round(input.durationTicks)),
+    trimStart: 0,
+    content: input.content,
+    params: normalizeElementParams({
+      content: input.content,
+      fontSize: DEFAULT_CAPTION_FONT_SIZE_PX,
+      color: DEFAULT_TEXT_COLOR,
+      positionX: input.positionXPx ?? 0,
+      positionY,
+      textAlign: 'center',
+    }),
   };
 }
 

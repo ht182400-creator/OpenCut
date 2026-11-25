@@ -15,13 +15,17 @@ import { useClipHistory, EMPTY_HISTORY_PARTS, type HistoryParts } from './clip-h
 import { createEditorAdapter, formatCoreError } from './editor-adapter'
 import { createEditorActions } from './editor-actions'
 import { useSelection } from './use-selection'
+import { captionDurationTicks, captionMsToTicks, parseCaptionFile } from './caption-import'
 import {
+  CAPTION_ID_PREFIX,
+  CAPTION_POSITION_Y_RATIO,
   DEFAULT_MEDIA_DURATION_SECONDS,
   DEFAULT_TEXT_CONTENT,
   GRAPHIC_ID_PREFIX,
   MEDIA_ID_PREFIX,
   TEXT_ID_PREFIX,
   TICKS_PER_SECOND as MODEL_TICKS_PER_SECOND,
+  buildCaptionElement,
   buildGraphicElement,
   buildMediaElement,
   buildTextElement,
@@ -183,6 +187,9 @@ export function Editor() {
   const [waveforms, setWaveforms] = useState<ReadonlyMap<string, Uint8Array>>(() => new Map())
   /** 批 7.4：元素 id → 真实帧缩略图 data URL，供时间轴视频片段显示画面。 */
   const [videoThumbnails, setVideoThumbnails] = useState<ReadonlyMap<string, string>>(() => new Map())
+  /** C 档：字幕文件 input 与最近一次导入结果提示。 */
+  const captionsFileRef = useRef<HTMLInputElement>(null)
+  const [captionsStatus, setCaptionsStatus] = useState<string | undefined>(undefined)
 
   /**
    * P1：选择/剪贴板 hook。回调内引用 clipHistory/session 等后续 const 是安全的——
@@ -615,8 +622,10 @@ export function Editor() {
       resolution.width, resolution.height,
     )
 
-    // 文字元素：把 content 按参数栅格化后合成（alpha 叠加，保留底图）。
-    if (sampled.elementType === 'text' || (sampled.content && sampled.params?.content)) {
+    // 文字/字幕元素：把 content 按参数栅格化后合成（alpha 叠加，保留底图）。
+    // C 档字幕只带 content（params.content 可有可无），需显式识别 caption 类型。
+    if (sampled.elementType === 'text' || sampled.elementType === 'caption'
+      || (sampled.content && sampled.params?.content)) {
       const layout = resolveTextLayout(sampled, resolution.width, resolution.height)
       if (layout.text) {
         const textLayer = rasterizeText(layout, transform, resolution.width, resolution.height)
@@ -949,6 +958,69 @@ export function Editor() {
   }
 
   /**
+   * C 档：导入 SRT/ASS 字幕文件，按文件时间批量生成 caption 元素并落到文字轨。
+   * 字幕时间由文件决定，不走 resolveAutoPlacement（否则会破坏与视频的对时）；
+   * 多条字幕只记一次撤销历史，刷新由既有 autosave effect 持久化。
+   * @param file 用户选择的 .srt/.ass 文件
+   */
+  const handleImportCaptions = async (file?: File) => {
+    if (!file) return
+    if (!session) {
+      setErrorText('请先加载项目，再导入字幕')
+      return
+    }
+    try {
+      const text = await file.text()
+      const result = parseCaptionFile(text, file.name)
+      if (result.cues.length === 0) {
+        const reason = result.warnings[0] ?? '未解析到有效字幕'
+        setCaptionsStatus(`导入失败：${reason}`)
+        setErrorText(`字幕导入失败：${reason}`)
+        return
+      }
+      // 字幕轨：优先取项目里 trackType=text 的轨，否则退回第一条 overlay 轨；两者都没有则留 main。
+      const captionTrackId = projectTracks.find((track) => track.trackType === 'text')?.id
+        ?? projectTracks.find((track) => track.trackType !== 'main' && track.trackType !== 'audio')?.id
+      const existingIds = new Set(elements.map((element) => element.id))
+      let inserted = 0
+      let next = [...elements]
+      for (const cue of result.cues) {
+        const id = makeElementId(CAPTION_ID_PREFIX)
+        if (existingIds.has(id)) continue
+        existingIds.add(id)
+        const startTicks = captionMsToTicks(cue.startMs, MODEL_TICKS_PER_SECOND)
+        const element = buildCaptionElement({
+          id,
+          content: cue.text,
+          startTime: startTicks,
+          durationTicks: captionDurationTicks(cue.startMs, cue.endMs, MODEL_TICKS_PER_SECOND),
+          ticksPerSecond: MODEL_TICKS_PER_SECOND,
+          name: cue.text,
+          positionYPx: Math.round(resolution.height * CAPTION_POSITION_Y_RATIO),
+        })
+        // 字幕按文件时间落轨，不调用 placement；main 保持缺省以兼容旧数据。
+        next.push({
+          ...element,
+          ...(captionTrackId && captionTrackId !== 'main' ? { trackId: captionTrackId } : {}),
+        })
+        inserted += 1
+      }
+      next.sort((a, b) => a.startTime - b.startTime)
+      setElements(next)
+      clipHistory.record(next, `导入字幕 ${inserted} 条`, {})
+      setFrameCount(plannedFrameCount(next, session.adapter, session.profile))
+      setErrorText(null)
+      const warningSuffix = result.warnings.length > 0 ? `（跳过 ${result.warnings.length} 行非法内容）` : ''
+      setCaptionsStatus(`已导入 ${inserted} 条字幕${warningSuffix}`)
+      setMediaStatus(`字幕导入完成：${file.name} · ${inserted} 条${warningSuffix}`)
+    } catch (error) {
+      const message = formatCoreError(error)
+      setCaptionsStatus(`导入失败：${message}`)
+      setErrorText(`字幕导入失败：${message}`)
+    }
+  }
+
+  /**
    * P0：把素材载荷真正插入时间轴。placement 由 element-model 自动找空位，
    * 起点优先取投放位置（拖放）或播放头（点击卡片），插入后重算帧计划并记入撤销历史。
    * @param payload 素材载荷（Text/Media）
@@ -1247,6 +1319,9 @@ export function Editor() {
                     onApplyEffect={handleApplyEffect}
                     favorites={soundFavorites}
                     onToggleFavorite={handleToggleFavorite}
+                    captionsFileRef={captionsFileRef}
+                    onImportCaptions={(file) => void handleImportCaptions(file)}
+                    captionsStatus={captionsStatus}
                   />
                 </ResizablePanel>
                 <ResizableHandle withHandle />
