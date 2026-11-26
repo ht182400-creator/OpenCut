@@ -130,7 +130,7 @@ cargo llvm-cov test --workspace --summary-only
 | 全局覆盖率仅 62% | ✅ 已按标准处理 | 分层口径后单测覆盖率 89.68%，四项均过 80% 硬门禁（见 §2.3） |
 | 新增测试的类型错误 | ✅ 已修复 | 20+ 新测试文件 `tsc --noEmit` 0 错误 |
 | vite.config.ts 双版本类型错误（预存） | ⚠️ 遗留 | 重装依赖后仍存在 2 个（`.pnpm/vite@8.3.8` vs 顶层 `vite` 类型不兼容），属 bun 重装的依赖树问题；不影响 vite build / vitest / 全部测试，未改上游配置 |
-| Forgejo fork 推送 | ⚠️ 环境受阻 | 本批次已推送 GitHub fork（`95705060`），Forgejo（`localhost:3000`）实例未运行导致连接失败；待服务恢复后补推 `git push forgejo main` |
+| ~~Forgejo fork 推送受阻~~ | ✅ 已解决 | 当时 `localhost:3000` 实例未运行；2026-11-26 复核时服务已恢复，`git push forgejo main` 成功（`15e26293..b86a1eda`，含积压提交） |
 
 ---
 
