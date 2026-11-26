@@ -606,6 +606,7 @@ git branch upstream-mirror upstream/main     # 若已存在：git fetch upstream
 #### 7.9.4 能力级差异台账（扩展 §7.7 的文件级台账）
 
 上游落地当天逐行填写；「上游实现路径」以实际 diff 为准，**不得预填猜测**。
+> 说明：本表是「上游落地时」的迁移模板，「未开始 / 待填」指**上游迁移**状态，非本地能力状态。本地 scripting 控制台已实现于 `apps/web/src/local/classic-ui/script-console.tsx`（挂载 `/core-lab`），见下方变更记录。
 
 | 能力 | 本地实现路径 | 上游实现路径 | 决策（保留/移植/废弃） | 迁移状态 | 上游 SHA |
 | --- | --- | --- | --- | --- | --- |
@@ -614,7 +615,7 @@ git branch upstream-mirror upstream/main     # 若已存在：git fetch upstream
 | Rust core 多端 | `local/crates/ocx-*` | 待填 | 待定 | 未开始 | 待填 |
 | MCP server | `apps/local-mcp`（工具前缀 `ocx.*`） | 待填 | 待定 | 未开始 | 待填 |
 | Headless | `apps/local-headless` / `ocx-render` | 待填 | 待定 | 未开始 | 待填 |
-| scripting tab | `apps/web/src/local/scripting` | 待填 | 待定 | 未开始 | 待填 |
+| scripting tab / 脚本控制台 | `apps/web/src/local/classic-ui/script-console.tsx`（本地已实现，挂载 `/core-lab`） | 待填 | 待定 | 未开始（指上游迁移） | 待填 |
 
 #### 7.9.5 落地当天：无副作用预演与三方清单
 

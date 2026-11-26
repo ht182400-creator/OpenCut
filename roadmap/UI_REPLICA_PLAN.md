@@ -116,7 +116,7 @@
 | 6 | 导出为 320px Popover 的 token/选项已固化，但当前工程仍用「settings tab + 顶栏一键导出」 | 经典版导出是 Popover（Format/Quality/Audio 折叠组）；当前工程 `ExportSettingsPanel` 在 settings tab，一键导出链路已验证（第三批） | 不重构已验证的导出交互；Popover 尺寸/选项以 token 固化并比对，未接线为对话框，差异登记 |
 | 6 | 右键菜单 token 已固化，预览区未接 OnContextMenu | 经典版预览右键 Fit/Full screen/Save snapshot/Copy snapshot；本工程右键能力需批 7 图像快照支持 | 菜单尺寸/项 1:1 固化；未接线 OnContextMenu，差异登记 |
 | 7.1 | 元素类型特化字段已保真到 `ProjectView`，但 UI 仍未把 name/content 等显示为可编辑 | 批 7.1 只扩 core 数据层（read/write 保真）；UI 属性面板的参数编辑仍为只读占位（批 4） | core 往返保真已验证（Rust 5/5 + WASM 契约 7 项）；UI 接入留待 7.5 项目格式写回接线，不伪装已完成 |
-| 7.1 | `Caption` 类型已加入枚举与映射，但 fixture 与素材面板仍无 caption 数据源 | 经典版 fixture 无 caption 元素；贴纸/字幕数据源属远程注册中心 | 构造含 caption 的测试文档验证 read→改 content→write 闭环；真实 caption 素材库留待后续批次 |
+| 7.1 | ~~`Caption` 类型已加入枚举与映射，但 fixture 与素材面板仍无 caption 数据源~~（✅ 已解除，见下） | 经典版 fixture 无 caption 元素；贴纸/字幕数据源属远程注册中心 | ~~真实 caption 素材库留待后续批次~~ → **2026-11-25 C 档已实现 SRT/ASS 字幕导入**（`caption-import.ts` + `buildCaptionElement` + Captions tab Import，24 项解析单测 + 15 项 golden master + 浏览器真实 SRT 验收，见 `FEATURE_PARITY.md` §2；复杂 AI 字幕生成仍需转写模型，保持 ⚪）。构造含 caption 的测试文档验证 read→改 content→write 闭环已由 `project-write.test.ts` 覆盖 |
 | 7.1 | 本机 wasm 重编工具链坑 | PATH 中独立安装的 Rust 1.96 遮蔽 rustup 1.97（含 wasm32 target）；rustup directory override 指向 1.97 但被 PATH 绕过 | 重编 wasm 须将「rustup 1.97.0 toolchain 的 bin 目录」置顶 PATH（路径本机查询，不写入文档）；已重编并复制两处 wasm 产物（857509→866949 字节）；函数签名未变故 glue JS/.d.ts 未变 |
 
 ## 8. 变更记录

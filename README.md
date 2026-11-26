@@ -23,7 +23,7 @@
 - Desktop, mobile, and browser from one codebase (Rust core)
 - MCP server (for AI agents)
 - Headless mode (automation, batch rendering)
-- A scripting tab directly in the editor
+- A scripting console (already available on the `/core-lab` verification page; an in-editor scripting tab is still to come)
 
 You can still find the previous version at [opencut-app/opencut-classic](https://github.com/opencut-app/opencut-classic), which is the one to reach for today. [opencut.app](https://opencut.app) still runs the classic version. The rewrite will live at [new.opencut.app](https://new.opencut.app) until it's ready to take over.
 

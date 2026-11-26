@@ -9,4 +9,11 @@
 - 命名空间与能力清单见 `roadmap/compat-contract.json`；
 - 同一时刻只允许一个 core 后端被注册（I-05）。
 
-当前为占位（W-02 建立目录），计划自 **W-06**（Web 绑定薄层 + 最小时间轴）起填充。
+**状态更新（2026-11-26）**：已完全填充，不再是占位。现有 60+ 个文件，包括：
+- `editor-page.tsx` / `editor-adapter.ts`：编辑器编排层与 core 适配层（I-01 单一入口）；
+- `caption-import.ts` / `export.ts` / `media.ts` / `audio.ts`：字幕导入、导出编码、素材解码；
+- `autosave-idb.ts` / `project-write.ts` / `clip-history.ts`：持久化、写回、撤销重做；
+- `classic-ui/`：经典版 9-tab 全套面板（含 `script-console.tsx` 脚本控制台，挂载于 `/core-lab`）；
+- 58 个 `.test.ts(x)` 单测文件（696 项），V8 覆盖率单测口径四项过 80% 硬门禁。
+
+上述隔离规则（I-01/I-05、不改上游路由、独立命名空间）仍全部生效。
