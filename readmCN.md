@@ -318,7 +318,7 @@ R2_BUCKET=opencut-assets
 2. **Web 站点仍有模板残留**：`public/manifest.json` 里还是 `TanStack App` / `Create TanStack App Sample`；`__root.tsx` 的标题是 `OpenCut rewrite | beta.opencut.app`，而 `wrangler.jsonc` 绑定的域名是 `new.opencut.app`。
 3. **`moon run media:setup` 目前可能不可用**：`setup.ts` 注释和 workflow 注释都提到它，但 `crates/media/` 下并没有 `moon.yml`，`Cargo.toml` 的 `members` 里 `'crates/*'` 也被注释掉了；需要时请直接运行 `bun run crates/media/setup/setup.ts`。同理，workflow 注释提到的 `crates/media/setup/pin.ts` 也尚未出现在仓库中。
 4. **`.cache/media`（FFmpeg 构建缓存目录）未写入 `.gitignore`**：本地执行 setup 脚本后注意不要把缓存产物提交进仓库。
-5. **测试覆盖仍很薄**：Web 端配置了 `vitest`，但仓库里还没有 `*.test.*` / `*.spec.*` 文件；目前只有 Rust 侧 `theme.rs` 与 `resizable.rs` 中的少量单元测试。
+5. **测试体系已按第三方标准建成（2026-11-26 更新）**：仓库现有一键入口 `run-tests.ps1`（Web/API/Rust/Node 契约共 7 套件、1095 项用例全绿）。Web 58 个单测文件/696 项 + API 10 项（Elysia `app.handle`）+ Rust `cargo test --workspace` 236 项 + Node 跨语言契约 153 项；Web 单测口径覆盖率四项过 80% 硬门禁（语句 89.68% / 分支 84.53% / 函数 93.60% / 行 90.78%），Rust 覆盖率 72.79% 行。规范与报告见 `roadmap/TEST_STANDARD.md`、`roadmap/TEST_REPORT_2026-11-26_覆盖率达标与遗留清理.md`；E2E 脚本见 `roadmap/e2e/caption-import.e2e.mjs`。
 6. **Windows 环境**：proto shim 若被策略拦截，按 5.1 设置 `RemoteSigned`；`setup.ts` 在 Windows 上特意使用系统自带的 `System32\tar.exe`，以避免 Git Bash 的 GNU tar 把 `C:` 误认成远程主机。
 
 ---

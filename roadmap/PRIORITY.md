@@ -55,7 +55,8 @@
 | **W-14** | 桌面 GPUI 接入（spike 先行） | P2 | H01 已由 2026-11-20 spike 决策（ADR-04） | W-07 + M1 spike 完成 | GPUI 显示 wgpu 合成帧（wgpu 后半段后置，当前 CPU BGRA 直传） | 桌面与 Web 输出像素一致帧（1080p checksum 已与 CLI/WASM 对齐） | T+48~56w | R1/H01 已缓解 |
 | **W-15** | 移动端 / 协同评估 | P2 | 长线 | W-11 | UniFFI 或 flutter_rust_bridge 原型 | 移动端可打开同一项目 JSON | T+56w+ | Q02/Q03 |
 
-> **UI 长尾排期（2026-11-24）**：`FEATURE_PARITY.md` 剩余的 🟡6 / 🔴5 / ⚪15 不属于 W 系列工作包，已独立排入 `UI_TAIL_SCHEDULE.md`（A 档 U-01~U-05/U-08 纯前端可立即启动、B 档 U-06/U-07 需确认 core 写回新增实体边界、C 档外部依赖阻塞不排期）。
+> **UI 长尾排期（2026-11-24，历史快照）**：当时 `FEATURE_PARITY.md` 剩余 🟡6 / 🔴5 / ⚪15，独立排入 `UI_TAIL_SCHEDULE.md`（A 档 U-01~U-05/U-08 纯前端、B 档 U-06/U-07 写回边界、C 档外部依赖阻塞）。
+> **当前状态（2026-11-25）**：A/B 档全部完成、D 档四项数据源接入完成、SRT/ASS 从 C 档提级完成，台账已到 **✅54 / 🟡0 / 🔴0 / ⚪13**（见 `FEATURE_PARITY.md`）；C 档其余项因真外部依赖仍不排期。
 
 ### 进度快照（2026-11-08 开工首日）
 

@@ -25,7 +25,7 @@
 | [`dashboard.css`](dashboard.css) / [`dashboard.js`](dashboard.js) | 看板样式与渲染交互逻辑（拆文件便于 `node --check`，单文件均 ≤500 行） | 随功能迭代 |
 | [`dashboard.test.cjs`](dashboard.test.cjs) | 看板回归测试（`node dashboard.test.cjs`，零依赖 DOM 桩，含正常/边界/异常用例） | 每次看板改动后 |
 | [`TEST_STANDARD.md`](TEST_STANDARD.md) | **第三方测试规范**：ISTQB 测试级别 / ISO/IEC 29119 测试过程与文档 / 测试金字塔与奖盃 / FIRST 原则；含各标准到本仓库的映射 | 测试策略变化时 |
-| [`TEST_REPORT_2026-11-25.md`](TEST_REPORT_2026-11-25.md) | **全面测试报告**：五层测试方案、环境搭建、逐模块逐语言案例与结果（1041 项通过）、覆盖率基线、缺陷记录 | 每次全量测试后 |
+| [`TEST_REPORT_2026-11-25.md`](TEST_REPORT_2026-11-25.md) | **全面测试报告（历史快照）**：五层测试方案、环境搭建、逐模块逐语言案例与结果（当日 1041 项通过、覆盖率 44% 基线）；最新状态见下一行 11-26 报告 | 追溯用，勿作当前真值 |
 | [`TEST_REPORT_2026-11-26_覆盖率达标与遗留清理.md`](TEST_REPORT_2026-11-26_覆盖率达标与遗留清理.md) | **测试优化报告**：ISTQB 分层覆盖率口径、单测 80% 硬门禁（89.68%）、Rust 覆盖率 72.79%、7 项遗留清理 | 覆盖率/遗留状态变化时 |
 | [`e2e/caption-import.e2e.mjs`](e2e/caption-import.e2e.mjs) | **E2E 验收脚本**：自启动 preview + 真实 SRT 上传 + autosave 校验（需 ego-browser CLI） | 字幕导入改动后 |
 | [`../run-tests.ps1`](../run-tests.ps1) | **统一测试入口**：一键执行 7 套件（Web/API/Rust/契约），分层日志带毫秒时间戳、FAIL 标红 | 测试套件增减时 |
@@ -33,7 +33,7 @@
 | [`../apps/web/src/local/editor-api.contract.json`](../apps/web/src/local/editor-api.contract.json) | Rust Editor API ↔ Web 的机器可读契约；校验脚本 `editor-api.contract.test.mjs` | 接口变更时 |
 | [`../apps/web/src/routes/core-lab.tsx`](../apps/web/src/routes/core-lab.tsx) | **Core 验证台（`/core-lab`）**：专做 Rust core → WASM → EditorAdapter 链路验证（脚本控制台 / 插件协商注册 / evaluate 五种 kind 自检）；`/editor` 与 `/` 回归经典版产品页，不再承载 core 验证面板 | 验证能力增减时 |
 | [`../readmCN.md`](../readmCN.md) | 重写版现状中文说明（项目导览） | 现状变化时 |
-| [`../.codebuddy/memory/2026-11-08.md`](../.codebuddy/memory/2026-11-08.md) | 当日开发记录与关键结论 | 每次工作收尾 |
+| [`../.codebuddy/memory/`](../.codebuddy/memory/) | 每日开发记录（2026-11-08 ~ 11-25，共 10 个日期文件）；最新 `2026-11-25.md` 含测试体系、覆盖率达标与遗留清理记录 | 每次工作收尾 |
 
 ```mermaid
 flowchart LR

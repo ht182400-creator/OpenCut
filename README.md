@@ -63,6 +63,29 @@ moon run desktop:dev   # see apps/desktop/README.md
 
 On Windows you can also double-click `start-web.bat` in the repo root. It kills any leftover Vite processes from this project before starting a single server on `localhost:5173`, so repeated launches never pile up on 5174/5175. The cleanup is delegated to `clean-vite.ps1` (matches the project's `vite.js` path in the command line, port-independent). Keep the window open while the server runs; pressing Ctrl+C stops it.
 
+## Testing
+
+The project follows ISTQB test levels and ISO/IEC 29119 test processes. Run the full suite (7 suites, 1095 cases across TypeScript Web, Elysia API, Rust workspace, and Node cross-language contracts) with one command:
+
+```powershell
+.\run-tests.ps1                       # Windows (also collects coverage)
+.\run-tests.ps1 -Only rust            # single layer: web | api | rust | node-contracts
+.\run-tests.ps1 -SkipCoverage $true   # faster, no coverage
+```
+
+Individual layers (cross-platform):
+
+```bash
+cd apps/web && node node_modules/vitest/vitest.mjs run --coverage  # 696 cases, 80% coverage gate
+cd apps/api && bun test src/index.test.mjs                         # 10 API route cases
+cargo test --workspace                                              # 236 Rust cases
+node roadmap/compat.test.cjs && node roadmap/dashboard.test.cjs    # Node contract suites
+```
+
+Coverage: the Web unit-test scope enforces an 80% threshold on statements/branches/functions/lines (currently 89.68% / 84.53% / 93.60% / 90.78%); integration/E2E-domain files (composition root, heavy I/O) are covered by component tests and the browser E2E script instead. Rust coverage is collected via `cargo llvm-cov test --workspace --summary-only` (72.79% lines).
+
+See [roadmap/TEST_STANDARD.md](roadmap/TEST_STANDARD.md) for the standard mapping and [roadmap/TEST_REPORT_2026-11-26_覆盖率达标与遗留清理.md](roadmap/TEST_REPORT_2026-11-26_覆盖率达标与遗留清理.md) for the latest results. The browser E2E acceptance script lives at [roadmap/e2e/caption-import.e2e.mjs](roadmap/e2e/caption-import.e2e.mjs).
+
 ## Contributing
 
 We're not set up to take outside contributions yet while the architecture is being designed. If you want to follow along, ask questions, or just hang out, [join the Discord](https://discord.gg/zmR9N35cjK) or [open an issue](https://github.com/opencut-app/opencut/issues).

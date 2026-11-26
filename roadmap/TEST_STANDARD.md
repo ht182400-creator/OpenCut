@@ -17,13 +17,15 @@
 | 案例管理 | Rust golden master 已有 JSON+文档对应，Web 层无 | Web 层补 JSON 数据驱动 + CASES.md 一一对应 |
 | 失败可辨识 | 各工具各自输出 | 分层日志 INFO/PASS/FAIL/ERROR，FAIL 标红，带毫秒时间戳 |
 
+> **当前状态（2026-11-26）**：引入标准后已达 Web 58 文件/696 项 + API 10 项 + Rust 236 项 + Node 契约 153 项 = **1095 项全绿**；组件/API 层盲区已补齐。上表左列为**引入前历史基线**，非当前值。
+
 ## 2. 采用的第三方标准与映射
 
 ### 2.1 ISTQB 测试级别（Test Levels）× 本项目
 
 | ISTQB 级别 | 被测对象 | 本仓库实现 | 工具/框架 | 语言 |
 | --- | --- | --- | --- | --- |
-| 组件测试（单元测试） | 纯函数、模型、状态机 | `apps/web/src/local/**/*.test.ts` 49 文件 | Vitest 4.1.12 + V8 覆盖率 | TypeScript |
+| 组件测试（单元测试） | 纯函数、模型、状态机 | `apps/web/src/local/**/*.test.ts` + `.test.tsx`，共 58 文件/696 项 | Vitest 4.1.12 + V8 覆盖率（80% 硬门禁） | TypeScript |
 | 组件测试（UI 渲染） | React 组件交互 | `classic-ui/mobile-gate.test.tsx`、`project-settings-panel.test.tsx` | Vitest + jsdom 28 + @testing-library/react 16 | TSX |
 | 组件测试（API） | Elysia 路由 | `apps/api/src/index.test.mjs` | Bun test（node:test 兼容） + Elysia `app.handle` | JavaScript/TypeScript |
 | 集成测试 | Rust core crate 之间 | `local/crates/*/tests/*.rs` 27 个集成测试 + 48 组内联 | Cargo test（Rust 内置） | Rust |
@@ -48,7 +50,7 @@
 | 基于规格说明（黑盒） | 等价类划分 | `caption-import.test.ts`：合法/非法时间戳分类 |
 | 基于规格说明（黑盒） | 边界值分析 | `mobile-gate.test.tsx`：1023/1024 视口阈值；`caption-parse-cases.json` CP03/CP04/CP09/CP10 |
 | 基于规格说明（黑盒） | 决策表 | `assets-panel` 过滤（搜索词×分类组合） |
-| 基于结构（白盒） | 语句/分支覆盖 | Vitest V8 覆盖率报告（44% 语句 / 42.38% 分支基线） |
+| 基于结构（白盒） | 语句/分支覆盖 | Vitest V8 覆盖率报告（当前单测口径 89.68% 语句 / 84.53% 分支，80% 硬门禁；44%/42.38% 为首次基线） |
 | 基于经验 | 错误推测 | API 非法 JSON / 类型错误 / 未知路由；localStorage 抛异常 |
 | 状态转换测试 | 状态机 | `compat-contract.json` 迁移状态；`clip-history` 撤销/重做 |
 | 数据驱动（golden master） | JSON 案例 + 执行器 | `caption-parse-cases.json` ↔ `CAPTION_CASES.md` ↔ `caption-golden-master.test.ts` 三者 ID 一一对应 |
@@ -63,20 +65,20 @@
       ┌┴───────────────────┴┐
       │  集成测试（Rust）    │  27 集成 + 48 组内联，crate 协作
      ┌┴─────────────────────┴┐
-     │ 组件测试（Web/API）   │  49 Web 文件 + 1 API 文件（含 jsdom 渲染）
+     │ 组件测试（Web/API）   │  58 Web 文件/696 项 + 1 API 文件/10 项（含 jsdom 渲染）
     ┌┴───────────────────────┴┐
-    │ 单元/纯函数（最多）     │  Vitest 642 项 + Rust 236 项
+    │ 单元/纯函数（最多）     │  Vitest 696 项 + Rust 236 项
     └─────────────────────────┘
 ```
 
-- **金字塔原则**（Mike Cohn）：底层多、顶层少；本仓库单元层 878 项、契约层 153 项、E2E 少量，符合形态。
+- **金字塔原则**（Mike Cohn）：底层多、顶层少；本仓库单元/组件层 942 项（Web 696 + API 10 + Rust 236）、契约层 153 项、E2E 少量，符合形态。
 - **测试奖盃补充**（Kent C. Dodds）：新增 jsdom + Testing Library 组件测试，填补「组件间集成点」盲区。
 
 ### 2.5 FIRST 原则（单元测试质量）
 
 | 原则 | 落地方式 |
 | --- | --- |
-| Fast 快 | 单元层纯函数无 I/O，全量 642 项约 6s |
+| Fast 快 | 单元层纯函数无 I/O，全量 696 项约 6s（首次基线 642 项） |
 | Independent 独立 | 每个 `it` 独立构造数据；组件测试 `beforeEach` 清 localStorage、`afterEach` cleanup |
 | Repeatable 可重复 | 数据驱动 JSON 固定期望值；golden master 容差 1e-5 |
 | Self-validating 自验证 | 断言明确期望值，不依赖人工观察 |
@@ -103,9 +105,9 @@
 - 未通过项 ANSI 红色（31m），通过绿色（32m）；退出码非 0 表示有失败套件。
 - 与既有 Node 契约脚本（`compat.test.cjs` / `dashboard.test.cjs`）日志风格一致。
 
-## 5. 持续集成建议（尚未落地）
+## 5. 持续集成（2026-11-26 已落地）
 
-1. ~~`.github/workflows/bun-ci.yml` 当前仅跑 `moon ci`~~ → **2026-11-26 已解决**：CI 新增 Web 覆盖率门禁（`node node_modules/vitest/vitest.mjs run --coverage`）、Rust workspace、API、4 个 Node 契约步骤，三平台矩阵自动执行。
+1. `.github/workflows/bun-ci.yml` 已从「仅跑 `moon ci`」升级：新增 Web 覆盖率门禁（`node node_modules/vitest/vitest.mjs run --coverage`）、Rust workspace、API、4 个 Node 契约步骤，三平台矩阵自动执行。
 2. E2E 脚本已沉淀为 `roadmap/e2e/caption-import.e2e.mjs`（自启动 preview + 真实 SRT + autosave 校验）；因依赖 IDE 插件暂不入 CI，属标准允许的验收层边界。
 3. 覆盖率报告上传 artifact 为后续可选优化。
 
@@ -117,4 +119,4 @@
 - Mike Cohn《Succeeding with Agile》(2009)：测试金字塔；Martin Fowler 推广。
 - Kent C. Dodds (2020)：测试奖盃（Testing Trophy），强调组件集成测试。
 - Vitest Coverage 官方文档：https://vitest.dev/guide/coverage （V8 provider 配置）。
-- cargo-llvm-cov：https://github.com/taiki-e/cargo-llvm-cov （Rust 覆盖率工具，本机未安装，见报告 §6）。
+- cargo-llvm-cov：https://github.com/taiki-e/cargo-llvm-cov （Rust 覆盖率工具，v0.9.2 已安装并实测，行覆盖 72.79%，见 11-26 报告 §4.2）。
