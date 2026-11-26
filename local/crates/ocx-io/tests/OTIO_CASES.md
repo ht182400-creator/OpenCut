@@ -7,10 +7,11 @@ Rust golden master 逐字段比对导入结果，并对**每个成功用例**额
 
 ## 类型白名单
 
-本批支持 OTIO 0.19 JSON schema 的 8 种核心类型：
-`Timeline.1 / Stack.1 / Track.1 / Clip.1 / Gap.1 / TimeRange.1 / RationalTime.1 / ExternalReference.1`。
-遇到白名单外的类型（如 `Transition.1`）明确返回 `UNSUPPORTED_OTIO_SCHEMA`，而不是静默丢弃。
-`Transition / Marker / Effect / nested Stack` 留待后续批次。
+**2026-11-26 状态更新**：初始批次支持 OTIO 0.19 JSON schema 的 8 种核心类型
+（`Timeline.1 / Stack.1 / Track.1 / Clip.1 / Gap.1 / TimeRange.1 / RationalTime.1 / ExternalReference.1`），
+白名单外类型明确返回 `UNSUPPORTED_OTIO_SCHEMA` 而非静默丢弃。
+~~`Transition / Marker / Effect / nested Stack` 留待后续批次。~~
+→ **已由 W-10 第四~六批纳入白名单**：`Transition.1`、`Marker.1/2`（含 Timeline/Stack/Track/Clip 四层）、`Effect.1`、`LinearTimeWarp.1`、`FreezeFrame.1` 与嵌套 Stack，官方实文件往返 42/42；见下方 T16~T20 与 `roadmap/PRIORITY.md` §2 W-10。
 
 ## 用例清单
 

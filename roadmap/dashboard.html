@@ -12,10 +12,17 @@
   <script src="dashboard.js?v=20261120-r64" defer></script>
 </head>
 <body>
+  <noscript>
+    <div style="margin:16px;padding:16px;border:2px solid #e5a50a;border-radius:8px;background:#3a2a10;color:#ffe9b0;line-height:1.7">
+      <strong>本看板是交互式页面，需要 JavaScript 才能显示数据。</strong><br />
+      你现在看到「数据版本 加载中…」和空白图表，是因为当前查看环境禁用了脚本（GitHub 网页预览、IDE 内置 Markdown 预览等都会剥离 <code>&lt;script&gt;</code>）。<br />
+      请<strong>下载/克隆仓库后用本地浏览器直接打开</strong> <code>roadmap/dashboard.html</code>（双击即可，离线可用），或在仓库根目录起静态服务后访问：<code>python -m http.server 8899 --directory roadmap</code> → <code>http://localhost:8899/dashboard.html</code>。
+    </div>
+  </noscript>
   <header class="topbar">
     <div class="title-block">
       <h1>OpenCut Rust 重写版 · 交互式路线图</h1>
-      <p class="subtitle">里程碑流程图 / 热点进程 / 决策台账 · 离线可用 · 数据版本 <span id="data-version">加载中…</span></p>
+      <p class="subtitle">里程碑流程图 / 热点进程 / 决策台账 · 离线可用 · 数据版本 <span id="data-version">加载中…（若一直显示此文字，说明当前查看环境未执行 JS，请用本地浏览器打开本文件）</span></p>
     </div>
     <div class="overall">
       <div class="overall-number"><span id="overall-percent">0%</span><small>总体完成度</small></div>

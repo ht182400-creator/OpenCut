@@ -1,9 +1,12 @@
 //! OpenCut 本地 core 的帧契约层（W-07 第一批）。
 //!
 //! `RenderFrame`（无状态帧描述）与 `ExportProfile`（导出参数）是预览与导出共用的稳定契约，
-//! 见 `roadmap/PRIORITY.md` §4。本批**不做真实 MP4/WebM 编码**：那需要浏览器
-//! `VideoEncoder` + muxer 与端到端自动化，且 H01/H05 的原生渲染路径尚未验证。
-//! 本 crate 提供的是可完全确定性验证的部分：配置校验、帧计划（含音画同步）、合成帧源。
+//! 见 `roadmap/PRIORITY.md` §4。本 crate 提供可完全确定性验证的部分：配置校验、
+//! 帧计划（含音画同步）、合成帧源。
+//!
+//! 历史边界（W-07 第一批时）：当时不做真实 MP4/WebM 编码，且 H01/H05 原生渲染路径尚未验证。
+//! 这两项已由后续批次完成：MP4/WebM/AV1 编码由浏览器 `VideoEncoder` + muxer 落地
+//! （W-07 第三/四批），H01/H05 由 W-14 spike 的原生 BGRA 渲染验证并关闭（ADR-04，2026-11-20）。
 //!
 //! 所有错误都返回稳定错误码（不 panic），边界行为由 `tests/RENDER_CASES.md` 固定。
 

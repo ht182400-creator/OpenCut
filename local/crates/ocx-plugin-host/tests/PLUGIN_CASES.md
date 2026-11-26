@@ -100,7 +100,8 @@
 
 ## 诚实边界
 
-第一批只做契约与处理器绑定（不加载 wasm）；第三批补上 wasmi 真实运行时与细粒度权限，前后两批的错误码与校验顺序保持不变。**WIT 组件模型下一批**：当前 ABI 仍为手写 `(ptr,len)→i64`（与浏览器侧一致），未引入 WIT/component-model；WASM glue 与 TS 侧尚未暴露 wasmi 运行时入口（本批只交付 Rust core 能力，避免重复重编 wasm）。
+第一批只做契约与处理器绑定（不加载 wasm）；第三批补上 wasmi 真实运行时与细粒度权限，前后两批的错误码与校验顺序保持不变。
+> **历史快照（第一~二批）**：以下为当时边界，已被后续批次推进——~~WIT 组件模型下一批；未引入 WIT/component-model；WASM glue 与 TS 侧尚未暴露 wasmi 运行时入口~~ → 第四批已以 WIT 为 IDL 契约层；第七批已暴露 WASM glue / TS 入口（`pluginScopeCheck`）。ABI 仍为手写 `(ptr,len)→i64`（与浏览器侧一致）；**完整 component model 仍后置**（wasmi 2.0 不原生支持）。
 
 ## W-12 第二批：原生 WASM 插件运行时
 
@@ -108,7 +109,7 @@
 - 宿主：`apps/web/src/local/plugin-runtime.ts`，用浏览器与 Node **原生**的 `WebAssembly` API 加载调用，宿主不传任何导入对象——插件无法触网、无法读写文件（P02/P12 的权限校验仍由第一批 `pluginRegister` 负责）。
 - 错误映射（与 core 稳定错误码对齐）：未知 effect/command → `UNKNOWN_EFFECT` / `UNKNOWN_COMMAND`；插件返回 `{"error": ...}` → `HANDLER_FAILED`；缺 ABI 导出 → `INVALID_PLUGIN_ABI`。
 - 回归：`plugin-runtime.test.ts` 6 项（vitest 115/115），用真实产物而非 mock；Rust 侧第一批 13 项不变。
-- 诚实边界更新：跨进程沙箱由「零导入对象」提供，但声明式权限（文件/网络）、Rust 侧运行时（wasmi）与 WIT 组件模型仍后置。
+- 诚实边界更新（第二批当时）：跨进程沙箱由「零导入对象」提供。~~声明式权限（文件/网络）、Rust 侧运行时（wasmi）与 WIT 组件模型仍后置~~ → **已由第三/四/五批完成**（wasmi 2.0 运行时、WIT IDL 契约层、声明式权限），第八/九批补 native 文件/网络 scope；仅完整 component model 后置。
 
 ## W-12 第四批：WIT 契约层（IDL 单一事实来源）
 
